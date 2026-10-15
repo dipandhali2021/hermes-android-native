@@ -6,15 +6,17 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.rounded.Archive
 import androidx.compose.material.icons.rounded.Delete
 import androidx.compose.material.icons.rounded.Edit
@@ -26,15 +28,15 @@ import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExtendedFloatingActionButton
-import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.ModalDrawerSheet
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -49,80 +51,75 @@ import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.dipandhali.hermesnative.core.model.SessionRow
-import java.text.SimpleDateFormat
-import java.util.Date
-import java.util.Locale
+import com.dipandhali.hermesnative.ui.components.FabMenu
+import com.dipandhali.hermesnative.ui.components.FabMenuAction
 
 /**
- * The session drawer.
+ * The default screen: every session.
  *
- * A modal drawer rather than a bottom navigation bar: the chat is the product and
- * sessions are navigation into it, so giving sessions a permanent tab strip would
- * spend a phone's scarcest axis on a control used once per conversation. This also
- * mirrors the web UI's own mobile slide-over sidebar, so the two clients match.
+ * This replaced a navigation drawer. On a phone the sessions list is not
+ * navigation *into* the product, it **is** the product's home — you come back to it
+ * between conversations far more often than you switch to any side panel. Giving
+ * it the whole screen and putting the panels behind a menu costs one tap and buys
+ * a readable list, which a 300dp drawer can never be.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun SessionsDrawer(
-    currentSessionId: String?,
+fun SessionsHomeScreen(
     onOpenSession: (String) -> Unit,
     onOpenSettings: () -> Unit,
-    onClose: () -> Unit,
+    fabActions: List<FabMenuAction>,
+    hardwareBackClosesMenu: Boolean = false,
     viewModel: SessionsViewModel = hiltViewModel(),
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
     var renameTarget by remember { mutableStateOf<SessionRow?>(null) }
     var deleteTarget by remember { mutableStateOf<SessionRow?>(null) }
+    var menuOpen by remember { mutableStateOf(false) }
+
+    // Hardware back closes the FAB menu before it leaves the screen.
+    if (hardwareBackClosesMenu && menuOpen) {
+        androidx.activity.compose.BackHandler { menuOpen = false }
+    }
 
     LaunchedEffect(Unit) {
         viewModel.effects.collect { effect ->
             when (effect) {
-                is SessionsEffect.OpenSession -> {
-                    onOpenSession(effect.sessionId)
-                    onClose()
-                }
+                is SessionsEffect.OpenSession -> onOpenSession(effect.sessionId)
                 is SessionsEffect.Message -> Unit
             }
         }
     }
 
-    ModalDrawerSheet(
-        drawerContainerColor = MaterialTheme.colorScheme.surfaceContainerLow,
-        modifier = Modifier.fillMaxWidth(0.86f),
-    ) {
-        Column(Modifier.fillMaxSize()) {
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(start = 20.dp, end = 8.dp, top = 20.dp, bottom = 8.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Text(
-                    text = "Hermes",
-                    style = MaterialTheme.typography.titleLarge,
-                    color = MaterialTheme.colorScheme.primary,
-                    modifier = Modifier.weight(1f),
+    Scaffold(
+        contentWindowInsets = WindowInsets.safeDrawing,
+        topBar = {
+            TopAppBar(
+                title = {
+                    Text(
+                        text = "Sessions",
+                        style = MaterialTheme.typography.titleLarge,
+                    )
+                },
+                actions = {
+                    TextButton(onClick = onOpenSettings) { Text("Settings") }
+                },
+            )
+        },
+    ) { inner ->
+        Box(Modifier.fillMaxSize().padding(inner)) {
+            Column(Modifier.fillMaxSize()) {
+                OutlinedTextField(
+                    value = state.query,
+                    onValueChange = viewModel::onSearchChange,
+                    placeholder = { Text("Search sessions") },
+                    singleLine = true,
+                    shape = MaterialTheme.shapes.extraLarge,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 16.dp, vertical = 4.dp),
                 )
-                TextButton(onClick = onOpenSettings) { Text("Settings") }
-            }
 
-            OutlinedTextField(
-                value = state.query,
-                onValueChange = viewModel::onSearchChange,
-                placeholder = { Text("Search sessions") },
-                singleLine = true,
-                shape = MaterialTheme.shapes.extraLarge,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 16.dp),
-            )
-
-            HorizontalDivider(
-                modifier = Modifier.padding(top = 12.dp),
-                color = MaterialTheme.colorScheme.outlineVariant,
-            )
-
-            Box(Modifier.weight(1f)) {
                 when {
                     state.isLoading -> Box(
                         Modifier.fillMaxSize(),
@@ -133,24 +130,42 @@ fun SessionsDrawer(
                         Modifier.fillMaxSize(),
                         contentAlignment = Alignment.Center,
                     ) {
-                        Text(
-                            text = if (state.query.isBlank()) {
-                                "No sessions yet"
-                            } else {
-                                "Nothing matches \"${state.query}\""
-                            },
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
+                        Column(
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                            verticalArrangement = Arrangement.spacedBy(6.dp),
+                        ) {
+                            Text(
+                                text = if (state.query.isBlank()) {
+                                    "No conversations yet"
+                                } else {
+                                    "Nothing matches \"${state.query}\""
+                                },
+                                style = MaterialTheme.typography.titleMedium,
+                            )
+                            if (state.query.isBlank()) {
+                                Text(
+                                    text = "Start one with the + button.",
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                )
+                            }
+                        }
                     }
 
                     else -> LazyColumn(
-                        contentPadding = PaddingValues(vertical = 8.dp),
+                        modifier = Modifier.fillMaxSize(),
+                        contentPadding = PaddingValues(
+                            start = 12.dp,
+                            end = 12.dp,
+                            top = 8.dp,
+                            // Clear the FAB stack so the last row is reachable.
+                            bottom = 108.dp,
+                        ),
+                        verticalArrangement = Arrangement.spacedBy(6.dp),
                     ) {
                         items(state.visible, key = { it.sessionId }) { row ->
-                            SessionRowItem(
+                            SessionCard(
                                 row = row,
-                                selected = row.sessionId == currentSessionId,
                                 onClick = { viewModel.open(row) },
                                 onRename = { renameTarget = row },
                                 onArchive = { viewModel.setArchived(row, true) },
@@ -161,13 +176,13 @@ fun SessionsDrawer(
                 }
             }
 
-            ExtendedFloatingActionButton(
-                onClick = viewModel::createSession,
-                icon = { Icon(Icons.Rounded.Add, contentDescription = null) },
-                text = { Text("New chat") },
+            FabMenu(
+                actions = fabActions,
+                expanded = menuOpen,
+                onExpandedChange = { menuOpen = it },
                 modifier = Modifier
-                    .padding(16.dp)
-                    .align(Alignment.End),
+                    .align(Alignment.BottomEnd)
+                    .padding(end = 16.dp, bottom = 20.dp),
             )
         }
     }
@@ -201,37 +216,34 @@ fun SessionsDrawer(
     }
 }
 
+/** A session as a full-width card, which is what a full-screen list affords. */
 @Composable
-private fun SessionRowItem(
+private fun SessionCard(
     row: SessionRow,
-    selected: Boolean,
     onClick: () -> Unit,
     onRename: () -> Unit,
     onArchive: () -> Unit,
     onDelete: () -> Unit,
 ) {
     var menuOpen by remember { mutableStateOf(false) }
-    val container = if (selected) {
-        MaterialTheme.colorScheme.secondaryContainer
-    } else {
-        MaterialTheme.colorScheme.surfaceContainerLow
-    }
 
     Surface(
-        color = container,
+        color = MaterialTheme.colorScheme.surfaceContainerLow,
         shape = MaterialTheme.shapes.large,
         modifier = Modifier
             .fillMaxWidth()
-            .padding(horizontal = 10.dp, vertical = 3.dp)
             .clip(MaterialTheme.shapes.large)
             .clickable(onClick = onClick),
     ) {
         Row(
-            modifier = Modifier.padding(start = 14.dp, end = 4.dp, top = 12.dp, bottom = 12.dp),
+            modifier = Modifier.padding(start = 16.dp, end = 4.dp, top = 14.dp, bottom = 14.dp),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(10.dp),
         ) {
-            Column(Modifier.weight(1f)) {
+            Column(
+                modifier = Modifier.weight(1f).widthIn(min = 0.dp),
+                verticalArrangement = Arrangement.spacedBy(3.dp),
+            ) {
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(6.dp),
@@ -241,13 +253,13 @@ private fun SessionRowItem(
                             imageVector = Icons.Rounded.PushPin,
                             contentDescription = "Pinned",
                             tint = MaterialTheme.colorScheme.primary,
-                            modifier = Modifier.size(13.dp),
+                            modifier = Modifier.size(14.dp),
                         )
                     }
                     Text(
                         text = row.label,
-                        style = MaterialTheme.typography.bodyLarge,
-                        maxLines = 1,
+                        style = MaterialTheme.typography.titleMedium,
+                        maxLines = 2,
                         overflow = TextOverflow.Ellipsis,
                     )
                 }
@@ -255,30 +267,23 @@ private fun SessionRowItem(
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(6.dp),
                 ) {
-                    // A live dot is the only signal that a reply is arriving in a
-                    // session the user is not currently looking at.
+                    // The only signal that a reply is arriving somewhere the user is
+                    // not currently looking.
                     if (row.isStreaming) {
-                        Box(
-                            Modifier
-                                .size(6.dp)
-                                .clip(CircleShape)
-                                .then(Modifier)
-                                .padding(0.dp),
-                        ) {
-                            Surface(
-                                color = MaterialTheme.colorScheme.primary,
-                                shape = CircleShape,
-                                modifier = Modifier.fillMaxSize(),
-                            ) {}
-                        }
+                        Surface(
+                            color = MaterialTheme.colorScheme.primary,
+                            shape = CircleShape,
+                            modifier = Modifier.size(7.dp),
+                        ) {}
                     }
                     Text(
                         text = buildString {
+                            if (row.isStreaming) append("Replying · ")
                             append(relativeTime(row.sortTime))
                             row.model?.let { append(" · $it") }
                             if (row.messageCount > 0) append(" · ${row.messageCount} msgs")
                         },
-                        style = MaterialTheme.typography.labelSmall,
+                        style = MaterialTheme.typography.labelMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis,
@@ -287,11 +292,11 @@ private fun SessionRowItem(
             }
 
             Box {
-                IconButton(onClick = { menuOpen = true }, modifier = Modifier.size(36.dp)) {
+                IconButton(onClick = { menuOpen = true }, modifier = Modifier.size(40.dp)) {
                     Icon(
                         imageVector = Icons.Rounded.MoreVert,
                         contentDescription = "Session actions",
-                        modifier = Modifier.size(18.dp),
+                        modifier = Modifier.size(20.dp),
                     )
                 }
                 DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
@@ -331,44 +336,17 @@ private fun SessionRowItem(
     }
 }
 
-@Composable
-private fun RenameDialog(
-    initial: String,
-    onDismiss: () -> Unit,
-    onConfirm: (String) -> Unit,
-) {
-    var value by remember { mutableStateOf(initial) }
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text("Rename session") },
-        text = {
-            OutlinedTextField(
-                value = value,
-                onValueChange = { value = it },
-                singleLine = true,
-                label = { Text("Title") },
-            )
-        },
-        confirmButton = {
-            TextButton(
-                onClick = { onConfirm(value.trim()) },
-                enabled = value.isNotBlank(),
-            ) { Text("Save") }
-        },
-        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
-    )
-}
-
-/** Compact relative time — "just now", "4h", "3d" — matching the drawer's density. */
+/** Compact relative time — "just now", "4h", "3d" — matching the list's density. */
 internal fun relativeTime(epochSeconds: Double): String {
     if (epochSeconds <= 0.0) return "new"
     val deltaMs = System.currentTimeMillis() - (epochSeconds * 1000).toLong()
     val minutes = deltaMs / 60_000
     return when {
         minutes < 1 -> "just now"
-        minutes < 60 -> "${minutes}m"
-        minutes < 60 * 24 -> "${minutes / 60}h"
-        minutes < 60 * 24 * 7 -> "${minutes / (60 * 24)}d"
-        else -> SimpleDateFormat("d MMM", Locale.getDefault()).format(Date(epochSeconds.toLong() * 1000))
+        minutes < 60 -> "${minutes}m ago"
+        minutes < 60 * 24 -> "${minutes / 60}h ago"
+        minutes < 60 * 24 * 7 -> "${minutes / (60 * 24)}d ago"
+        else -> java.text.SimpleDateFormat("d MMM", java.util.Locale.getDefault())
+            .format(java.util.Date(epochSeconds.toLong() * 1000))
     }
 }

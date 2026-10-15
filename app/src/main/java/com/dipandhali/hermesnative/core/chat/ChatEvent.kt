@@ -88,8 +88,8 @@ sealed interface ChatEvent {
     /** Durable state write acknowledged. */
     data object StateSaved : ChatEvent
 
-    /** Todo / checklist update. */
-    data object TodoState : ChatEvent
+    /** Todo / checklist update. The list is session-scoped live state. */
+    data class TodoState(val todos: List<TodoItem>) : ChatEvent
 
     /** Keepalive. Emitted every 5s as an SSE comment. */
     data object Heartbeat : ChatEvent
@@ -116,6 +116,19 @@ val ChatEvent.isClose: Boolean
 /** A terminal event arrived, but no `stream_end` will follow. */
 val ChatEvent.isTerminalWithoutFence: Boolean
     get() = this is ChatEvent.Cancelled || this is ChatEvent.AppError
+
+/** One checklist entry as the server reports it. */
+@Serializable
+data class TodoItem(
+    val id: String? = null,
+    val text: String? = null,
+    val content: String? = null,
+    val status: String? = null,
+    val done: Boolean = false,
+) {
+    val label: String get() = (text ?: content)?.takeIf { it.isNotBlank() } ?: "Task"
+    val isDone: Boolean get() = done || status.equals("completed", true)
+}
 
 @Serializable
 data class TokenUsage(

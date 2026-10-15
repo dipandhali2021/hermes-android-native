@@ -5,7 +5,15 @@ import com.dipandhali.hermesnative.core.model.AuthStatus
 import com.dipandhali.hermesnative.core.model.ChatStartRequest
 import com.dipandhali.hermesnative.core.model.ChatStartResponse
 import com.dipandhali.hermesnative.core.model.HealthResponse
+import com.dipandhali.hermesnative.core.model.CronsResponse
+import com.dipandhali.hermesnative.core.model.InsightsResponse
+import com.dipandhali.hermesnative.core.model.KanbanTasksResponse
+import com.dipandhali.hermesnative.core.model.LogsResponse
+import com.dipandhali.hermesnative.core.model.MemoryResponse
 import com.dipandhali.hermesnative.core.model.ModelsResponse
+import com.dipandhali.hermesnative.core.model.ProfilesResponse
+import com.dipandhali.hermesnative.core.model.SkillsResponse
+import com.dipandhali.hermesnative.core.model.WorkspacesResponse
 import com.dipandhali.hermesnative.core.model.NewSessionResponse
 import com.dipandhali.hermesnative.core.model.ReasoningRequest
 import com.dipandhali.hermesnative.core.model.ReasoningResponse
@@ -125,6 +133,40 @@ class HermesApi(private val client: OkHttpClient) {
 
     suspend fun cancel(baseUrl: String, streamId: String): Result<Unit> =
         getUnit(baseUrl, "api/chat/cancel?stream_id=${streamId.urlEncoded()}")
+
+    // ---- side panels ----
+
+    suspend fun skills(baseUrl: String): Result<SkillsResponse> =
+        get(baseUrl, "api/skills", SkillsResponse.serializer())
+
+    suspend fun crons(baseUrl: String): Result<CronsResponse> =
+        get(baseUrl, "api/crons", CronsResponse.serializer())
+
+    suspend fun memory(baseUrl: String): Result<MemoryResponse> =
+        get(baseUrl, "api/memory", MemoryResponse.serializer())
+
+    suspend fun workspaces(baseUrl: String): Result<WorkspacesResponse> =
+        get(baseUrl, "api/workspaces", WorkspacesResponse.serializer())
+
+    suspend fun profiles(baseUrl: String): Result<ProfilesResponse> =
+        get(baseUrl, "api/profiles", ProfilesResponse.serializer())
+
+    suspend fun insights(baseUrl: String): Result<InsightsResponse> =
+        get(baseUrl, "api/insights", InsightsResponse.serializer())
+
+    suspend fun logs(baseUrl: String, file: String? = null, tail: Int = 300): Result<LogsResponse> =
+        get(
+            baseUrl,
+            "api/logs?tail=$tail" + (file?.let { "&file=${it.urlEncoded()}" } ?: ""),
+            LogsResponse.serializer(),
+        )
+
+    suspend fun kanbanTasks(baseUrl: String, board: String? = null): Result<KanbanTasksResponse> =
+        get(
+            baseUrl,
+            "api/kanban/tasks" + (board?.let { "?board=${it.urlEncoded()}" } ?: ""),
+            KanbanTasksResponse.serializer(),
+        )
 
     /** Absolute SSE URL for a stream id, opened by [SseClient]. */
     fun chatStreamUrl(baseUrl: String, streamId: String): String =

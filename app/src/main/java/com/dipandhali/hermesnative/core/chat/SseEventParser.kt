@@ -1,6 +1,7 @@
 package com.dipandhali.hermesnative.core.chat
 
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.contentOrNull
@@ -92,11 +93,28 @@ object SseEventParser {
             "goal", "goal_continue" -> ChatEvent.Goal
             "pending_steer_leftover" -> ChatEvent.PendingSteerLeftover(str("text") ?: "")
             "state_saved" -> ChatEvent.StateSaved
-            "todo_state" -> ChatEvent.TodoState
+            "todo_state" -> ChatEvent.TodoState(parseTodos(payload))
             // Legacy alias: the server historically emitted `error` alongside
             // `apperror`. Treated identically so neither is dropped.
             "error" -> ChatEvent.AppError(str("message", "error") ?: "The run failed.")
             else -> ChatEvent.Unknown(wireName)
+        }
+    }
+
+    /**
+     * Reads the checklist from whichever key carries it.
+     *
+     * The server's shape for this event is not pinned in the contract the way the
+     * others are, so a wrong guess would blank the panel rather than degrade. Any
+     * array of objects on a plausible key is accepted.
+     */
+    private fun parseTodos(payload: JsonObject?): List<TodoItem> {
+        val array = listOf("todos", "items", "tasks")
+            .firstNotNullOfOrNull { key -> payload?.get(key) as? JsonArray }
+            ?: return emptyList()
+        return array.mapNotNull { element ->
+            val obj = element as? JsonObject ?: return@mapNotNull null
+            runCatching { json.decodeFromJsonElement(TodoItem.serializer(), obj) }.getOrNull()
         }
     }
 

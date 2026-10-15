@@ -1,40 +1,63 @@
 package com.dipandhali.hermesnative.ui.nav
 
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.material3.DrawerValue
-import androidx.compose.material3.ModalNavigationDrawer
-import androidx.compose.material3.rememberDrawerState
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.CalendarMonth
+import androidx.compose.material.icons.rounded.Checklist
+import androidx.compose.material.icons.rounded.Dashboard
+import androidx.compose.material.icons.rounded.Folder
+import androidx.compose.material.icons.rounded.Insights
+import androidx.compose.material.icons.rounded.Person
+import androidx.compose.material.icons.rounded.Psychology
+import androidx.compose.material.icons.rounded.Terminal
+import androidx.compose.material.icons.rounded.ViewKanban
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Surface
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import androidx.navigation.NavHostController
+import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
+import androidx.navigation.navArgument
 import com.dipandhali.hermesnative.ui.chat.ChatScreen
+import com.dipandhali.hermesnative.ui.components.FabMenuAction
 import com.dipandhali.hermesnative.ui.connect.ConnectScreen
-import com.dipandhali.hermesnative.ui.sessions.SessionsDrawer
+import com.dipandhali.hermesnative.ui.panels.PanelKind
+import com.dipandhali.hermesnative.ui.panels.PanelScreen
+import com.dipandhali.hermesnative.ui.sessions.SessionsHomeScreen
 import com.dipandhali.hermesnative.ui.settings.SettingsScreen
 import com.dipandhali.hermesnative.ui.theme.HermesNativeTheme
-import kotlinx.coroutines.launch
 
 object Routes {
     const val CONNECT = "connect"
-    const val CHAT = "chat"
+    const val SESSIONS = "sessions"
     const val SETTINGS = "settings"
+
+    /** Panel routes double as the FAB-menu destination, one per panel kind. */
+    const val PANEL = "panel"
+    fun panel(kind: PanelKind): String = "$PANEL/${kind.name}"
+
+    const val CHAT = "chat"
+    fun chat(sessionId: String): String = "$CHAT/$sessionId"
 }
 
 /**
- * App shell: theme, navigation, and the session drawer.
+ * App shell: theme, navigation, and the sessions home screen as the default.
  *
- * The start destination is resolved from persisted state so a returning user lands
- * in a conversation rather than on the connect screen every launch. The theme is
- * read here as a live value rather than captured once, so changing it in Settings
- * reproduces immediately — including the dynamic-colour switch, which would
- * otherwise appear to do nothing until the next cold start.
+ * There is no drawer and no rail — the sessions list owns the default screen, and
+ * the nine side panels are reached from a FAB menu. The desktop rail exists
+ * because a wide window has room for a permanent column of icons; a phone does
+ * not, and a 300dp drawer showing the same list the user is about to open costs a
+ * tap and buys nothing.
+ *
+ * Every panel is a real navigation destination rather than an overlay, so the
+ * system back gesture does the expected thing on all nine without any custom
+ * handling.
  */
 @Composable
 fun HermesRoot(viewModel: RootViewModel = hiltViewModel()) {
@@ -52,62 +75,99 @@ fun HermesRoot(viewModel: RootViewModel = hiltViewModel()) {
     }
 }
 
+/**
+ * The FAB menu's contents, in the desktop rail's own order.
+ *
+ * Labels match the desktop tooltips ("Spaces", "Agent profiles", "Tasks") so a
+ * user moving between the two clients does not have to re-learn the vocabulary.
+ */
+@Composable
+private fun panelActions(navigate: (String) -> Unit): List<FabMenuAction> = remember {
+    listOf(
+        PanelKind.TASKS to Icons.Rounded.CalendarMonth,
+        PanelKind.KANBAN to Icons.Rounded.ViewKanban,
+        PanelKind.SKILLS to Icons.Rounded.Psychology,
+        PanelKind.MEMORY to Icons.Rounded.Dashboard,
+        PanelKind.SPACES to Icons.Rounded.Folder,
+        PanelKind.PROFILES to Icons.Rounded.Person,
+        PanelKind.TODOS to Icons.Rounded.Checklist,
+        PanelKind.INSIGHTS to Icons.Rounded.Insights,
+        PanelKind.LOGS to Icons.Rounded.Terminal,
+    ).map { (kind, icon) ->
+        FabMenuAction(
+            label = kind.title,
+            icon = icon,
+            onClick = { navigate(Routes.panel(kind)) },
+        )
+    }
+}
+
 @Composable
 private fun HermesNavHost(startDestination: String) {
-    val navController: NavHostController = rememberNavController()
-    val drawerState = rememberDrawerState(DrawerValue.Closed)
-    val scope = rememberCoroutineScope()
+    val navController = rememberNavController()
 
-    val openDrawer: () -> Unit = { scope.launch { drawerState.open() } }
-
-    ModalNavigationDrawer(
-        drawerState = drawerState,
-        gesturesEnabled = startDestination == Routes.CHAT,
-        drawerContent = {
-            SessionsDrawer(
-                currentSessionId = null,
-                onOpenSession = { /* session selection drives the chat screen */ },
-                onOpenSettings = {
-                    scope.launch { drawerState.close() }
-                    navController.navigate(Routes.SETTINGS)
-                },
-                onClose = { scope.launch { drawerState.close() } },
-            )
-        },
+    NavHost(
+        navController = navController,
+        startDestination = startDestination,
+        modifier = Modifier.fillMaxSize(),
     ) {
-        NavHost(
-            navController = navController,
-            startDestination = startDestination,
-            modifier = Modifier.fillMaxSize(),
-        ) {
-            composable(Routes.CONNECT) {
-                ConnectScreen(
-                    onConnected = {
-                        navController.navigate(Routes.CHAT) {
-                            popUpTo(Routes.CONNECT) { inclusive = true }
-                        }
-                    },
-                )
-            }
+        composable(Routes.CONNECT) {
+            ConnectScreen(
+                onConnected = {
+                    navController.navigate(Routes.SESSIONS) {
+                        popUpTo(Routes.CONNECT) { inclusive = true }
+                    }
+                },
+            )
+        }
 
-            composable(Routes.CHAT) {
-                ChatScreen(
-                    sessionId = null,
-                    onOpenDrawer = openDrawer,
-                    onOpenSettings = { navController.navigate(Routes.SETTINGS) },
-                )
-            }
+        composable(Routes.SESSIONS) {
+            SessionsHomeScreen(
+                onOpenSession = { sessionId -> navController.navigate(Routes.chat(sessionId)) },
+                onOpenSettings = { navController.navigate(Routes.SETTINGS) },
+                fabActions = panelActions { route -> navController.navigate(route) },
+            )
+        }
 
-            composable(Routes.SETTINGS) {
-                SettingsScreen(
-                    onBack = { navController.popBackStack() },
-                    onSignedOut = {
-                        navController.navigate(Routes.CONNECT) {
-                            popUpTo(0) { inclusive = true }
-                        }
-                    },
-                )
-            }
+        composable(
+            route = "${Routes.CHAT}/{sessionId}",
+            arguments = listOf(navArgument("sessionId") { type = NavType.StringType }),
+        ) { entry ->
+            val sessionId = entry.arguments?.getString("sessionId")
+            ChatScreen(
+                sessionId = sessionId,
+                // The hamburger is gone: this is a home button, and it goes back to
+                // the default screen rather than opening a drawer.
+                onGoHome = {
+                    navController.navigate(Routes.SESSIONS) {
+                        // One home in the stack, not a growing pile of them.
+                        popUpTo(Routes.SESSIONS) { inclusive = false }
+                        launchSingleTop = true
+                    }
+                },
+                onOpenSettings = { navController.navigate(Routes.SETTINGS) },
+            )
+        }
+
+        composable(
+            route = "${Routes.PANEL}/{kind}",
+            arguments = listOf(navArgument("kind") { type = NavType.StringType }),
+        ) { entry ->
+            val kind = entry.arguments?.getString("kind")
+                ?.let { runCatching { PanelKind.valueOf(it) }.getOrNull() }
+                ?: PanelKind.SKILLS
+            PanelScreen(kind = kind, onBack = { navController.popBackStack() })
+        }
+
+        composable(Routes.SETTINGS) {
+            SettingsScreen(
+                onBack = { navController.popBackStack() },
+                onSignedOut = {
+                    navController.navigate(Routes.CONNECT) {
+                        popUpTo(0) { inclusive = true }
+                    }
+                },
+            )
         }
     }
 }
@@ -115,8 +175,8 @@ private fun HermesNavHost(startDestination: String) {
 /** Shown for the one frame before persisted state resolves. */
 @Composable
 private fun StartUpPlaceholder() {
-    androidx.compose.material3.Surface(
+    Surface(
         modifier = Modifier.fillMaxSize(),
-        color = androidx.compose.material3.MaterialTheme.colorScheme.surface,
+        color = MaterialTheme.colorScheme.surface,
     ) {}
 }

@@ -42,6 +42,7 @@ class ChatViewModel @Inject constructor(
     private val chat: ChatRepository,
     private val settings: SettingsStore,
     private val serverState: ServerState,
+    private val todoStore: com.dipandhali.hermesnative.data.panels.TodoStore,
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(ChatUiState())
@@ -222,6 +223,8 @@ class ChatViewModel @Inject constructor(
 
                     is ChatEvent.Title -> _uiState.update { it.copy(title = event.title) }
 
+                    is ChatEvent.TodoState -> todoStore.update(event.todos)
+
                     is ChatEvent.Warning -> _effects.trySend(ChatEffect.ShowMessage(event.message))
 
                     is ChatEvent.Compressing -> {
@@ -272,7 +275,7 @@ class ChatViewModel @Inject constructor(
 
                     ChatEvent.ApprovalRequested, ChatEvent.ClarificationRequested,
                     ChatEvent.Metering, ChatEvent.ContextStatus, ChatEvent.Goal,
-                    ChatEvent.StateSaved, ChatEvent.TodoState, ChatEvent.Heartbeat,
+                    ChatEvent.StateSaved, ChatEvent.Heartbeat,
                     is ChatEvent.TitleStatus,
                     -> Unit
 

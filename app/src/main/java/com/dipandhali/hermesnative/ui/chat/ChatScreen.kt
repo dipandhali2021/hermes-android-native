@@ -20,8 +20,8 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.rounded.ArrowBack
 import androidx.compose.material.icons.rounded.ArrowDownward
-import androidx.compose.material.icons.rounded.Menu
 import androidx.compose.material.icons.rounded.MoreVert
 import androidx.compose.material.icons.rounded.Tune
 import androidx.compose.material3.CircularProgressIndicator
@@ -71,7 +71,7 @@ import com.dipandhali.hermesnative.ui.theme.HermesMotion
 @Composable
 fun ChatScreen(
     sessionId: String?,
-    onOpenDrawer: () -> Unit,
+    onGoHome: () -> Unit,
     onOpenSettings: () -> Unit,
     viewModel: ChatViewModel = hiltViewModel(),
 ) {
@@ -115,8 +115,13 @@ fun ChatScreen(
                     containerColor = MaterialTheme.colorScheme.surface,
                 ),
                 navigationIcon = {
-                    IconButton(onClick = onOpenDrawer) {
-                        Icon(Icons.Rounded.Menu, contentDescription = "Sessions")
+                    // A home button, not a hamburger: there is no drawer to open,
+                    // and the sessions list is where back should lead.
+                    IconButton(onClick = onGoHome) {
+                        Icon(
+                            imageVector = Icons.AutoMirrored.Rounded.ArrowBack,
+                            contentDescription = "Back to sessions",
+                        )
                     }
                 },
                 title = {
