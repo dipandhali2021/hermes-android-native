@@ -51,7 +51,7 @@ jobs:
         # keeps the applicationId and signature stable across builds, so a new
         # APK installs *over* the previous one instead of failing with
         # INSTALL_FAILED_UPDATE_INCOMPATIBLE. It is not a Play Store artifact.
-        run: ./gradlew :app:assembleRelease --no-daemon --console=plain
+        run: ./gradlew :app:assembleRelease --no-daemon --build-cache --console=plain
 
       - name: Resolve tag and APK
         id: meta
