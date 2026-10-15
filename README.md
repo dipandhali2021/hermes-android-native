@@ -21,7 +21,7 @@ Downloads are produced by CI and attached to
 [Releases](../../releases/latest). From your phone, open:
 
 ```
-https://github.com/dipandhali2021/hermes-native-android/releases/latest/download/hermes-native-latest.apk
+https://github.com/dipandhali2021/hermes-android-native/releases/latest/download/hermes-native-latest.apk
 ```
 
 You will need to allow installing from unknown sources. Requires **Android 8.0
