@@ -350,3 +350,31 @@ internal fun relativeTime(epochSeconds: Double): String {
             .format(java.util.Date(epochSeconds.toLong() * 1000))
     }
 }
+
+@Composable
+private fun RenameDialog(
+    initial: String,
+    onDismiss: () -> Unit,
+    onConfirm: (String) -> Unit,
+) {
+    var value by remember { mutableStateOf(initial) }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Rename session") },
+        text = {
+            OutlinedTextField(
+                value = value,
+                onValueChange = { value = it },
+                singleLine = true,
+                label = { Text("Title") },
+            )
+        },
+        confirmButton = {
+            TextButton(
+                onClick = { onConfirm(value.trim()) },
+                enabled = value.isNotBlank(),
+            ) { Text("Save") }
+        },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
+    )
+}
