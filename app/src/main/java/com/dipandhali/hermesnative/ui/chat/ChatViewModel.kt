@@ -273,6 +273,7 @@ class ChatViewModel @Inject constructor(
                     ChatEvent.ApprovalRequested, ChatEvent.ClarificationRequested,
                     ChatEvent.Metering, ChatEvent.ContextStatus, ChatEvent.Goal,
                     ChatEvent.StateSaved, ChatEvent.TodoState, ChatEvent.Heartbeat,
+                    is ChatEvent.TitleStatus,
                     -> Unit
 
                     is ChatEvent.StreamEnd -> Unit

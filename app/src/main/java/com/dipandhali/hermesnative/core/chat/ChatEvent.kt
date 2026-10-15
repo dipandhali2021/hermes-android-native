@@ -52,6 +52,9 @@ sealed interface ChatEvent {
     /** The session title changed. Emitted *after* [Done]. */
     data class Title(val title: String) : ChatEvent
 
+    /** Title generation status, or the reason it was skipped. Carries no title. */
+    data class TitleStatus(val status: String?) : ChatEvent
+
     /** Non-fatal provider or fallback warning. */
     data class Warning(val message: String) : ChatEvent
 

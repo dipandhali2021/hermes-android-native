@@ -74,6 +74,7 @@ object SseEventParser {
             "compressing" -> ChatEvent.Compressing
             "compressed" -> ChatEvent.Compressed
             "title" -> ChatEvent.Title(str("title") ?: "")
+            "title_status" -> ChatEvent.TitleStatus(str("status", "reason"))
             "warning" -> ChatEvent.Warning(
                 // Older builds send {type, message}; fall back to the type alone so
                 // the user still sees *something* actionable.

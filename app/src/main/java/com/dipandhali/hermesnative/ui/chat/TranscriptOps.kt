@@ -79,13 +79,18 @@ fun List<TranscriptItem>.completeTool(event: ChatEvent.ToolCompleted): List<Tran
         assistant.copy(tools = updated)
     }
 
-/** Stops the streaming flag; the partial answer stays on screen. */
+/**
+ * Stops the streaming flag; the partial answer stays on screen.
+ *
+ * Only touches an existing assistant row. Settling is bookkeeping, so it must not
+ * conjure an empty assistant turn into a transcript that never had one.
+ */
 fun List<TranscriptItem>.markStreamingStopped(): List<TranscriptItem> =
-    withAssistant { it.copy(isStreaming = false) }
+    withAssistantIfPresent { it.copy(isStreaming = false) }
 
 /** Final settle after a turn ends: nothing is streaming any more. */
 fun List<TranscriptItem>.markStreamingSettled(): List<TranscriptItem> =
-    withAssistant { it.copy(isStreaming = false) }
+    withAssistantIfPresent { it.copy(isStreaming = false) }
 
 /** Attaches a usage summary line to the last assistant row. */
 fun List<TranscriptItem>.attachUsage(summary: String?): List<TranscriptItem> {
@@ -96,6 +101,14 @@ fun List<TranscriptItem>.attachUsage(summary: String?): List<TranscriptItem> {
 /** The text of the most recent user message, for retry. */
 fun List<TranscriptItem>.lastUserText(): String? =
     lastOrNull { it is TranscriptItem.User }?.let { (it as TranscriptItem.User).text }
+
+/** Applies [transform] only when the tail is already an assistant row. */
+private inline fun List<TranscriptItem>.withAssistantIfPresent(
+    transform: (TranscriptItem.Assistant) -> TranscriptItem.Assistant,
+): List<TranscriptItem> {
+    val last = lastOrNull()
+    return if (last is TranscriptItem.Assistant) dropLast(1) + transform(last) else this
+}
 
 private inline fun List<TranscriptItem>.withAssistant(
     transform: (TranscriptItem.Assistant) -> TranscriptItem.Assistant,

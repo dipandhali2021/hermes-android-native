@@ -123,16 +123,16 @@ object MarkdownParser {
         if (listLike && lines.any { LIST_ITEM.containsMatchIn(it) }) {
             return Block.ListBlock(
                 items = lines.filter { it.isNotBlank() }.map { line ->
-                    val ordered = ORDERED_ITEM.matchEntire(line.trim())
+                    val trimmed = line.trim()
+                    val ordered = ORDERED_ITEM.matchEntire(trimmed)
                     ListItem(
                         ordered = ordered != null,
                         marker = ordered?.groupValues?.get(1)?.trim(),
                         indent = line.takeWhile { it == ' ' }.length / 2,
-                        text = line.trim().let { l ->
-                            ORDERED_ITEM.replace(l) { "" }
-                                .let { UNORDERED_ITEM.replace(it) { "" } }
-                                .trimStart()
-                        },
+                        // For an ordered item the content is the capture group; for
+                        // an unordered one it is whatever follows the bullet.
+                        text = ordered?.groupValues?.get(2)
+                            ?: UNORDERED_MARKER.replace(trimmed, ""),
                     )
                 },
                 closed = true,
@@ -148,8 +148,9 @@ object MarkdownParser {
 
     private val HEADING = Regex("""^(#{1,4})\s+(.*)$""")
     private val LIST_ITEM = Regex("""^\s*([-*+]|\d+[.)])\s+""")
+    /** Group 1 is the marker, group 2 the item content. */
     private val ORDERED_ITEM = Regex("""^(\d+[.)])\s+(.*)$""")
-    private val UNORDERED_ITEM = Regex("""^[-*+]\s+""")
+    private val UNORDERED_MARKER = Regex("""^\s*[-*+]\s+""")
 
     private val INLINE_CODE = Regex("""`([^`\n]+)`""")
     private val BOLD = Regex("""\*\*([^*\n]+)\*\*|__([^_\n]+)__""")
