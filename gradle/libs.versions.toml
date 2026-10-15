@@ -20,7 +20,6 @@ hilt = "2.57"
 hiltNavigationCompose = "1.2.0"
 
 okhttp = "5.3.0"
-retrofit = "3.0.0"
 kotlinxSerialization = "1.8.1"
 coroutines = "1.10.2"
 
@@ -58,8 +57,6 @@ androidx-hilt-navigation-compose = { group = "androidx.hilt", name = "hilt-navig
 okhttp = { group = "com.squareup.okhttp3", name = "okhttp", version.ref = "okhttp" }
 okhttp-sse = { group = "com.squareup.okhttp3", name = "okhttp-sse", version.ref = "okhttp" }
 okhttp-logging = { group = "com.squareup.okhttp3", name = "logging-interceptor", version.ref = "okhttp" }
-retrofit = { group = "com.squareup.retrofit2", name = "retrofit", version.ref = "retrofit" }
-retrofit-kotlinx-serialization = { group = "com.squareup.retrofit2", name = "converter-kotlinx-serialization", version.ref = "retrofit" }
 kotlinx-serialization-json = { group = "org.jetbrains.kotlinx", name = "kotlinx-serialization-json", version.ref = "kotlinxSerialization" }
 kotlinx-coroutines-android = { group = "org.jetbrains.kotlinx", name = "kotlinx-coroutines-android", version.ref = "coroutines" }
 
