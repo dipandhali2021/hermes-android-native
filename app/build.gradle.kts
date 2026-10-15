@@ -17,8 +17,11 @@ android {
         // so the theme branches at runtime and older devices get the brand seed.
         minSdk = 26
         targetSdk = 36
-        versionCode = 1
-        versionName = "0.1.0"
+        // The release workflow passes -PversionName=<tag>; locally, fall back to
+        // a placeholder. Keeping one source of truth stops the APK reporting a
+        // different version than the release it came from.
+        versionCode = (project.findProperty("versionCode") as String?)?.toInt() ?: 1
+        versionName = (project.findProperty("versionName") as String?)?.removePrefix("v") ?: "0.2.0"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables { useSupportLibrary = true }
     }

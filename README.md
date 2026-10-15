@@ -89,21 +89,37 @@ echo "sdk.dir=$ANDROID_HOME" > local.properties
 Single `:app` module, package-by-feature — see
 [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
 
+## What works
+
+- **Connect** to a self-hosted server, with a connection test that distinguishes
+  an unreachable host, a wrong address, a TLS problem and a bad password.
+- **Sessions** — list, search, create, rename, archive, delete, with a live
+  indicator on any session currently answering.
+- **Streaming chat** — tokens, model reasoning, tool calls with results and
+  failures, and context-compression notices.
+- **Composer** — send, stop, steer a run mid-flight, or `/queue` a message.
+- **Material 3 Expressive** — Material You dynamic colour on Android 12+, a
+  generated Hermes-gold fallback below that, expressive shape and spring motion,
+  and light/dark/system themes that change live.
+
 ## Roadmap
 
-- [x] M0 — project skeleton, M3 Expressive theme, CI producing an APK
-- [ ] M1 — navigation graph and full theme tokens
-- [ ] M2 — settings persistence (server URL, theme mode)
-- [ ] M3 — networking core and the connect screen
-- [ ] M4 — session list
-- [ ] M5 — transcript rendering (markdown, code blocks)
-- [ ] M6 — streaming chat over SSE
-- [ ] M7 — composer state machine (send / stop / steer)
-- [ ] M8 — reasoning disclosure, tool cards, error retry
+- [x] M0 — skeleton, theme, CI producing an APK
+- [x] M1 — navigation, theme tokens, motion
+- [x] M2 — settings persistence
+- [x] M3 — networking core and the connect screen
+- [x] M4 — session list
+- [x] M5 — transcript rendering with markdown and code blocks
+- [x] M6 — streaming chat over SSE
+- [x] M7 — composer state machine (send / stop / steer / queue)
+- [x] M8 — reasoning disclosure, tool cards, error retry
+- [ ] Model and reasoning-effort pickers
+- [ ] Image attachments
+- [ ] Reconnect and gap recovery after backgrounding
 
-Explicitly **not** in v1: offline caching, cron, kanban, extensions, voice
-input, and Play Store submission. These are deferred deliberately rather than
-forgotten.
+Explicitly **not** here: offline caching (the agent runs on the server, so there
+is nothing useful to do offline), cron, kanban, extensions, voice input, and Play
+Store submission. Deferred deliberately, not forgotten.
 
 ## License
 
@@ -111,3 +127,7 @@ MIT. See [LICENSE](LICENSE).
 
 The interface is inspired by [assistant-ui Elements](https://www.assistant-ui.com/elements);
 no code is taken from it.
+
+This is an independent client. It is not affiliated with, and shares no code
+with, the official `hermes-webui/hermes-android` app or the Hermes desktop apps —
+all of which are separate projects with their own maintainers.

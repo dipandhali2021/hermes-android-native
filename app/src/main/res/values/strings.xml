@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="app_name">Hermes</string>
+    <string name="app_name">Hermes Native</string>
     <string name="connect_title">Connect to Hermes</string>
     <string name="server_url_label">Server URL</string>
     <string name="password_label">Password</string>

@@ -46,12 +46,27 @@ jobs:
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v4
 
+      - name: Resolve release version
+        id: version
+        run: |
+          set -euo pipefail
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "name=${{ inputs.version }}" >> "$GITHUB_OUTPUT"
+          else
+            echo "name=${GITHUB_REF_NAME}" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Build release APK
-        # The release variant is signed with the committed debug keystore. That
-        # keeps the applicationId and signature stable across builds, so a new
-        # APK installs *over* the previous one instead of failing with
-        # INSTALL_FAILED_UPDATE_INCOMPATIBLE. It is not a Play Store artifact.
-        run: ./gradlew :app:assembleRelease --no-daemon --build-cache --console=plain
+        # The release variant is signed with a committed keystore, not a
+        # Play Store key. It keeps the applicationId and signature stable across
+        # builds, so a new APK installs *over* the previous one instead of
+        # failing with INSTALL_FAILED_UPDATE_INCOMPATIBLE. versionCode is derived
+        # from the run number so successive releases are always installable in
+        # order.
+        run: |
+          ./gradlew :app:assembleRelease --no-daemon --build-cache --console=plain \
+            -PversionName="${{ steps.version.outputs.name }}" \
+            -PversionCode="${{ github.run_number }}"
 
       - name: Resolve tag and APK
         id: meta
