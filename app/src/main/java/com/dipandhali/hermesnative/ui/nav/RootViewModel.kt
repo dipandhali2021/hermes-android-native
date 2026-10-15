@@ -47,7 +47,7 @@ class RootViewModel @Inject constructor(
     init {
         viewModelScope.launch {
             val restored = auth.restoreSavedServer()
-            _startRoute.value = if (restored != null) Routes.SESSIONS else Routes.CONNECT
+            _startRoute.value = if (restored != null) Routes.HOME else Routes.CONNECT
         }
     }
 }

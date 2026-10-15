@@ -29,12 +29,18 @@ import com.dipandhali.hermesnative.ui.components.FabMenuAction
 import com.dipandhali.hermesnative.ui.connect.ConnectScreen
 import com.dipandhali.hermesnative.ui.panels.PanelKind
 import com.dipandhali.hermesnative.ui.panels.PanelScreen
-import com.dipandhali.hermesnative.ui.sessions.SessionsHomeScreen
+import com.dipandhali.hermesnative.ui.home.HomeScreen
+import com.dipandhali.hermesnative.ui.sessions.SessionsListScreen
 import com.dipandhali.hermesnative.ui.settings.SettingsScreen
 import com.dipandhali.hermesnative.ui.theme.HermesNativeTheme
 
 object Routes {
     const val CONNECT = "connect"
+
+    /** The default screen: composer plus the five most recent conversations. */
+    const val HOME = "home"
+
+    /** The full session list, pushed from home. */
     const val SESSIONS = "sessions"
     const val SETTINGS = "settings"
 
@@ -43,7 +49,24 @@ object Routes {
     fun panel(kind: PanelKind): String = "$PANEL/${kind.name}"
 
     const val CHAT = "chat"
-    fun chat(sessionId: String): String = "$CHAT/$sessionId"
+
+    /**
+     * A chat route carrying an optional first message.
+     *
+     * The message rides in the route because the home composer has to create the
+     * session before it can hand the text over, and sending it from home would
+     * leave the user watching a run they cannot see. It is URL-encoded because a
+     * message is arbitrary user text and can contain `/`, which would otherwise
+     * split the path.
+     */
+    fun chat(sessionId: String, initialMessage: String? = null): String {
+        val base = "$CHAT/${java.net.URLEncoder.encode(sessionId, "UTF-8")}"
+        return if (initialMessage.isNullOrBlank()) {
+            base
+        } else {
+            "$base?message=${java.net.URLEncoder.encode(initialMessage, "UTF-8")}"
+        }
+    }
 }
 
 /**
@@ -114,34 +137,52 @@ private fun HermesNavHost(startDestination: String) {
         composable(Routes.CONNECT) {
             ConnectScreen(
                 onConnected = {
-                    navController.navigate(Routes.SESSIONS) {
+                    navController.navigate(Routes.HOME) {
                         popUpTo(Routes.CONNECT) { inclusive = true }
                     }
                 },
             )
         }
 
-        composable(Routes.SESSIONS) {
-            SessionsHomeScreen(
+        composable(Routes.HOME) {
+            HomeScreen(
                 onOpenSession = { sessionId -> navController.navigate(Routes.chat(sessionId)) },
+                onSeeAllSessions = { navController.navigate(Routes.SESSIONS) },
                 onOpenSettings = { navController.navigate(Routes.SETTINGS) },
                 fabActions = panelActions { route -> navController.navigate(route) },
             )
         }
 
+        composable(Routes.SESSIONS) {
+            SessionsListScreen(
+                onOpenSession = { sessionId -> navController.navigate(Routes.chat(sessionId)) },
+                onBack = { navController.popBackStack() },
+                onOpenSettings = { navController.navigate(Routes.SETTINGS) },
+            )
+        }
+
         composable(
-            route = "${Routes.CHAT}/{sessionId}",
-            arguments = listOf(navArgument("sessionId") { type = NavType.StringType }),
+            route = "${Routes.CHAT}/{sessionId}?message={message}",
+            arguments = listOf(
+                navArgument("sessionId") { type = NavType.StringType },
+                navArgument("message") {
+                    type = NavType.StringType
+                    nullable = true
+                    defaultValue = null
+                },
+            ),
         ) { entry ->
             val sessionId = entry.arguments?.getString("sessionId")
+            val message = entry.arguments?.getString("message")
             ChatScreen(
                 sessionId = sessionId,
+                initialMessage = message,
                 // The hamburger is gone: this is a home button, and it goes back to
                 // the default screen rather than opening a drawer.
                 onGoHome = {
-                    navController.navigate(Routes.SESSIONS) {
+                    navController.navigate(Routes.HOME) {
                         // One home in the stack, not a growing pile of them.
-                        popUpTo(Routes.SESSIONS) { inclusive = false }
+                        popUpTo(Routes.HOME) { inclusive = false }
                         launchSingleTop = true
                     }
                 },

@@ -50,15 +50,34 @@ class SessionsViewModel @Inject constructor(
 
     fun onSearchChange(query: String) = _state.update { it.copy(query = query) }
 
-    /** Creates a session and hands its id to the caller to navigate to. */
+    /** Creates an empty session and opens it. */
     fun createSession() {
         viewModelScope.launch {
             repository.create()
                 .onSuccess { sessionId ->
-                    // The new session must appear before navigation, or the drawer
-                    // looks like the tap did nothing.
+                    // The new session must appear in the list before navigation, or
+                    // the tap looks like it did nothing.
                     refresh()
                     _effects.trySend(SessionsEffect.OpenSession(sessionId))
+                }
+                .onFailure { _effects.trySend(SessionsEffect.Message(it.toMessage())) }
+        }
+    }
+
+    /**
+     * Starts a conversation from the home composer in one step.
+     *
+     * A conversation must exist before a message can be sent to it, so this is
+     * create-then-open, and the first message travels with the navigation rather
+     * than being sent from the home screen. Sending it here would leave the user
+     * on a screen showing a run they cannot see.
+     */
+    fun startChatWith(message: String) {
+        viewModelScope.launch {
+            repository.create()
+                .onSuccess { sessionId ->
+                    refresh()
+                    _effects.trySend(SessionsEffect.OpenSessionAndSend(sessionId, message))
                 }
                 .onFailure { _effects.trySend(SessionsEffect.Message(it.toMessage())) }
         }
@@ -125,6 +144,10 @@ class SessionsViewModel @Inject constructor(
 
 sealed interface SessionsEffect {
     data class OpenSession(val sessionId: String) : SessionsEffect
+
+    /** Open a session and immediately send [message] into it. */
+    data class OpenSessionAndSend(val sessionId: String, val message: String) : SessionsEffect
+
     data class Message(val text: String) : SessionsEffect
 }
 

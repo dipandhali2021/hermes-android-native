@@ -72,6 +72,7 @@ import com.dipandhali.hermesnative.ui.theme.HermesMotion
 fun ChatScreen(
     sessionId: String?,
     onGoHome: () -> Unit,
+    initialMessage: String? = null,
     onOpenSettings: () -> Unit,
     viewModel: ChatViewModel = hiltViewModel(),
 ) {
@@ -81,7 +82,14 @@ fun ChatScreen(
     val clipboard = LocalClipboardManager.current
     var menuOpen by remember { mutableStateOf(false) }
 
-    LaunchedEffect(sessionId) { sessionId?.let(viewModel::openSession) }
+    // Open first, then send: the seed arrives from the home composer, which had to
+    // create the session before it could hand the text over.
+    LaunchedEffect(sessionId, initialMessage) {
+        sessionId?.let(viewModel::openSession)
+        if (!initialMessage.isNullOrBlank()) {
+            viewModel.sendInitialMessage(initialMessage)
+        }
+    }
 
     LaunchedEffect(Unit) {
         viewModel.effects.collect { effect ->

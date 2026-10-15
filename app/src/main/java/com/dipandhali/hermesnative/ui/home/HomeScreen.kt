@@ -1,0 +1,349 @@
+package com.dipandhali.hermesnative.ui.home
+
+import androidx.activity.compose.BackHandler
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.imePadding
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.safeDrawing
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.rounded.Send
+import androidx.compose.material.icons.rounded.MoreHoriz
+import androidx.compose.material.icons.rounded.Settings
+import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.FilledTonalButton
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Surface
+import androidx.compose.material3.Text
+import androidx.compose.material3.TopAppBar
+import androidx.compose.material3.TopAppBarDefaults
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.dp
+import androidx.hilt.navigation.compose.hiltViewModel
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.dipandhali.hermesnative.core.model.SessionRow
+import com.dipandhali.hermesnative.ui.components.FabMenu
+import com.dipandhali.hermesnative.ui.components.FabMenuAction
+import com.dipandhali.hermesnative.ui.sessions.SessionsViewModel
+import com.dipandhali.hermesnative.ui.sessions.relativeTime
+
+/** How many recent conversations the hub shows before deferring to the full list. */
+private const val RECENT_LIMIT = 5
+
+/**
+ * The default screen: start a conversation, or continue a recent one.
+ *
+ * The composer is the point of this screen, so it sits in the middle where the
+ * eye lands and the thumb reaches, with the five most recent sessions tucked
+ * beneath it. Everything else is one tap away rather than on screen — a home
+ * screen that shows a full session list, a search field and nine destinations at
+ * once is a home screen with no answer to "what do I do here".
+ *
+ * The FAB sits above the composer rather than under it, so it is reachable while
+ * the keyboard is up instead of being covered by it.
+ */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun HomeScreen(
+    onOpenSession: (String) -> Unit,
+    onSeeAllSessions: () -> Unit,
+    onOpenSettings: () -> Unit,
+    fabActions: List<FabMenuAction>,
+    viewModel: SessionsViewModel = hiltViewModel(),
+) {
+    val state by viewModel.state.collectAsStateWithLifecycle()
+    var menuOpen by remember { mutableStateOf(false) }
+
+    BackHandler(enabled = menuOpen) { menuOpen = false }
+
+    LaunchedEffect(Unit) { viewModel.refresh() }
+    LaunchedEffect(Unit) {
+        viewModel.effects.collect { effect ->
+            when (effect) {
+                is SessionsEffect.OpenSession -> onOpenSession(effect.sessionId)
+                is SessionsEffect.Message -> Unit
+            }
+        }
+    }
+
+    Scaffold(
+        contentWindowInsets = WindowInsets.safeDrawing,
+        topBar = {
+            TopAppBar(
+                colors = TopAppBarDefaults.topAppBarColors(
+                    containerColor = MaterialTheme.colorScheme.surface,
+                ),
+                title = {
+                    Text(
+                        text = "Hermes",
+                        style = MaterialTheme.typography.titleLarge,
+                        color = MaterialTheme.colorScheme.primary,
+                    )
+                },
+                actions = {
+                    // An icon rather than the word, per the desktop rail's own
+                    // convention of a gear for settings.
+                    IconButton(onClick = onOpenSettings) {
+                        Icon(Icons.Rounded.Settings, contentDescription = "Settings")
+                    }
+                },
+            )
+        },
+    ) { inner ->
+        Box(Modifier.fillMaxSize().padding(inner)) {
+            Column(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .imePadding(),
+            ) {
+                Spacer(Modifier.height(12.dp))
+
+                // ---- recent sessions ----
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 20.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text(
+                        text = "Recent",
+                        style = MaterialTheme.typography.labelLarge,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.weight(1f),
+                    )
+                    if (state.sessions.isNotEmpty()) {
+                        FilledTonalButton(onClick = onSeeAllSessions) {
+                            Icon(
+                                imageVector = Icons.Rounded.MoreHoriz,
+                                contentDescription = null,
+                                modifier = Modifier.size(18.dp),
+                            )
+                            Text("All sessions", modifier = Modifier.padding(start = 8.dp))
+                        }
+                    }
+                }
+
+                Box(
+                    modifier = Modifier
+                        .weight(1f)
+                        .fillMaxWidth(),
+                ) {
+                    when {
+                        state.isLoading && state.sessions.isEmpty() -> Box(
+                            Modifier.fillMaxSize(),
+                            contentAlignment = Alignment.Center,
+                        ) { CircularProgressIndicator() }
+
+                        state.visible.isEmpty() -> EmptyRecent(
+                            hasServerData = state.sessions.isNotEmpty(),
+                        )
+
+                        else -> LazyColumn(
+                            modifier = Modifier.fillMaxSize(),
+                            contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp),
+                            verticalArrangement = Arrangement.spacedBy(6.dp),
+                        ) {
+                            items(
+                                state.visible.take(RECENT_LIMIT),
+                                key = { it.sessionId },
+                            ) { row ->
+                                RecentSessionRow(row = row, onClick = { viewModel.open(row) })
+                            }
+                        }
+                    }
+                }
+
+                // ---- the FAB, above the composer and clear of the keyboard ----
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(start = 16.dp, end = 16.dp, bottom = 8.dp),
+                    horizontalArrangement = Arrangement.End,
+                ) {
+                    FabMenu(
+                        actions = fabActions,
+                        expanded = menuOpen,
+                        onExpandedChange = { menuOpen = it },
+                        // Nine items have to fit between this row and the top bar
+                        // without colliding with the recent list's own scroll.
+                        maxItemsHeight = 320.dp,
+                    )
+                }
+
+                // ---- the composer ----
+                HomeComposer(
+                    onSend = { text -> viewModel.startChatWith(text) },
+                    modifier = Modifier.padding(start = 12.dp, end = 12.dp, bottom = 12.dp),
+                )
+            }
+        }
+    }
+}
+
+/**
+ * The home composer.
+ *
+ * Deliberately simpler than the chat composer: on this screen there is no run to
+ * stop or steer, so there is no five-state button — a send arrow and a spinner.
+ * Reusing the chat composer here would put four states on screen that cannot
+ * occur.
+ */
+@Composable
+private fun HomeComposer(
+    onSend: (String) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    var text by remember { mutableStateOf("") }
+    var isStarting by remember { mutableStateOf(false) }
+
+    Surface(
+        color = MaterialTheme.colorScheme.surfaceContainer,
+        shape = MaterialTheme.shapes.extraLarge,
+        modifier = modifier.fillMaxWidth(),
+    ) {
+        Column {
+            androidx.compose.material3.TextField(
+                value = text,
+                onValueChange = { text = it },
+                placeholder = { Text("Ask anything…") },
+                colors = androidx.compose.material3.TextFieldDefaults.colors(
+                    focusedContainerColor = androidx.compose.ui.graphics.Color.Transparent,
+                    unfocusedContainerColor = androidx.compose.ui.graphics.Color.Transparent,
+                    focusedIndicatorColor = androidx.compose.ui.graphics.Color.Transparent,
+                    unfocusedIndicatorColor = androidx.compose.ui.graphics.Color.Transparent,
+                ),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .heightIn(min = 56.dp, max = 160.dp),
+            )
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(start = 8.dp, end = 8.dp, bottom = 8.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.End,
+            ) {
+                androidx.compose.material3.FilledIconButton(
+                    onClick = {
+                        val trimmed = text.trim()
+                        if (trimmed.isNotEmpty()) {
+                            isStarting = true
+                            onSend(trimmed)
+                        }
+                    },
+                    enabled = text.isNotBlank() && !isStarting,
+                    modifier = Modifier.size(44.dp),
+                ) {
+                    if (isStarting) {
+                        CircularProgressIndicator(
+                            modifier = Modifier.size(18.dp),
+                            strokeWidth = 2.dp,
+                            color = MaterialTheme.colorScheme.onPrimary,
+                        )
+                    } else {
+                        Icon(
+                            imageVector = Icons.AutoMirrored.Rounded.Send,
+                            contentDescription = "Start a new conversation",
+                            modifier = Modifier.size(18.dp),
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun RecentSessionRow(row: SessionRow, onClick: () -> Unit) {
+    Surface(
+        color = MaterialTheme.colorScheme.surfaceContainerLow,
+        shape = MaterialTheme.shapes.large,
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(MaterialTheme.shapes.large)
+            .clickable(onClick = onClick),
+    ) {
+        Row(
+            modifier = Modifier.padding(horizontal = 16.dp, vertical = 14.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(10.dp),
+        ) {
+            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                Text(
+                    text = row.label,
+                    style = MaterialTheme.typography.bodyLarge,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                Text(
+                    text = buildString {
+                        if (row.isStreaming) append("Replying · ")
+                        append(relativeTime(row.sortTime))
+                        row.model?.let { append(" · $it") }
+                    },
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
+            if (row.isStreaming) {
+                Surface(
+                    color = MaterialTheme.colorScheme.primary,
+                    shape = CircleShape,
+                    modifier = Modifier.size(8.dp),
+                ) {}
+            }
+        }
+    }
+}
+
+@Composable
+private fun EmptyRecent(hasServerData: Boolean) {
+    Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+        Column(
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(10.dp),
+            modifier = Modifier.padding(24.dp),
+        ) {
+            Text(
+                text = if (hasServerData) "Nothing recent" else "No conversations yet",
+                style = MaterialTheme.typography.titleMedium,
+            )
+            Text(
+                text = "Ask something below to start one.",
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                textAlign = TextAlign.Center,
+            )
+        }
+    }
+}

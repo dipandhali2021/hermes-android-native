@@ -17,6 +17,9 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.rounded.ArrowBack
+import androidx.compose.material.icons.rounded.Settings
+import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.rounded.Archive
 import androidx.compose.material.icons.rounded.Delete
 import androidx.compose.material.icons.rounded.Edit
@@ -25,9 +28,10 @@ import androidx.compose.material.icons.rounded.PushPin
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
-import androidx.compose.material3.DropdownMenuItem
-import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExtendedFloatingActionButton
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.ExtendedFloatingActionButtonItem
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -51,8 +55,6 @@ import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.dipandhali.hermesnative.core.model.SessionRow
-import com.dipandhali.hermesnative.ui.components.FabMenu
-import com.dipandhali.hermesnative.ui.components.FabMenuAction
 
 /**
  * The default screen: every session.
@@ -65,11 +67,10 @@ import com.dipandhali.hermesnative.ui.components.FabMenuAction
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun SessionsHomeScreen(
+fun SessionsListScreen(
     onOpenSession: (String) -> Unit,
+    onBack: () -> Unit,
     onOpenSettings: () -> Unit,
-    fabActions: List<FabMenuAction>,
-    hardwareBackClosesMenu: Boolean = false,
     viewModel: SessionsViewModel = hiltViewModel(),
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
@@ -77,15 +78,12 @@ fun SessionsHomeScreen(
     var deleteTarget by remember { mutableStateOf<SessionRow?>(null) }
     var menuOpen by remember { mutableStateOf(false) }
 
-    // Hardware back closes the FAB menu before it leaves the screen.
-    if (hardwareBackClosesMenu && menuOpen) {
-        androidx.activity.compose.BackHandler { menuOpen = false }
-    }
-
     LaunchedEffect(Unit) {
         viewModel.effects.collect { effect ->
             when (effect) {
                 is SessionsEffect.OpenSession -> onOpenSession(effect.sessionId)
+                is SessionsEffect.OpenSessionAndSend ->
+                    onOpenSession(effect.sessionId)
                 is SessionsEffect.Message -> Unit
             }
         }
@@ -101,8 +99,18 @@ fun SessionsHomeScreen(
                         style = MaterialTheme.typography.titleLarge,
                     )
                 },
+                navigationIcon = {
+                    IconButton(onClick = onBack) {
+                        Icon(
+                            imageVector = Icons.AutoMirrored.Rounded.ArrowBack,
+                            contentDescription = "Back to home",
+                        )
+                    }
+                },
                 actions = {
-                    TextButton(onClick = onOpenSettings) { Text("Settings") }
+                    IconButton(onClick = onOpenSettings) {
+                        Icon(Icons.Rounded.Settings, contentDescription = "Settings")
+                    }
                 },
             )
         },
@@ -158,8 +166,7 @@ fun SessionsHomeScreen(
                             start = 12.dp,
                             end = 12.dp,
                             top = 8.dp,
-                            // Clear the FAB stack so the last row is reachable.
-                            bottom = 108.dp,
+                            bottom = 24.dp,
                         ),
                         verticalArrangement = Arrangement.spacedBy(6.dp),
                     ) {
@@ -176,14 +183,6 @@ fun SessionsHomeScreen(
                 }
             }
 
-            FabMenu(
-                actions = fabActions,
-                expanded = menuOpen,
-                onExpandedChange = { menuOpen = it },
-                modifier = Modifier
-                    .align(Alignment.BottomEnd)
-                    .padding(end = 16.dp, bottom = 20.dp),
-            )
         }
     }
 

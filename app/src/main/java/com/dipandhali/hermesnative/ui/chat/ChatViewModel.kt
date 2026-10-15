@@ -114,8 +114,20 @@ class ChatViewModel @Inject constructor(
         }
     }
 
-    private fun send() {
-        val text = _uiState.value.input.trim()
+    /**
+     * Sends the first message of a conversation created by the home composer.
+     *
+     * Guarded against re-sending: the caller is a `LaunchedEffect` keyed on the
+     * message, and a recomposition must not fire it twice.
+     */
+    fun sendInitialMessage(message: String) {
+        if (_uiState.value.hasSentInitial || _uiState.value.isBusy) return
+        _uiState.update { it.copy(hasSentInitial = true) }
+        send(message)
+    }
+
+    private fun send(override: String? = null) {
+        val text = (override ?: _uiState.value.input).trim()
         if (text.isEmpty()) return
 
         // The command prefix is a control word, not part of the message.
@@ -406,6 +418,8 @@ data class ChatUiState(
     val error: String? = null,
     val lastFailedMessage: String? = null,
     val busySendMode: BusySendMode = BusySendMode.STEER,
+    /** Set once a message seeded from the home composer has been dispatched. */
+    val hasSentInitial: Boolean = false,
 ) {
     // 2. Derived — never constructor parameters.
     val hasContent: Boolean get() = input.isNotBlank()

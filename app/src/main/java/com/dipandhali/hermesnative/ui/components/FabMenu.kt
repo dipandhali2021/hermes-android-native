@@ -16,6 +16,8 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.widthIn
@@ -82,7 +84,7 @@ fun FabMenu(
     expanded: Boolean,
     onExpandedChange: (Boolean) -> Unit,
     modifier: Modifier = Modifier,
-    onOpenSettings: (() -> Unit)? = null,
+    maxItemsHeight: androidx.compose.ui.unit.Dp = 360.dp,
 ) {
     val rotation by animateFloatAsState(
         targetValue = if (expanded) 135f else 0f,
@@ -98,13 +100,25 @@ fun FabMenu(
         // Items animate outwards from the button: the last one is furthest away, so
         // it enters first and leaves last, which reads as the stack unfolding
         // rather than being painted on.
-        actions.reversed().forEachIndexed { reversedIndex, action ->
-            val index = actions.lastIndex - reversedIndex
-            FabMenuItem(
-                action = action,
-                visible = expanded,
-                delayMillis = if (expanded) (actions.lastIndex - index) * 24L else index * 18L,
-            )
+        //
+        // The stack is height-capped and scrolls because nine destinations are
+        // taller than a phone screen: without the cap the first items would be
+        // pushed off the top where they cannot be reached at all.
+        androidx.compose.foundation.layout.Column(
+            modifier = Modifier
+                .heightIn(max = maxItemsHeight)
+                .verticalScroll(rememberScrollState()),
+            horizontalAlignment = Alignment.End,
+            verticalArrangement = Arrangement.spacedBy(10.dp),
+        ) {
+            actions.reversed().forEachIndexed { reversedIndex, action ->
+                val index = actions.lastIndex - reversedIndex
+                FabMenuItem(
+                    action = action,
+                    visible = expanded,
+                    delayMillis = if (expanded) (actions.lastIndex - index) * 24L else index * 18L,
+                )
+            }
         }
 
         FloatingActionButton(
