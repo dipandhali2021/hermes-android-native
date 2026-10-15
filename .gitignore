@@ -1,0 +1,16 @@
+*.iml
+.gradle/
+/local.properties
+/.idea/
+.DS_Store
+/build
+/app/build
+/captures
+.externalNativeBuild
+.cxx
+local.properties
+# Distributable artifacts are produced by CI, never committed.
+*.apk
+*.aab
+# NOTE: keystore/hermes-native.jks IS intentionally committed — see the comment
+# in app/build.gradle.kts. It signs sideloadable builds only.

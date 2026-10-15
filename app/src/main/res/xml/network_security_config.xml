@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Self-hosted Hermes servers are commonly reached over plain HTTP on a private
+  network: the documented direct-tailnet setup is http://<tailscale-ip>:8787, and
+  LAN installs are http://192.168.x.x:8787. Android blocks cleartext by default,
+  so without this every first connection fails with an opaque error.
+
+  Android's network security config matches domains, not CIDR ranges, so an
+  arbitrary LAN/Tailscale address cannot be expressed as a scoped exception.
+  Cleartext is therefore permitted app-wide, and the protection is moved to the
+  layer that can actually enforce it:
+
+    - HTTPS is recommended in the connect flow (Tailscale Serve issues a real
+      certificate), and the UI warns when a non-private host is used over http.
+    - Credentials are stored in EncryptedSharedPreferences, never in plain prefs.
+    - The auth cookie is scoped to the configured host and cleared on any change
+      of server URL, so it can never be replayed against a different origin.
+
+  Certificate pinning is deliberately NOT configured: the server is user-owned
+  and may legitimately rotate a self-signed certificate, and pinning would turn
+  that into a hard failure the user cannot clear from the app.
+-->
+<network-security-config>
+    <base-config cleartextTrafficPermitted="true">
+        <trust-anchors>
+            <certificates src="system" />
+            <certificates src="user" />
+        </trust-anchors>
+    </base-config>
+</network-security-config>

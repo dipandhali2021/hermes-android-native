@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Hermes' default skin accent is gold #B8860B (see THEMES.md), which is
+         the tonal seed the app themes from too. -->
+    <color name="ic_launcher_background">#B8860B</color>
+</resources>

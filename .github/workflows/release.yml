@@ -1,0 +1,99 @@
+name: Release APK
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Version to tag and release, e.g. v0.1.0"
+        required: true
+        type: string
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  release:
+    name: Build and publish APK
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+        with:
+          # See android.yml: the default "tools" package no longer exists in the
+          # SDK repository and its absence fails the whole job.
+          packages: ''
+
+      - name: Install platform and build tools
+        run: sdkmanager "platforms;android-36" "build-tools;36.0.0"
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+
+      - name: Build release APK
+        # The release variant is signed with the committed debug keystore. That
+        # keeps the applicationId and signature stable across builds, so a new
+        # APK installs *over* the previous one instead of failing with
+        # INSTALL_FAILED_UPDATE_INCOMPATIBLE. It is not a Play Store artifact.
+        run: ./gradlew :app:assembleRelease --no-daemon --console=plain
+
+      - name: Resolve tag and APK
+        id: meta
+        run: |
+          set -euo pipefail
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            tag="${{ inputs.version }}"
+          else
+            tag="${GITHUB_REF_NAME}"
+          fi
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+          apk=$(find app/build/outputs/apk/release -name '*.apk' | head -n1)
+          echo "apk=$apk" >> "$GITHUB_OUTPUT"
+          out="hermes-native-${tag}.apk"
+          cp "$apk" "$out"
+          echo "asset=$out" >> "$GITHUB_OUTPUT"
+          sha256sum "$out" | tee checksum.txt
+          {
+            echo "## Hermes Native ${tag}"
+            echo
+            echo "Install on Android 8.0 (API 26) or newer."
+            echo
+            echo '```'
+            cat checksum.txt
+            echo '```'
+          } > notes.md
+
+      - name: Publish release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ steps.meta.outputs.tag }}
+          ASSET: ${{ steps.meta.outputs.asset }}
+        run: |
+          set -euo pipefail
+          # Create if absent, then upload with --clobber so a re-run of the same
+          # tag replaces the asset instead of failing.
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release upload "$TAG" "$ASSET" --clobber
+          else
+            gh release create "$TAG" "$ASSET" \
+              --title "Hermes Native $TAG" \
+              --notes-file notes.md
+          fi
+          # A stable alias so the newest build is always at one predictable URL.
+          gh release upload "$TAG" "$ASSET#hermes-native-latest.apk" --clobber

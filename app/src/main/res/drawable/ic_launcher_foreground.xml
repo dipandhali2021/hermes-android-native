@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Vector, not a PNG: keeps the APK small and scales to every density. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp" android:height="108dp"
+    android:viewportWidth="108" android:viewportHeight="108">
+    <path
+        android:fillColor="#FEFCF7"
+        android:pathData="M54,30 L54,42 M40,52 L40,64 M68,52 L68,64 M54,54 C48,54 44,58 44,64 L44,78 C44,80.2 45.8,82 48,82 L60,82 C62.2,82 64,80.2 64,78 L64,54 Z" />
+    <path
+        android:fillColor="#FEFCF7"
+        android:pathData="M48,42 L60,42 L60,50 L48,50 Z" />
+</vector>

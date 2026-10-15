@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- hermes-webui light background is #FEFCF7; matching it here means the
+         launch frame and the first Compose frame agree instead of flashing. -->
+    <color name="launch_background">#FEFCF7</color>
+</resources>
