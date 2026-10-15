@@ -90,6 +90,9 @@ fun HomeScreen(
         viewModel.effects.collect { effect ->
             when (effect) {
                 is SessionsEffect.OpenSession -> onOpenSession(effect.sessionId)
+                // Sent from the home composer, which already navigates once the
+                // session exists; the message rides in the chat route.
+                is SessionsEffect.OpenSessionAndSend -> onOpenSession(effect.sessionId)
                 is SessionsEffect.Message -> Unit
             }
         }
