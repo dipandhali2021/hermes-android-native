@@ -52,6 +52,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.dipandhali.hermesnative.core.model.SessionRow
 import com.dipandhali.hermesnative.ui.components.FabMenu
 import com.dipandhali.hermesnative.ui.components.FabMenuAction
+import com.dipandhali.hermesnative.ui.sessions.SessionsEffect
 import com.dipandhali.hermesnative.ui.sessions.SessionsViewModel
 import com.dipandhali.hermesnative.ui.sessions.relativeTime
 
