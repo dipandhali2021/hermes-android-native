@@ -20,6 +20,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.receiveAsFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
@@ -56,7 +57,7 @@ class ChatViewModel @Inject constructor(
 
     init {
         viewModelScope.launch {
-            val mode = settings.reasoningEffort.value
+            val mode = settings.reasoningEffort.first()
             _uiState.update { it.copy(reasoningEffort = mode) }
         }
     }

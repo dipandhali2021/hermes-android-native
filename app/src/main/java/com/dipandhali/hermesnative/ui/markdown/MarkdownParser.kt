@@ -94,6 +94,10 @@ object MarkdownParser {
         is Block.Heading -> copy(closed = false)
         is Block.ListBlock -> copy(closed = false)
         is Block.Quote -> copy(closed = false)
+        // A rule is complete the moment it appears; nothing can follow it onto
+        // the same block, so it stays sealed.
+        Block.Divider -> this
+        is Block.Quote -> copy(closed = false)
     }
 
     private fun classify(raw: String): Block {
@@ -106,7 +110,7 @@ object MarkdownParser {
                 return Block.Heading(match.groupValues[1].length, match.groupValues[2], closed = true)
             }
             if (lines[0].trimStart().startsWith("> ")) {
-                return Block.Quote(lines.joinToString("\n") { it.trimStart().removePrefix("> ") })
+                return Block.Quote(lines.joinToString("\n") { it.trimStart().removePrefix("> ") }, closed = true)
             }
         }
 
@@ -136,7 +140,7 @@ object MarkdownParser {
         }
 
         if (lines.all { it.trimStart().startsWith("> ") }) {
-            return Block.Quote(lines.joinToString("\n") { it.trimStart().removePrefix("> ") })
+            return Block.Quote(lines.joinToString("\n") { it.trimStart().removePrefix("> ") }, closed = true)
         }
 
         return Block.Paragraph(raw, closed = true)

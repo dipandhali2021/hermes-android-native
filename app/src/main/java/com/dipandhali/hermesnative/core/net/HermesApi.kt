@@ -16,6 +16,7 @@ import com.dipandhali.hermesnative.core.model.SteerRequest
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.DeserializationStrategy
+import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
@@ -267,7 +268,7 @@ class HermesApi(private val client: OkHttpClient) {
 
     private fun String.urlEncoded() = URLEncoder.encode(this, "UTF-8")
 
-    private fun String.jsonString(): String = json.encodeToString(String.serializer(), this)
+    private fun String.jsonString(): String = json.encodeToString(this)
 }
 
 /** Carries a [DataError] through `Result`, which cannot hold a typed failure. */
