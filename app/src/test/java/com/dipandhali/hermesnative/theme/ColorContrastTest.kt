@@ -2,6 +2,7 @@ package com.dipandhali.hermesnative.theme
 
 import androidx.compose.material3.ColorScheme
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.toArgb
 import com.dipandhali.hermesnative.ui.theme.hermesFallbackScheme
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -75,10 +76,13 @@ class ColorContrastTest {
     fun darkSurfaceMatchesWebUiBackground() {
         // The surface family is pinned to hermes-webui's own dark background so the
         // app reads as the same product; a drift here is a deliberate change.
+        // Compare ARGB, not Color.value: that is a packed long carrying the colour
+        // space, so it never equals a bare 0xAARRGGBB literal.
         val dark = hermesFallbackScheme(dark = true)
         assertTrue(
-            "dark surface drifted from hermes-webui #0D0D1A",
-            dark.surface.value == 0xFF0D0D1AL,
+            "dark surface drifted from hermes-webui #0D0D1A, was " +
+                "#%08X".format(dark.surface.toArgb()),
+            dark.surface.toArgb() == 0xFF0D0D1A.toInt(),
         )
     }
 }
