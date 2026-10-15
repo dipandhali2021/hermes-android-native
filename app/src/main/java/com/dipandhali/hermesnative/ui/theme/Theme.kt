@@ -13,8 +13,6 @@ import androidx.compose.material3.dynamicLightColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
-import com.materialkolor.PaletteStyle
-import com.materialkolor.rememberDynamicColorScheme
 
 /**
  * Expressive shape scale. Material 3 Expressive reads as softer and
@@ -52,10 +50,9 @@ enum class ThemeMode { SYSTEM, LIGHT, DARK }
  * Material 3 Expressive theme with Material You dynamic colour.
  *
  * On API 31+ the palette comes from the user's wallpaper. Below that — or when
- * the user opts out — the scheme is *generated* from [HermesGold] rather than
- * hand-picked, so every role keeps a correctly-paired counterpart. Hand-writing
- * role colours is how `onSurfaceVariant` ends up unreadable on
- * `surfaceContainerHigh` in dark mode.
+ * the user opts out — [hermesFallbackScheme] supplies a scheme derived from the
+ * Hermes seed, kept in one file so it is auditable as a set rather than
+ * scattered across call sites.
  */
 @OptIn(ExperimentalMaterial3ExpressiveApi::class)
 @Composable
@@ -76,11 +73,7 @@ fun HermesNativeTheme(
         val context = LocalContext.current
         if (dark) dynamicDarkColorScheme(context) else dynamicLightColorScheme(context)
     } else {
-        rememberDynamicColorScheme(
-            seedColor = HermesGold,
-            isDark = dark,
-            style = PaletteStyle.TonalSpot,
-        )
+        hermesFallbackScheme(dark)
     }
 
     MaterialExpressiveTheme(

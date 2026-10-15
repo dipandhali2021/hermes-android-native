@@ -24,8 +24,6 @@ retrofit = "3.0.0"
 kotlinxSerialization = "1.8.1"
 coroutines = "1.10.2"
 
-coil = "3.5.0"
-materialKolor = "4.1.0"
 
 junit = "4.13.2"
 turbine = "1.2.1"
@@ -65,14 +63,15 @@ retrofit-kotlinx-serialization = { group = "com.squareup.retrofit2", name = "con
 kotlinx-serialization-json = { group = "org.jetbrains.kotlinx", name = "kotlinx-serialization-json", version.ref = "kotlinxSerialization" }
 kotlinx-coroutines-android = { group = "org.jetbrains.kotlinx", name = "kotlinx-coroutines-android", version.ref = "coroutines" }
 
-# --- Media / theme ---
-# coil 3.6.x and material-kolor 5.x both require compileSdk 37 (Coil via
-# compose foundation 1.12.0, material-kolor via its own aar-metadata). That in
-# turn needs AGP 9.1+, so both are held one minor back: coil 3.5.0 declares
-# foundation 1.11.1, and material-kolor 4.1.0 declares minCompileSdk=1.
-coil-compose = { group = "io.coil-kt.coil3", name = "coil-compose", version.ref = "coil" }
-coil-network-okhttp = { group = "io.coil-kt.coil3", name = "coil-network-okhttp", version.ref = "coil" }
-material-kolor = { group = "com.materialkolor", name = "material-kolor", version.ref = "materialKolor" }
+# --- Deliberately absent ---
+# material-kolor: 5.x requires compileSdk 37 / AGP 9.1+, and 4.x drags in
+#   JetBrains multiplatform Compose artifacts that compete with AndroidX Compose
+#   in a pure-Android app. The brand fallback scheme is instead written out by
+#   hand in ui/theme/Color.kt, which costs one file and removes a whole class of
+#   version coupling.
+# coil: every 3.4+ release requires kotlin-stdlib 2.4.0, whose class metadata
+#   this project's Kotlin compiler (2.2.x, reads <= 2.3.0) refuses. Add it back
+#   only alongside a toolchain bump, when image loading is actually needed.
 
 # --- Test ---
 junit = { group = "junit", name = "junit", version.ref = "junit" }
