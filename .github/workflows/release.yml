@@ -67,6 +67,9 @@ jobs:
           echo "apk=$apk" >> "$GITHUB_OUTPUT"
           out="hermes-native-${tag}.apk"
           cp "$apk" "$out"
+          # A second copy under a version-free name, so the newest build is always
+          # at one predictable URL for a phone bookmark.
+          cp "$apk" "hermes-native-latest.apk"
           echo "asset=$out" >> "$GITHUB_OUTPUT"
           sha256sum "$out" | tee checksum.txt
           {
@@ -89,11 +92,9 @@ jobs:
           # Create if absent, then upload with --clobber so a re-run of the same
           # tag replaces the asset instead of failing.
           if gh release view "$TAG" >/dev/null 2>&1; then
-            gh release upload "$TAG" "$ASSET" --clobber
+            gh release upload "$TAG" "$ASSET" hermes-native-latest.apk --clobber
           else
-            gh release create "$TAG" "$ASSET" \
+            gh release create "$TAG" "$ASSET" hermes-native-latest.apk \
               --title "Hermes Native $TAG" \
               --notes-file notes.md
           fi
-          # A stable alias so the newest build is always at one predictable URL.
-          gh release upload "$TAG" "$ASSET#hermes-native-latest.apk" --clobber
