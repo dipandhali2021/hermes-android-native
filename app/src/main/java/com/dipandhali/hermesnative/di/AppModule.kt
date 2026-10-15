@@ -21,11 +21,8 @@ object AppModule {
 
     @Provides
     @Singleton
-    fun provideContext(@ApplicationContext context: Context): Context = context
-
-    @Provides
-    @Singleton
-    fun provideSettingsStore(context: Context): SettingsStore = SettingsStore(context)
+    fun provideSettingsStore(@ApplicationContext context: Context): SettingsStore =
+        SettingsStore(context)
 
     @Provides
     @Singleton

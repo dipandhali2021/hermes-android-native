@@ -24,7 +24,6 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontFamily
@@ -251,7 +250,3 @@ fun CodeBlock(
  * answer and is not worth it for a 40 KB one, and the settled render restores it.
  */
 private const val PLAIN_TEXT_CEILING = 20_000
-
-/** Inline code styling helper for callers that need it directly. */
-@Composable
-fun inlineCodeBackground(): Color = MaterialTheme.colorScheme.surfaceContainerHighest

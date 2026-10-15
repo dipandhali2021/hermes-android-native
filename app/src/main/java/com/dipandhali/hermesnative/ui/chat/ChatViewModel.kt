@@ -115,7 +115,6 @@ class ChatViewModel @Inject constructor(
     private fun send() {
         val text = _uiState.value.input.trim()
         if (text.isEmpty()) return
-        val sessionId = _uiState.value.sessionId ?: return
 
         // The command prefix is a control word, not part of the message.
         val body = text.removeCommandPrefix()
@@ -148,7 +147,6 @@ class ChatViewModel @Inject constructor(
                     }
                 }
         }
-        _ = sessionId
     }
 
     private fun steer() {
