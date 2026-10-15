@@ -3,9 +3,7 @@ package com.dipandhali.hermesnative.ui.theme
 import android.os.Build
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
-import androidx.compose.material3.MaterialExpressiveTheme
-import androidx.compose.material3.MotionScheme
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Shapes
 import androidx.compose.material3.Typography
 import androidx.compose.material3.dynamicDarkColorScheme
@@ -17,9 +15,9 @@ import androidx.compose.ui.unit.dp
 /**
  * Expressive shape scale. Material 3 Expressive reads as softer and
  * larger-cornered than baseline M3, so `large` and `extraLarge` sit above the M3
- * defaults (16/28). This is most of the expressive silhouette reachable from
- * material3 1.4.0 — the signature `MaterialShapes` morph set is not public until
- * 1.5.x, so the app must not be designed around it.
+ * defaults (16/28). Shape is the one expressive axis that is fully stable in
+ * material3 1.4.0 — the signature `MaterialShapes` morph set arrives later, so
+ * the app must not be designed around it. Motion is handled in [HermesMotion].
  */
 private val HermesShapes = Shapes(
     extraSmall = RoundedCornerShape(6.dp),
@@ -47,14 +45,14 @@ private val HermesTypography = BaseTypography.copy(
 enum class ThemeMode { SYSTEM, LIGHT, DARK }
 
 /**
- * Material 3 Expressive theme with Material You dynamic colour.
+ * Theme entry point. Uses `MaterialTheme` with a `MotionScheme`-free signature
+ * because the expressive variant is still `internal` — see [HermesMotion] for
+ * the motion tokens that stand in for it.
  *
- * On API 31+ the palette comes from the user's wallpaper. Below that — or when
- * the user opts out — [hermesFallbackScheme] supplies a scheme derived from the
- * Hermes seed, kept in one file so it is auditable as a set rather than
- * scattered across call sites.
+ * On API 31+ colour comes from the user's wallpaper (Material You). Below that —
+ * or when the user opts out — [hermesFallbackScheme] supplies a scheme derived
+ * from the Hermes seed.
  */
-@OptIn(ExperimentalMaterial3ExpressiveApi::class)
 @Composable
 fun HermesNativeTheme(
     themeMode: ThemeMode = ThemeMode.SYSTEM,
@@ -76,9 +74,8 @@ fun HermesNativeTheme(
         hermesFallbackScheme(dark)
     }
 
-    MaterialExpressiveTheme(
+    MaterialTheme(
         colorScheme = scheme,
-        motionScheme = MotionScheme.expressive(),
         shapes = HermesShapes,
         typography = HermesTypography,
         content = content,
