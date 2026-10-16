@@ -53,9 +53,12 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.dipandhali.hermesnative.domain.modelpicker.ModelSelection
 import com.dipandhali.hermesnative.ui.chat.components.AssistantTurn
 import com.dipandhali.hermesnative.ui.chat.components.Composer
 import com.dipandhali.hermesnative.ui.chat.components.ErrorRow
+import com.dipandhali.hermesnative.ui.chat.components.ModelChip
+import com.dipandhali.hermesnative.ui.chat.components.ModelPickerSheet
 import com.dipandhali.hermesnative.ui.chat.components.NoticeRow
 import com.dipandhali.hermesnative.ui.chat.components.UserMessage
 import com.dipandhali.hermesnative.ui.theme.HermesMotion
@@ -187,6 +190,13 @@ fun ChatScreen(
                 action = state.composerAction,
                 onAction = viewModel::onPrimaryAction,
                 onOpenSettings = onOpenSettings,
+                leadingAccessory = {
+                    ModelChip(
+                        selection = state.model?.let { ModelSelection(it, state.modelProvider) },
+                        catalog = state.picker.catalog,
+                        onClick = viewModel::openPicker,
+                    )
+                },
                 modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
             )
         },
@@ -259,6 +269,20 @@ fun ChatScreen(
                 }
             }
         }
+    }
+
+    // A sibling of the Scaffold rather than content inside it: the sheet owns
+    // its own window, and nothing here should depend on the transcript layout.
+    if (state.picker.open) {
+        ModelPickerSheet(
+            catalog = state.picker.catalog,
+            isLoading = state.picker.isLoading,
+            error = state.picker.error,
+            selection = state.model?.let { ModelSelection(it, state.modelProvider) },
+            onPick = viewModel::pickModel,
+            onRetry = viewModel::loadModels,
+            onDismiss = viewModel::closePicker,
+        )
     }
 }
 

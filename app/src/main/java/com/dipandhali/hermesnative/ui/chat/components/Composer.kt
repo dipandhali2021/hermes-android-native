@@ -68,6 +68,7 @@ fun Composer(
     modifier: Modifier = Modifier,
     onAttach: (() -> Unit)? = null,
     onOpenSettings: (() -> Unit)? = null,
+    leadingAccessory: (@Composable () -> Unit)? = null,
     enabled: Boolean = true,
 ) {
     Surface(
@@ -109,6 +110,8 @@ fun Composer(
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(6.dp),
             ) {
+                leadingAccessory?.invoke()
+
                 if (onAttach != null) {
                     IconButton(onClick = onAttach, enabled = enabled) {
                         Icon(
