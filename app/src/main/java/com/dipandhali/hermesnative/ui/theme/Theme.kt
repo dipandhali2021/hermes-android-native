@@ -9,8 +9,11 @@ import androidx.compose.material3.Typography
 import androidx.compose.material3.dynamicDarkColorScheme
 import androidx.compose.material3.dynamicLightColorScheme
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
+import com.dipandhali.hermesnative.core.icons.ProviderIconVariant
 
 /**
  * Expressive shape scale. Material 3 Expressive reads as softer and
@@ -45,6 +48,13 @@ private val HermesTypography = BaseTypography.copy(
 enum class ThemeMode { SYSTEM, LIGHT, DARK }
 
 /**
+ * Ambient provider-icon variant. The LobeHub set ships light and dark PNGs,
+ * and it is the *resolved* theme — not the raw system setting — that decides
+ * which is correct when the user overrides the mode.
+ */
+val LocalProviderIconVariant = staticCompositionLocalOf { ProviderIconVariant.LIGHT }
+
+/**
  * Theme entry point. Uses `MaterialTheme` with a `MotionScheme`-free signature
  * because the expressive variant is still `internal` — see [HermesMotion] for
  * the motion tokens that stand in for it.
@@ -74,10 +84,15 @@ fun HermesNativeTheme(
         hermesFallbackScheme(dark)
     }
 
-    MaterialTheme(
-        colorScheme = scheme,
-        shapes = HermesShapes,
-        typography = HermesTypography,
-        content = content,
-    )
+    CompositionLocalProvider(
+        LocalProviderIconVariant provides
+            if (dark) ProviderIconVariant.DARK else ProviderIconVariant.LIGHT,
+    ) {
+        MaterialTheme(
+            colorScheme = scheme,
+            shapes = HermesShapes,
+            typography = HermesTypography,
+            content = content,
+        )
+    }
 }
