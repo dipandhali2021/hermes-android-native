@@ -58,6 +58,10 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.dipandhali.hermesnative.R
 import com.dipandhali.hermesnative.core.model.SessionRow
+import com.dipandhali.hermesnative.domain.modelpicker.ModelSelection
+import com.dipandhali.hermesnative.domain.modelpicker.displaySelection
+import com.dipandhali.hermesnative.ui.chat.components.ModelChip
+import com.dipandhali.hermesnative.ui.chat.components.ModelPickerSheet
 import com.dipandhali.hermesnative.ui.components.FabMenu
 import com.dipandhali.hermesnative.ui.components.FabMenuAction
 import com.dipandhali.hermesnative.ui.sessions.SessionsEffect
@@ -92,11 +96,17 @@ fun HomeScreen(
     viewModel: SessionsViewModel = hiltViewModel(),
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
+    val modelSelection = displaySelection(
+        state.model?.let { ModelSelection(it, state.modelProvider) },
+        state.picker.catalog,
+    )
     var menuOpen by remember { mutableStateOf(false) }
 
     BackHandler(enabled = menuOpen) { menuOpen = false }
 
     LaunchedEffect(Unit) { viewModel.refresh() }
+    // Idempotent: loads once per screen lifetime, retried by the sheet's Retry.
+    LaunchedEffect(Unit) { viewModel.loadModels() }
     LaunchedEffect(Unit) {
         viewModel.effects.collect { effect ->
             when (effect) {
@@ -137,6 +147,13 @@ fun HomeScreen(
             HomeComposer(
                 onSend = { text -> viewModel.startChatWith(text) },
                 onPress = { menuOpen = false },
+                leadingAccessory = {
+                    ModelChip(
+                        selection = modelSelection,
+                        catalog = state.picker.catalog,
+                        onClick = viewModel::openPicker,
+                    )
+                },
                 // The composer is the only element that insets itself against the
                 // keyboard and the gesture bar. `inner` below is only a padding
                 // value — it is not consumed — so a second imePadding anywhere in
@@ -231,6 +248,21 @@ fun HomeScreen(
             )
         }
     }
+
+    // A sibling of the Scaffold, mirroring the chat screen: the sheet owns its
+    // own window, and the floating FAB menu must not sit under it.
+    if (state.picker.open) {
+        ModelPickerSheet(
+            catalog = state.picker.catalog,
+            isLoading = state.picker.isLoading,
+            error = state.picker.error,
+            selection = modelSelection,
+            onPick = viewModel::pickModel,
+            onRetry = viewModel::loadModels,
+            onDismiss = viewModel::closePicker,
+            scopeNote = "Applies to new conversations.",
+        )
+    }
 }
 
 /**
@@ -243,12 +275,16 @@ fun HomeScreen(
  *
  * [onPress] fires on any press inside the composer, before the field or the send
  * button sees the event — the home screen uses it to close an open FAB menu.
+ *
+ * [leadingAccessory] is the model chip — the same control the chat composer
+ * shows, so the picker is reachable before a conversation exists.
  */
 @Composable
 private fun HomeComposer(
     onSend: (String) -> Unit,
     onPress: () -> Unit,
     modifier: Modifier = Modifier,
+    leadingAccessory: (@Composable () -> Unit)? = null,
 ) {
     var text by remember { mutableStateOf("") }
     var isStarting by remember { mutableStateOf(false) }
@@ -292,6 +328,10 @@ private fun HomeComposer(
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.End,
             ) {
+                leadingAccessory?.invoke()
+
+                Box(Modifier.weight(1f))
+
                 androidx.compose.material3.FilledIconButton(
                     onClick = {
                         val trimmed = text.trim()

@@ -14,8 +14,8 @@ import com.dipandhali.hermesnative.domain.composer.BusySendMode
 import com.dipandhali.hermesnative.domain.composer.ComposerAction
 import com.dipandhali.hermesnative.domain.composer.parseComposerCommand
 import com.dipandhali.hermesnative.domain.composer.resolveComposerAction
+import com.dipandhali.hermesnative.domain.modelpicker.ModelPickerUiState
 import com.dipandhali.hermesnative.domain.modelpicker.ModelSelection
-import com.dipandhali.hermesnative.domain.modelpicker.PickerCatalog
 import com.dipandhali.hermesnative.domain.modelpicker.PickerCatalogBuilder
 import com.dipandhali.hermesnative.domain.modelpicker.explicitPickForSend
 import com.dipandhali.hermesnative.domain.modelpicker.resolveOpen
@@ -69,9 +69,6 @@ class ChatViewModel @Inject constructor(
      */
     private var pendingPick: ModelSelection? = null
 
-    /** One automatic catalog fetch per ViewModel; a failure retries from [openPicker]. */
-    private var catalogRequested = false
-
     init {
         viewModelScope.launch {
             val mode = settings.reasoningEffort.first()
@@ -105,10 +102,8 @@ class ChatViewModel @Inject constructor(
                         applyOpenResolution(sessionId, detail.model, detail.modelProvider)
                     }
                     detail.activeStreamId?.let { attachToRunningTurn(it) }
-                    if (!catalogRequested) {
-                        catalogRequested = true
-                        loadModels()
-                    }
+                    // Idempotent, so every open can ask without a one-shot flag.
+                    loadModels()
                 }
                 .onFailure { error ->
                     _uiState.update {
@@ -151,7 +146,8 @@ class ChatViewModel @Inject constructor(
 
     /** Fetches and builds the picker catalog. Failures are retried from [openPicker]. */
     fun loadModels() {
-        if (_uiState.value.picker.isLoading) return
+        val picker = _uiState.value.picker
+        if (picker.isLoading || picker.catalog != null) return
         _uiState.update { it.copy(picker = it.picker.copy(isLoading = true, error = null)) }
         viewModelScope.launch {
             sessions.models()
@@ -177,8 +173,8 @@ class ChatViewModel @Inject constructor(
 
     fun openPicker() {
         _uiState.update { it.copy(picker = it.picker.copy(open = true)) }
-        val picker = _uiState.value.picker
-        if (picker.catalog == null && !picker.isLoading) loadModels()
+        // Retries a failed load; a no-op once the catalog is here.
+        loadModels()
     }
 
     fun closePicker() {
@@ -571,11 +567,3 @@ data class ChatUiState(
 
     val isEmpty: Boolean get() = items.isEmpty() && !isLoading
 }
-
-/** Transient state of the model picker; the catalog is built once per ViewModel. */
-data class ModelPickerUiState(
-    val open: Boolean = false,
-    val catalog: PickerCatalog? = null,
-    val isLoading: Boolean = false,
-    val error: String? = null,
-)

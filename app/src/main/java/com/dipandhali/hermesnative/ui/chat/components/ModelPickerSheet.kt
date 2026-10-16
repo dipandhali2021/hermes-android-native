@@ -69,6 +69,7 @@ fun ModelPickerSheet(
     onPick: (String, String?) -> Unit,
     onRetry: () -> Unit,
     onDismiss: () -> Unit,
+    scopeNote: String = "Applies to this conversation from your next message.",
 ) {
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     var query by remember { mutableStateOf("") }
@@ -87,7 +88,7 @@ fun ModelPickerSheet(
         ) {
             Text("Model", style = MaterialTheme.typography.titleMedium)
             Text(
-                text = "Applies to this conversation from your next message.",
+                text = scopeNote,
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.padding(top = 2.dp),

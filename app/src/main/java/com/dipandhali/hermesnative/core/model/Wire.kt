@@ -145,6 +145,19 @@ data class SteerRequest(val session_id: String, val message: String)
 @Serializable
 data class NewSessionResponse(@SerialName("session_id") val sessionId: String? = null)
 
+/**
+ * Body of `POST /api/session/new`.
+ *
+ * A pick made on the home composer rides with creation (web parity:
+ * `static/sessions.js` sends `model`/`model_provider` here), so the session is
+ * born on the picked model instead of being repaired after the fact.
+ */
+@Serializable
+data class NewSessionRequest(
+    val model: String? = null,
+    @SerialName("model_provider") val modelProvider: String? = null,
+)
+
 /** Body of `POST /api/session/update`; effective from the next message. */
 @Serializable
 data class SessionUpdateRequest(

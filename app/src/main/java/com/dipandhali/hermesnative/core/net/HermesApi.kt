@@ -14,6 +14,7 @@ import com.dipandhali.hermesnative.core.model.ModelsResponse
 import com.dipandhali.hermesnative.core.model.ProfilesResponse
 import com.dipandhali.hermesnative.core.model.SkillsResponse
 import com.dipandhali.hermesnative.core.model.WorkspacesResponse
+import com.dipandhali.hermesnative.core.model.NewSessionRequest
 import com.dipandhali.hermesnative.core.model.NewSessionResponse
 import com.dipandhali.hermesnative.core.model.ReasoningRequest
 import com.dipandhali.hermesnative.core.model.ReasoningResponse
@@ -94,8 +95,15 @@ class HermesApi(private val client: OkHttpClient) {
         SessionDetailResponse.serializer(),
     )
 
-    suspend fun newSession(baseUrl: String): Result<NewSessionResponse> =
-        post(baseUrl, "api/session/new", "{}", NewSessionResponse.serializer())
+    suspend fun newSession(
+        baseUrl: String,
+        request: NewSessionRequest = NewSessionRequest(),
+    ): Result<NewSessionResponse> = post(
+        baseUrl,
+        "api/session/new",
+        json.encodeToString(NewSessionRequest.serializer(), request),
+        NewSessionResponse.serializer(),
+    )
 
     suspend fun renameSession(baseUrl: String, sessionId: String, title: String): Result<Unit> =
         postRaw(

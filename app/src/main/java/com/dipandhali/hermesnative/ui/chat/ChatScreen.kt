@@ -10,12 +10,15 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.WindowInsetsSides
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.only
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
@@ -54,6 +57,7 @@ import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.dipandhali.hermesnative.domain.modelpicker.ModelSelection
+import com.dipandhali.hermesnative.domain.modelpicker.displaySelection
 import com.dipandhali.hermesnative.ui.chat.components.AssistantTurn
 import com.dipandhali.hermesnative.ui.chat.components.Composer
 import com.dipandhali.hermesnative.ui.chat.components.ErrorRow
@@ -80,6 +84,10 @@ fun ChatScreen(
     viewModel: ChatViewModel = hiltViewModel(),
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
+    val modelSelection = displaySelection(
+        state.model?.let { ModelSelection(it, state.modelProvider) },
+        state.picker.catalog,
+    )
     val listState = rememberLazyListState()
     val snackbar = remember { SnackbarHostState() }
     val clipboard = LocalClipboardManager.current
@@ -189,15 +197,19 @@ fun ChatScreen(
                 onValueChange = viewModel::onInputChange,
                 action = state.composerAction,
                 onAction = viewModel::onPrimaryAction,
-                onOpenSettings = onOpenSettings,
                 leadingAccessory = {
                     ModelChip(
-                        selection = state.model?.let { ModelSelection(it, state.modelProvider) },
+                        selection = modelSelection,
                         catalog = state.picker.catalog,
                         onClick = viewModel::openPicker,
                     )
                 },
-                modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+                // The same inset treatment the home composer uses: the bar
+                // carries the gesture-bar and keyboard inset itself, so both
+                // composers sit the same height above the bottom edge.
+                modifier = Modifier
+                    .windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.Bottom))
+                    .padding(start = 12.dp, end = 12.dp, bottom = 12.dp),
             )
         },
     ) { inner ->
@@ -278,7 +290,7 @@ fun ChatScreen(
             catalog = state.picker.catalog,
             isLoading = state.picker.isLoading,
             error = state.picker.error,
-            selection = state.model?.let { ModelSelection(it, state.modelProvider) },
+            selection = modelSelection,
             onPick = viewModel::pickModel,
             onRetry = viewModel::loadModels,
             onDismiss = viewModel::closePicker,

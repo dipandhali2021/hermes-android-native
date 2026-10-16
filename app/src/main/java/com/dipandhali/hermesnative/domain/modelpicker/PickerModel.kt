@@ -433,6 +433,18 @@ fun chipLabel(selection: ModelSelection?, catalog: PickerCatalog?): String? {
     return compactModelId(selection.model)
 }
 
+/**
+ * The selection the chip and the sheet display: the session's or the user's
+ * pick when there is one, else the catalog's default for new chats — so a
+ * fresh chat shows the model it will actually run on, not a placeholder.
+ */
+fun displaySelection(selection: ModelSelection?, catalog: PickerCatalog?): ModelSelection? {
+    if (selection != null && selection.model.isNotEmpty()) return selection
+    val defaultModel = catalog?.defaultModel
+    if (defaultModel.isNullOrEmpty()) return null
+    return ModelSelection(defaultModel, catalog.activeProvider)
+}
+
 private fun compactModelId(model: String): String {
     if (URI_SCHEME.containsMatchIn(model)) return model
     var s = model

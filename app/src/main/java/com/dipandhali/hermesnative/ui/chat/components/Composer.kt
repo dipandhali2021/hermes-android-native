@@ -13,7 +13,6 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
-import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.widthIn
@@ -24,7 +23,6 @@ import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.rounded.ArrowUpward
 import androidx.compose.material.icons.rounded.QueuePlayNext
 import androidx.compose.material.icons.rounded.Stop
-import androidx.compose.material.icons.rounded.Tune
 import androidx.compose.material3.FilledIconButton
 import androidx.compose.material3.FilledTonalIconButton
 import androidx.compose.material3.Icon
@@ -67,16 +65,13 @@ fun Composer(
     onAction: () -> Unit,
     modifier: Modifier = Modifier,
     onAttach: (() -> Unit)? = null,
-    onOpenSettings: (() -> Unit)? = null,
     leadingAccessory: (@Composable () -> Unit)? = null,
     enabled: Boolean = true,
 ) {
     Surface(
         color = MaterialTheme.colorScheme.surfaceContainer,
         shape = MaterialTheme.shapes.extraLarge,
-        modifier = modifier
-            .fillMaxWidth()
-            .imePadding(),
+        modifier = modifier.fillMaxWidth(),
     ) {
         Column {
             TextField(
@@ -121,16 +116,6 @@ fun Composer(
                         )
                     }
                 }
-                if (onOpenSettings != null) {
-                    IconButton(onClick = onOpenSettings) {
-                        Icon(
-                            imageVector = Icons.Rounded.Tune,
-                            contentDescription = "Model and options",
-                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
-                    }
-                }
-
                 Box(Modifier.weight(1f))
 
                 SendButton(action = action, onClick = onAction, enabled = enabled)

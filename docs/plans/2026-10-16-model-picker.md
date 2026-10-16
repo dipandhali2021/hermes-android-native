@@ -638,3 +638,65 @@ Record the `android.yml` run URL; all suites `failures="0"`; APK artifact downlo
 - **Type consistency:** `ModelSelection`, `ModelRow`, `ModelGroup`, `PickerCatalog`, `PickerItem`, `OpenResolution`, `resolveOpen`, `explicitPickForSend`, `pickerItems`, `pickerRowSelected`, `chipLabel`, `configuredBadgeFor`, `ProviderIcons`, `ProviderIconVariant`, `ProviderIconLoader.load`, `Composer.leadingAccessory`, `ModelPickerSheet`/`ModelChip` parameters — used consistently across tasks.
 - **Review Focus → tests:** #1 T3, #2 T4 (`pending pick matches itself` with null catalog), #3 T8 (failure path; no unit test by design — flagged for device pass), #4 T2+T3, #5 T5.
 - **Proportion:** plan ≈ 2.5× spec, mostly signatures and assertions; no full file bodies except the fixture.
+
+---
+
+## Round 2 — device feedback amendments (2026-10-16)
+
+Device pass on the Task 10 APK returned five changes; Tasks 11–13 below implement and evidence them, and the spec's §13 records the design override.
+
+### Task 11: Round 2 — home composer chip, create-with-model, tune removal, inset parity
+
+**Context:** the picker was chat-only; the web sends its picker value in the `/api/session/new` body (`static/sessions.js` L2139: `reqBody.model = newModelState.model`), and the server stores it (`api/routes.py` new-session path: `_session_model_state_from_request` → `new_session(model=..., model_provider=...)`). A new chat therefore carries the pick **from creation** — no open-time override is needed, which is why this supersedes any "seeded session" special case.
+
+**Files:**
+- Modify: `app/src/main/java/com/dipandhali/hermesnative/core/model/Wire.kt` — add `NewSessionRequest`.
+- Modify: `app/src/main/java/com/dipandhali/hermesnative/core/net/HermesApi.kt` — `newSession(baseUrl, request)`.
+- Modify: `app/src/main/java/com/dipandhali/hermesnative/data/sessions/SessionRepository.kt` — `create(model, provider)`.
+- Create: `app/src/main/java/com/dipandhali/hermesnative/domain/modelpicker/ModelPickerUiState.kt`.
+- Modify: `app/src/main/java/com/dipandhali/hermesnative/domain/modelpicker/PickerModel.kt` — `displaySelection`.
+- Modify: `app/src/main/java/com/dipandhali/hermesnative/ui/chat/ChatViewModel.kt` — move the state type out; make `loadModels` idempotent.
+- Modify: `app/src/main/java/com/dipandhali/hermesnative/ui/sessions/SessionsViewModel.kt` — model state, picker state, pick flow, create carries the pick.
+- Modify: `app/src/main/java/com/dipandhali/hermesnative/ui/chat/components/Composer.kt` — drop `onOpenSettings`, the Tune button, and the internal `imePadding()`.
+- Modify: `app/src/main/java/com/dipandhali/hermesnative/ui/chat/ChatScreen.kt` — inset parity, `displaySelection` for chip + sheet, stop passing `onOpenSettings` to the composer.
+- Modify: `app/src/main/java/com/dipandhali/hermesnative/ui/home/HomeScreen.kt` — `HomeComposer(leadingAccessory = …)`, chip + sheet host, `loadModels()` on entry.
+- Create: `app/src/test/java/com/dipandhali/hermesnative/sessions/SessionRepositoryCreateModelTest.kt`; extend `app/src/test/java/com/dipandhali/hermesnative/modelpicker/ModelSendLogicTest.kt`.
+
+**Interfaces:**
+- `SessionRepository.create(model: String? = null, provider: String? = null)` — posts `{"model":…,"model_provider":…}`, both omitted when null (bare `create()` still posts `{}`).
+- `displaySelection(selection: ModelSelection?, catalog: PickerCatalog?): ModelSelection?` — the non-empty selection, else the catalog default (+ active provider), else null.
+- `ModelPickerUiState(open, catalog, isLoading, error)` moves to `domain/modelpicker/` (shared by both ViewModels).
+- `SessionsUiState.model/modelProvider` mirror `SettingsStore.model`; `SessionsViewModel.loadModels()/openPicker()/closePicker()/pickModel(model, provider)` — a home pick is remembered-only (no session to update, no snackbar; the chip updating is the feedback).
+- `ModelPickerSheet(..., scopeNote: String = "Applies to this conversation from your next message.")` — home passes `"Applies to new conversations."`.
+- `ChatViewModel.loadModels()` no-ops when `catalog != null || isLoading`; `catalogRequested` is deleted; `openSession` calls it unconditionally.
+
+**Steps:**
+- [ ] **Step 1: RED** — `SessionRepositoryCreateModelTest` (model+provider posted; omitted when null) and `displaySelection` cases in `ModelSendLogicTest` (null→catalog default, session wins, empty model→default, no catalog→null).
+- [ ] **Step 2: GREEN** — implement; full suite green.
+- [ ] **Step 3: Commit** — `feat(model-picker): home chip, session create carries the model`.
+
+### Task 12: Round 2 — chip pill redesign and combined header lockup
+
+**Files:**
+- Regenerate: `app/src/main/res/drawable/ic_hermes_agent.xml` from `hermesagent-text.svg@v6.0.0` (one path verbatim, viewBox 52×24, `fillType=evenOdd`).
+- Modify: `ModelChip.kt`, `HomeScreen.kt` (title), `ConnectScreen.kt` (hero).
+
+**Requirements:**
+- Chip: `Surface(onClick, shape = shapes.extraLarge, color = surfaceContainerHigh, contentColor = onSurface)`; row = label (`labelLarge`, ellipsis, max 160dp) + `Icons.Rounded.KeyboardArrowDown` (18dp); no border, no leading icon; keep `contentDescription = "Model and options"`.
+- Headers: `Image(painterResource(R.drawable.ic_hermes_agent), contentDescription = "Hermes Agent", colorFilter = tint(primary))` — home `height(28.dp)`, Connect `height(48.dp)`.
+
+**Steps:**
+- [ ] **Step 1: Implement** both.
+- [ ] **Step 2:** `./gradlew :app:assembleDebug` + full suite green.
+- [ ] **Step 3: Commit** — `feat(model-picker): pill chip and combined Hermes Agent lockup`.
+
+### Task 13: Round 2 — evidence, combined test APK, branch review
+
+**Files:**
+- Update: `android-native/docs/HANDOFF-model-picker.md` (untracked).
+
+**Steps:**
+- [ ] **Step 1:** Push `feat/model-picker`; CI green (record run URL + APK).
+- [ ] **Step 2:** Combined device build: `git checkout -b test/model-picker-home-send feat/model-picker && git merge fix/home-send`; resolve conflicts keeping both intents (nested `NewSessionResponse` from the fix; picker state from this branch; home snackbar + `isStartingChat` from the fix); push the test branch; CI green; download APK. The home pick's end-to-end path (create carries the model; seed sends after the transcript settles) is only verifiable on this combined build.
+- [ ] **Step 3:** Fresh-context branch review over `58a82a0..HEAD` including the plan's Review Focus items; fix Critical/Important findings and re-run CI.
+- [ ] **Step 4:** Handoff note: what changed, CI links, APK paths, device checklist, and the merge-order note (`fix/home-send` first, then `feat/model-picker`).

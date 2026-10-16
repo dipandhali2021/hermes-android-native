@@ -169,3 +169,14 @@ Material3 1.4.0 keeps `MaterialExpressiveTheme`/`MotionScheme` internal (AGENTS.
 - Exact `workspace` value for session/update (from `SessionDetail` if present, else omit).
 - `extra_models` presentation detail (verify against `static/ui.js` before building).
 - Custom-id row persistence within a picker session vs device (default: device, via the same remember path).
+
+## 13. Round 2 amendments (device feedback, 2026-10-16)
+
+Device pass on the Task 10 APK changed six things; this section overrides conflicting earlier text (§4.1 chip drawing, §4.3 headers, and "Picker on the home composer" in §10 Non-goals):
+
+1. **The home composer ships the picker.** The home composer gains the chip + the same sheet. A pick there updates the remembered default and closes the sheet; no snackbar on home (its effect plumbing lands with the pending `fix/home-send` branch). The sheet scope note is parameterized: chat = "Applies to this conversation from your next message.", home = "Applies to new conversations.".
+2. **New sessions carry the pick (web parity).** `POST /api/session/new` accepts `model` + `model_provider` and stores them on the session (`static/sessions.js` L2139; `api/routes.py` new-session path). `SessionRepository.create(model, provider)` sends the home screen's current effective selection, so a chat created from home opens already on the pick — no open-time override ("seeded session" case) is needed.
+3. **Chip redesign.** Filled pill (`surfaceContainerHigh`, `shapes.extraLarge`): label + thin chevron-down; no border, no leading provider icon (per the reference image). Provider icons remain on the sheet rows.
+4. **Effective selection is displayed.** `displaySelection(selection, catalog)` — the session/remembered pick, else the catalog default — feeds both the chip label and the sheet's SELECTED marking, so a fresh chat shows the model it will actually run on.
+5. **Tune icon removed; composer position parity.** The composer's `onOpenSettings`/Tune icon is gone (settings remain in both top bars). The chat composer adopts the home inset treatment (`safeDrawing` bottom + 12dp), dropping the composer-internal `imePadding()`. `ChatViewModel.loadModels()` becomes idempotent and `ModelPickerUiState` moves to `domain/modelpicker/` for reuse by `SessionsViewModel`.
+6. **Header mark is the `HermesAgent.Combine` lockup.** `ic_hermes_agent.xml` is rebuilt from the pinned `hermesagent-text.svg` (one path, viewBox 52×24): face + "HERMES AGENT" wordmark, replacing the 3-path square mark in Home and Connect.

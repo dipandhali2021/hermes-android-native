@@ -8,6 +8,10 @@ import com.dipandhali.hermesnative.core.net.ApiException
 import com.dipandhali.hermesnative.data.sessions.SessionRepository
 import com.dipandhali.hermesnative.data.settings.ServerState
 import com.dipandhali.hermesnative.data.settings.SettingsStore
+import com.dipandhali.hermesnative.domain.modelpicker.ModelPickerUiState
+import com.dipandhali.hermesnative.domain.modelpicker.ModelSelection
+import com.dipandhali.hermesnative.domain.modelpicker.PickerCatalogBuilder
+import com.dipandhali.hermesnative.domain.modelpicker.displaySelection
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -33,6 +37,11 @@ class SessionsViewModel @Inject constructor(
 
     init {
         refresh()
+        viewModelScope.launch {
+            settings.model.collect { (model, provider) ->
+                _state.update { it.copy(model = model, modelProvider = provider) }
+            }
+        }
     }
 
     fun refresh() {
@@ -53,7 +62,8 @@ class SessionsViewModel @Inject constructor(
     /** Creates an empty session and opens it. */
     fun createSession() {
         viewModelScope.launch {
-            repository.create()
+            val pick = selection()
+            repository.create(model = pick?.model, provider = pick?.provider)
                 .onSuccess { sessionId ->
                     // The new session must appear in the list before navigation, or
                     // the tap looks like it did nothing.
@@ -74,7 +84,8 @@ class SessionsViewModel @Inject constructor(
      */
     fun startChatWith(message: String) {
         viewModelScope.launch {
-            repository.create()
+            val pick = selection()
+            repository.create(model = pick?.model, provider = pick?.provider)
                 .onSuccess { sessionId ->
                     refresh()
                     _effects.trySend(SessionsEffect.OpenSessionAndSend(sessionId, message))
@@ -138,6 +149,62 @@ class SessionsViewModel @Inject constructor(
         }
     }
 
+    /**
+     * The pick a new session should ride on: the remembered default, else the
+     * catalog's own default — exactly what the home chip displays.
+     */
+    private fun selection(): ModelSelection? = displaySelection(
+        _state.value.model?.let { ModelSelection(it, _state.value.modelProvider) },
+        _state.value.picker.catalog,
+    )
+
+    /** Fetches and builds the picker catalog. Failures are retried from [openPicker]. */
+    fun loadModels() {
+        val picker = _state.value.picker
+        if (picker.isLoading || picker.catalog != null) return
+        _state.update { it.copy(picker = it.picker.copy(isLoading = true, error = null)) }
+        viewModelScope.launch {
+            repository.models()
+                .onSuccess { response ->
+                    _state.update { state ->
+                        state.copy(
+                            picker = state.picker.copy(
+                                catalog = PickerCatalogBuilder.build(response),
+                                isLoading = false,
+                            ),
+                        )
+                    }
+                }
+                .onFailure { error ->
+                    _state.update { state ->
+                        state.copy(
+                            picker = state.picker.copy(isLoading = false, error = error.toMessage()),
+                        )
+                    }
+                }
+        }
+    }
+
+    fun openPicker() {
+        _state.update { it.copy(picker = it.picker.copy(open = true)) }
+        loadModels()
+    }
+
+    fun closePicker() {
+        _state.update { it.copy(picker = it.picker.copy(open = false)) }
+    }
+
+    /**
+     * A home-composer pick is the default for new chats, not a session change:
+     * there is no conversation yet, and the next created session carries it.
+     */
+    fun pickModel(model: String, provider: String?) {
+        _state.update {
+            it.copy(model = model, modelProvider = provider, picker = it.picker.copy(open = false))
+        }
+        viewModelScope.launch { settings.setModel(model, provider) }
+    }
+
     private fun Throwable.toMessage(): String =
         (this as? ApiException)?.error?.userMessage() ?: (message ?: "Something went wrong.")
 }
@@ -156,6 +223,10 @@ data class SessionsUiState(
     val query: String = "",
     val isLoading: Boolean = false,
     val error: String? = null,
+    /** The remembered pick the home chip shows and new sessions ride on. */
+    val model: String? = null,
+    val modelProvider: String? = null,
+    val picker: ModelPickerUiState = ModelPickerUiState(),
 ) {
     // Derived, not stored, so the list and the filter cannot disagree.
     val visible: List<SessionRow>

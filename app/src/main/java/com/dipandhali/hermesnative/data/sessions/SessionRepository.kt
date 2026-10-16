@@ -2,6 +2,7 @@ package com.dipandhali.hermesnative.data.sessions
 
 import com.dipandhali.hermesnative.core.error.DataError
 import com.dipandhali.hermesnative.core.model.ModelsResponse
+import com.dipandhali.hermesnative.core.model.NewSessionRequest
 import com.dipandhali.hermesnative.core.model.SessionRow
 import com.dipandhali.hermesnative.core.net.ApiException
 import com.dipandhali.hermesnative.core.net.HermesApi
@@ -32,10 +33,15 @@ class SessionRepository @Inject constructor(
         }
     }
 
-    suspend fun create(): Result<String> {
+    /**
+     * Creates a session. A pick from the home composer rides with creation
+     * (web parity: `static/sessions.js` sends `model`/`model_provider` in the
+     * body), so the chat opens already on the picked model.
+     */
+    suspend fun create(model: String? = null, provider: String? = null): Result<String> {
         val baseUrl = serverState.currentBaseUrl
             ?: return Result.failure(ApiException(DataError.NotHermes))
-        return api.newSession(baseUrl).mapCatching { response ->
+        return api.newSession(baseUrl, NewSessionRequest(model, provider)).mapCatching { response ->
             response.sessionId ?: throw ApiException(DataError.Malformed("no session_id"))
         }
     }

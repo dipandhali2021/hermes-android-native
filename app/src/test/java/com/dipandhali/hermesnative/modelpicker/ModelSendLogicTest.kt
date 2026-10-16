@@ -5,11 +5,13 @@ import com.dipandhali.hermesnative.domain.modelpicker.ModelSelection
 import com.dipandhali.hermesnative.domain.modelpicker.OpenResolution
 import com.dipandhali.hermesnative.domain.modelpicker.PickerCatalogBuilder
 import com.dipandhali.hermesnative.domain.modelpicker.chipLabel
+import com.dipandhali.hermesnative.domain.modelpicker.displaySelection
 import com.dipandhali.hermesnative.domain.modelpicker.explicitPickForSend
 import com.dipandhali.hermesnative.domain.modelpicker.resolveOpen
 import kotlinx.serialization.json.Json
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -60,5 +62,30 @@ class ModelSendLogicTest {
     fun `chip label falls back to a compacted id`() {
         assertEquals("Solar Mini4 (free)", chipLabel(ModelSelection("@nous:solar-mini4:free", "nous"), catalog))
         assertEquals("solar-pro4", chipLabel(ModelSelection("openrouter/solar-pro4", "openrouter"), null))
+    }
+
+    @Test
+    fun `display selection falls back to the catalog default`() {
+        assertEquals(
+            ModelSelection("solar-mini4:free", "nous"),
+            displaySelection(null, catalog),
+        )
+        assertEquals(
+            ModelSelection("solar-mini4:free", "nous"),
+            displaySelection(ModelSelection(""), catalog),
+        )
+    }
+
+    @Test
+    fun `display selection keeps a session pick over the default`() {
+        assertEquals(
+            ModelSelection("@nous:solar-mini4:free", "nous"),
+            displaySelection(ModelSelection("@nous:solar-mini4:free", "nous"), catalog),
+        )
+    }
+
+    @Test
+    fun `display selection is null without a pick or catalog`() {
+        assertNull(displaySelection(null, null))
     }
 }
