@@ -49,6 +49,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.rotate
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
@@ -57,6 +58,7 @@ import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.dipandhali.hermesnative.R
 import com.dipandhali.hermesnative.ui.theme.HermesMotion
 
 /**
@@ -93,10 +95,11 @@ fun ConnectScreen(
         ) {
             Spacer(Modifier.height(24.dp))
 
-            Text(
-                text = "Hermes",
-                style = MaterialTheme.typography.displaySmall,
-                color = MaterialTheme.colorScheme.primary,
+            Icon(
+                painter = painterResource(R.drawable.ic_hermes_agent),
+                contentDescription = "Hermes",
+                tint = MaterialTheme.colorScheme.primary,
+                modifier = Modifier.size(48.dp),
             )
             Text(
                 text = "Connect to your Hermes WebUI server",

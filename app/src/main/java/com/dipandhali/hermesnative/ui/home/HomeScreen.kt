@@ -50,11 +50,13 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.input.pointer.changedToDown
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.dipandhali.hermesnative.R
 import com.dipandhali.hermesnative.core.model.SessionRow
 import com.dipandhali.hermesnative.ui.components.FabMenu
 import com.dipandhali.hermesnative.ui.components.FabMenuAction
@@ -115,10 +117,11 @@ fun HomeScreen(
                     containerColor = MaterialTheme.colorScheme.surface,
                 ),
                 title = {
-                    Text(
-                        text = "Hermes",
-                        style = MaterialTheme.typography.titleLarge,
-                        color = MaterialTheme.colorScheme.primary,
+                    Icon(
+                        painter = painterResource(R.drawable.ic_hermes_agent),
+                        contentDescription = "Hermes",
+                        tint = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.size(28.dp),
                     )
                 },
                 actions = {
