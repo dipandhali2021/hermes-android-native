@@ -32,6 +32,9 @@ class ChatRepository @Inject constructor(
     suspend fun startTurn(
         message: String,
         attachments: List<com.dipandhali.hermesnative.core.model.AttachmentDto> = emptyList(),
+        model: String? = null,
+        modelProvider: String? = null,
+        explicitPick: Boolean? = null,
     ): Result<String> {
         val baseUrl = baseUrl() ?: return Result.failure(ApiException(DataError.NotHermes))
         val sessionId = serverState.currentSessionId ?: return Result.failure(ApiException(DataError.NotFound))
@@ -39,7 +42,13 @@ class ChatRepository @Inject constructor(
         val request = ChatStartRequest(
             sessionId = sessionId,
             message = message,
+            model = model,
+            modelProvider = modelProvider,
             attachments = attachments.takeIf { it.isNotEmpty() },
+            // Only `true` or null: an explicit `false` and an absent field are
+            // both falsey to the server, and the client never asserts "not a
+            // pick" — it stays silent.
+            explicitModelPick = explicitPick,
         )
         return api.startChat(baseUrl, request)
             .mapCatching { response: ChatStartResponse ->
