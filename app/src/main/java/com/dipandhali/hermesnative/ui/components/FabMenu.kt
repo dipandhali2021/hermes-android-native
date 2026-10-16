@@ -74,6 +74,11 @@ data class FabMenuAction(
  *   so it sits in the thumb's arc above the composer instead of under the
  *   hand holding the phone.
  *
+ * The item stack takes the height its parent has to offer: nine destinations are
+ * taller than a phone screen, so the stack is weighted to use the space it is
+ * given (and scrolls once even that is not enough) instead of a fixed cap that
+ * would hide items on a screen with room to show them.
+ *
  * Accessibility: the items are real buttons with labels, and the collapsed FAB
  * advertises every action as a custom accessibility action, so a TalkBack user
  * does not have to discover and open the menu to learn what is in it.
@@ -84,7 +89,6 @@ fun FabMenu(
     expanded: Boolean,
     onExpandedChange: (Boolean) -> Unit,
     modifier: Modifier = Modifier,
-    maxItemsHeight: androidx.compose.ui.unit.Dp = 360.dp,
 ) {
     val rotation by animateFloatAsState(
         targetValue = if (expanded) 135f else 0f,
@@ -101,12 +105,13 @@ fun FabMenu(
         // it enters first and leaves last, which reads as the stack unfolding
         // rather than being painted on.
         //
-        // The stack is height-capped and scrolls because nine destinations are
-        // taller than a phone screen: without the cap the first items would be
-        // pushed off the top where they cannot be reached at all.
+        // `weight(1f, fill = false)` hands the stack exactly what the parent has
+        // left over — no fixed cap that could hide reachable items on a tall
+        // screen while squeezing the button on a short one. What does not fit
+        // scrolls.
         androidx.compose.foundation.layout.Column(
             modifier = Modifier
-                .heightIn(max = maxItemsHeight)
+                .weight(1f, fill = false)
                 .verticalScroll(rememberScrollState()),
             horizontalAlignment = Alignment.End,
             verticalArrangement = Arrangement.spacedBy(10.dp),

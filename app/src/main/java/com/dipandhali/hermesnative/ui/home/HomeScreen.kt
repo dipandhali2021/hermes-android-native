@@ -9,14 +9,16 @@ import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.WindowInsetsSides
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
-import androidx.compose.foundation.layout.imePadding
+import androidx.compose.foundation.layout.only
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
@@ -40,10 +42,14 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.input.pointer.PointerEventPass
+import androidx.compose.ui.input.pointer.changedToDown
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -62,14 +68,17 @@ private const val RECENT_LIMIT = 5
 /**
  * The default screen: start a conversation, or continue a recent one.
  *
- * The composer is the point of this screen, so it sits in the middle where the
- * eye lands and the thumb reaches, with the five most recent sessions tucked
- * beneath it. Everything else is one tap away rather than on screen — a home
- * screen that shows a full session list, a search field and nine destinations at
- * once is a home screen with no answer to "what do I do here".
+ * The composer is the point of this screen, so it is pinned above the keyboard
+ * with the five most recent sessions tucked above it. Everything else is one tap
+ * away rather than on screen — a home screen that shows a full session list, a
+ * search field and nine destinations at once is a home screen with no answer to
+ * "what do I do here".
  *
- * The FAB sits above the composer rather than under it, so it is reachable while
- * the keyboard is up instead of being covered by it.
+ * The composer lives in the Scaffold's bottom bar and carries its own insets —
+ * the same pattern the chat screen uses — so the keyboard lifts it and no other
+ * element reserves that height a second time. The FAB menu floats in the
+ * bottom-end corner above it, where the keyboard cannot reach it and where its
+ * items may use the full height between the composer and the top bar.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -121,13 +130,23 @@ fun HomeScreen(
                 },
             )
         },
+        bottomBar = {
+            HomeComposer(
+                onSend = { text -> viewModel.startChatWith(text) },
+                onPress = { menuOpen = false },
+                // The composer is the only element that insets itself against the
+                // keyboard and the gesture bar. `inner` below is only a padding
+                // value — it is not consumed — so a second imePadding anywhere in
+                // the content would reserve the keyboard height twice and squeeze
+                // the screen.
+                modifier = Modifier
+                    .windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.Bottom))
+                    .padding(start = 12.dp, end = 12.dp, bottom = 12.dp),
+            )
+        },
     ) { inner ->
         Box(Modifier.fillMaxSize().padding(inner)) {
-            Column(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .imePadding(),
-            ) {
+            Column(modifier = Modifier.fillMaxSize()) {
                 Spacer(Modifier.height(12.dp))
 
                 // ---- recent sessions ----
@@ -172,7 +191,14 @@ fun HomeScreen(
 
                         else -> LazyColumn(
                             modifier = Modifier.fillMaxSize(),
-                            contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp),
+                            // The bottom clearance keeps the last row tappable from
+                            // under the floating FAB.
+                            contentPadding = PaddingValues(
+                                start = 16.dp,
+                                end = 16.dp,
+                                top = 8.dp,
+                                bottom = 72.dp,
+                            ),
                             verticalArrangement = Arrangement.spacedBy(6.dp),
                         ) {
                             items(
@@ -184,30 +210,22 @@ fun HomeScreen(
                         }
                     }
                 }
-
-                // ---- the FAB, above the composer and clear of the keyboard ----
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(start = 16.dp, end = 16.dp, bottom = 8.dp),
-                    horizontalArrangement = Arrangement.End,
-                ) {
-                    FabMenu(
-                        actions = fabActions,
-                        expanded = menuOpen,
-                        onExpandedChange = { menuOpen = it },
-                        // Nine items have to fit between this row and the top bar
-                        // without colliding with the recent list's own scroll.
-                        maxItemsHeight = 320.dp,
-                    )
-                }
-
-                // ---- the composer ----
-                HomeComposer(
-                    onSend = { text -> viewModel.startChatWith(text) },
-                    modifier = Modifier.padding(start = 12.dp, end = 12.dp, bottom = 12.dp),
-                )
             }
+
+            // ---- the FAB menu, floating above the composer ----
+            //
+            // An overlay rather than a sibling of the composer: the item stack
+            // grows upward from the button and may use every pixel between the
+            // composer and the top bar, while the composer keeps its own place in
+            // the layout no matter how much of that height the menu takes.
+            FabMenu(
+                actions = fabActions,
+                expanded = menuOpen,
+                onExpandedChange = { menuOpen = it },
+                modifier = Modifier
+                    .align(Alignment.BottomEnd)
+                    .padding(end = 16.dp, bottom = 8.dp),
+            )
         }
     }
 }
@@ -219,19 +237,35 @@ fun HomeScreen(
  * stop or steer, so there is no five-state button — a send arrow and a spinner.
  * Reusing the chat composer here would put four states on screen that cannot
  * occur.
+ *
+ * [onPress] fires on any press inside the composer, before the field or the send
+ * button sees the event — the home screen uses it to close an open FAB menu.
  */
 @Composable
 private fun HomeComposer(
     onSend: (String) -> Unit,
+    onPress: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     var text by remember { mutableStateOf("") }
     var isStarting by remember { mutableStateOf(false) }
+    val currentOnPress by rememberUpdatedState(onPress)
 
     Surface(
         color = MaterialTheme.colorScheme.surfaceContainer,
         shape = MaterialTheme.shapes.extraLarge,
-        modifier = modifier.fillMaxWidth(),
+        modifier = modifier
+            .fillMaxWidth()
+            // Read presses at the Initial pass and never consume them, so a tap
+            // closes the FAB menu and still lands on the field or the button.
+            .pointerInput(Unit) {
+                awaitPointerEventScope {
+                    while (true) {
+                        val event = awaitPointerEvent(PointerEventPass.Initial)
+                        if (event.changes.any { it.changedToDown() }) currentOnPress()
+                    }
+                }
+            },
     ) {
         Column {
             androidx.compose.material3.TextField(
