@@ -82,13 +82,11 @@ fun ChatScreen(
     val clipboard = LocalClipboardManager.current
     var menuOpen by remember { mutableStateOf(false) }
 
-    // Open first, then send: the seed arrives from the home composer, which had to
-    // create the session before it could hand the text over.
+    // Open, then send: the seed arrives from the home composer, which had to
+    // create the session before it could hand the text over. The send waits for
+    // the transcript load inside openSession so it cannot be erased by it.
     LaunchedEffect(sessionId, initialMessage) {
-        sessionId?.let(viewModel::openSession)
-        if (!initialMessage.isNullOrBlank()) {
-            viewModel.sendInitialMessage(initialMessage)
-        }
+        sessionId?.let { viewModel.openSession(it, initialMessage) }
     }
 
     LaunchedEffect(Unit) {

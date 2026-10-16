@@ -52,6 +52,7 @@ class ChatViewModel @Inject constructor(
     val effects = _effects.receiveAsFlow()
 
     private var turnJob: Job? = null
+    private var loadJob: Job? = null
     private val pendingText = StringBuilder()
     private val pendingReasoning = StringBuilder()
     private var flushJob: Job? = null
@@ -63,14 +64,23 @@ class ChatViewModel @Inject constructor(
         }
     }
 
-    /** Loads a session and renders its existing transcript. */
-    fun openSession(sessionId: String) {
+    /**
+     * Loads a session and renders its existing transcript.
+     *
+     * [initialMessage] is the seed from the home composer, sent only after the
+     * transcript has been applied — the load replaces the whole list, so a
+     * message appended before it lands would be erased by it.
+     */
+    fun openSession(sessionId: String, initialMessage: String? = null) {
         if (_uiState.value.sessionId == sessionId && _uiState.value.items.isNotEmpty()) return
         turnJob?.cancel()
+        // One loader at a time: a slow response for a session the user has left
+        // must not overwrite the transcript of the one they are looking at.
+        loadJob?.cancel()
         serverState.setActiveSession(sessionId)
         _uiState.update { it.copy(sessionId = sessionId, isLoading = true, error = null) }
 
-        viewModelScope.launch {
+        loadJob = viewModelScope.launch {
             chat.loadTranscript(sessionId)
                 .onSuccess { detail ->
                     _uiState.update { state ->
@@ -90,6 +100,8 @@ class ChatViewModel @Inject constructor(
                         it.copy(isLoading = false, error = error.toMessage())
                     }
                 }
+            // Seed send, after the load has settled (see the KDoc above).
+            if (!initialMessage.isNullOrBlank()) sendInitialMessage(initialMessage)
         }
     }
 
@@ -117,10 +129,10 @@ class ChatViewModel @Inject constructor(
     /**
      * Sends the first message of a conversation created by the home composer.
      *
-     * Guarded against re-sending: the caller is a `LaunchedEffect` keyed on the
-     * message, and a recomposition must not fire it twice.
+     * Called by [openSession] once the transcript load has settled; guarded
+     * anyway, because a recreated composition must not fire it twice.
      */
-    fun sendInitialMessage(message: String) {
+    private fun sendInitialMessage(message: String) {
         if (_uiState.value.hasSentInitial || _uiState.value.isBusy) return
         _uiState.update { it.copy(hasSentInitial = true) }
         send(message)

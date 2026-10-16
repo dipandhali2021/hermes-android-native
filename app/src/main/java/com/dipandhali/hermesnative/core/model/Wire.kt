@@ -142,8 +142,9 @@ data class SessionBusyResponse(
 @Serializable
 data class SteerRequest(val session_id: String, val message: String)
 
+/** `POST /api/session/new` nests the created session: `{"session": {...}}`. */
 @Serializable
-data class NewSessionResponse(@SerialName("session_id") val sessionId: String? = null)
+data class NewSessionResponse(val session: SessionDetail? = null)
 
 @Serializable
 data class ModelsResponse(
