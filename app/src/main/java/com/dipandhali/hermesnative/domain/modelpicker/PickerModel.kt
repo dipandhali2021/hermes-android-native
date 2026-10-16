@@ -330,3 +330,172 @@ object PickerCatalogBuilder {
     private val GROUP_COUNT_SUFFIX = Regex("\\s*\\(\\d+\\s+of\\s+\\d+\\)\\s*$")
     private const val UNREACHABLE = "Models endpoint unreachable"
 }
+
+/** One row of the picker list: a section header, a model row, or overflow. */
+sealed interface PickerItem {
+    data class Header(val key: String, val label: String, val count: Int) : PickerItem
+    data class Row(val row: ModelRow) : PickerItem
+    data class ShowMore(val groupKey: String, val hiddenCount: Int) : PickerItem
+}
+
+private const val CONFIGURED_KEY = "__configured__"
+private const val FLAT_KEY = "__flat__"
+
+/**
+ * The picker list for the current [query], expansion and reveal state.
+ *
+ * Empty query: configured section, then group headers. An expanded group
+ * renders its rows; an unrevealed overflow renders [PickerItem.ShowMore], a
+ * revealed one renders the hidden rows. A group's count covers its visible and
+ * hidden rows after hoisting.
+ *
+ * Non-empty query: matching content at every level, sections auto-expanded,
+ * hidden rows included, no show-more, and empty sections dropped. Matches are
+ * case-insensitive and also fold whitespace and `.`, `_`, `-`, so
+ * "solar pro" finds "Solar Pro4" (`_foldModelSearch`, ui.js).
+ */
+fun pickerItems(
+    catalog: PickerCatalog,
+    query: String,
+    expanded: Set<String>,
+    revealed: Set<String>,
+): List<PickerItem> {
+    val term = query.trim().lowercase()
+    val foldTerm = foldSearch(term)
+    val items = mutableListOf<PickerItem>()
+
+    if (catalog.groups.isEmpty()) {
+        val matched = catalog.flat.filter { matchesQuery(it, term, foldTerm) }
+        if (matched.isEmpty()) return items
+        items += PickerItem.Header(FLAT_KEY, "MODELS (${matched.size})", matched.size)
+        matched.forEach { items += PickerItem.Row(it) }
+        return items
+    }
+
+    val configuredMatched = catalog.configured.filter { matchesQuery(it, term, foldTerm) }
+    if (configuredMatched.isNotEmpty()) {
+        items += PickerItem.Header(CONFIGURED_KEY, "CONFIGURED", configuredMatched.size)
+        configuredMatched.forEach { items += PickerItem.Row(it) }
+    }
+
+    val searching = term.isNotEmpty()
+    for (group in catalog.groups) {
+        val candidates = if (searching) group.rows + group.hidden else group.rows
+        val matched = candidates.filter { matchesQuery(it, term, foldTerm) }
+        val count = matched.size + if (searching) 0 else group.hidden.size
+        if (count == 0) continue
+        items += PickerItem.Header(group.key, "${group.label} ($count)", count)
+        if (!searching && group.key !in expanded) continue
+        matched.forEach { items += PickerItem.Row(it) }
+        if (!searching && group.hidden.isNotEmpty()) {
+            if (group.key in revealed) {
+                group.hidden.forEach { items += PickerItem.Row(it) }
+            } else {
+                items += PickerItem.ShowMore(group.key, group.hidden.size)
+            }
+        }
+    }
+    return items
+}
+
+private fun matchesQuery(row: ModelRow, term: String, foldTerm: String): Boolean {
+    if (term.isEmpty()) return true
+    val name = row.displayName.lowercase()
+    val id = row.model.lowercase()
+    if (name.contains(term) || id.contains(term)) return true
+    return foldTerm.isNotEmpty() &&
+        (foldSearch(name).contains(foldTerm) || foldSearch(id).contains(foldTerm))
+}
+
+private fun foldSearch(value: String): String = value.lowercase().replace(FOLD_SEPARATORS, "")
+
+private val FOLD_SEPARATORS = Regex("[\\s._-]+")
+
+/** `_isSelectedModelRow`: same picker identity AND the same provider. */
+fun pickerRowSelected(row: ModelRow, selection: ModelSelection?): Boolean {
+    if (selection == null) return false
+    return ModelIdentity.optionIdentity(row.model, row.providerId) ==
+        ModelIdentity.optionIdentity(selection.model, selection.provider) &&
+        row.providerId == selection.provider
+}
+
+/**
+ * Composer chip text: the catalog's display name when the selection is a known
+ * row, else the id compacted the way `_compactComposerModelChipLabel` does —
+ * `@provider:` stripped, first path segment dropped.
+ */
+fun chipLabel(selection: ModelSelection?, catalog: PickerCatalog?): String? {
+    if (selection == null || selection.model.isEmpty()) return null
+    val rows = catalog?.let {
+        it.configured + it.groups.flatMap { group -> group.rows + group.hidden } + it.flat
+    }.orEmpty()
+    rows.firstOrNull { it.model == selection.model }?.let { return it.displayName }
+    return compactModelId(selection.model)
+}
+
+private fun compactModelId(model: String): String {
+    if (URI_SCHEME.containsMatchIn(model)) return model
+    var s = model
+    if (s.startsWith("@") && s.contains(':')) {
+        val cut = s.substring(s.indexOf(':') + 1)
+        if (cut.isNotEmpty()) s = cut
+    }
+    if (s.contains('/')) {
+        val cut = s.substring(s.indexOf('/') + 1).trim()
+        if (cut.isNotEmpty()) s = cut
+    }
+    return s
+}
+
+private val URI_SCHEME = Regex("^[a-z][a-z0-9+.-]*://")
+
+/** Resolution of the picker's selection when it opens. */
+data class OpenResolution(val selection: ModelSelection?, val writeRemembered: Boolean)
+
+/**
+ * The selection the picker opens with: this session's model wins, then the
+ * user's remembered default (callers persist that for this session so the next
+ * send counts as explicit), then the server's default for new chats.
+ */
+fun resolveOpen(
+    detailModel: String?,
+    detailProvider: String?,
+    remembered: ModelSelection?,
+    defaultModel: String?,
+    activeProvider: String?,
+): OpenResolution {
+    detailModel?.takeIf { it.isNotEmpty() }?.let {
+        return OpenResolution(ModelSelection(it, detailProvider), writeRemembered = false)
+    }
+    remembered?.let { return OpenResolution(it, writeRemembered = true) }
+    defaultModel?.takeIf { it.isNotEmpty() }?.let {
+        return OpenResolution(ModelSelection(it, activeProvider), writeRemembered = false)
+    }
+    return OpenResolution(null, writeRemembered = false)
+}
+
+/**
+ * Whether this send is an explicit model pick (`messages.js`): a pick made for
+ * this session, or a selection that differs from the profile default model and
+ * whose provider differs from the active provider — the case the server would
+ * otherwise "repair" back to the default.
+ */
+fun explicitPickForSend(
+    pending: ModelSelection?,
+    selection: ModelSelection?,
+    defaultModel: String?,
+    activeProvider: String?,
+): Boolean {
+    if (selection == null) return false
+    if (pending != null &&
+        pending.model == selection.model &&
+        (pending.provider ?: "") == (selection.provider ?: "")
+    ) {
+        return true
+    }
+    val model = selection.model
+    val provider = selection.provider
+    return model.isNotEmpty() && !provider.isNullOrEmpty() &&
+        !defaultModel.isNullOrEmpty() && !activeProvider.isNullOrEmpty() &&
+        model != defaultModel && provider != activeProvider
+}
