@@ -145,20 +145,61 @@ data class SteerRequest(val session_id: String, val message: String)
 @Serializable
 data class NewSessionResponse(@SerialName("session_id") val sessionId: String? = null)
 
+/** Body of `POST /api/session/update`; effective from the next message. */
+@Serializable
+data class SessionUpdateRequest(
+    @SerialName("session_id") val sessionId: String,
+    val model: String,
+    @SerialName("model_provider") val modelProvider: String? = null,
+)
+
 @Serializable
 data class ModelsResponse(
     val models: List<ModelDto> = emptyList(),
     @SerialName("default_model") val defaultModel: String? = null,
+    @SerialName("active_provider") val activeProvider: String? = null,
+    @SerialName("configured_model_badges") val configuredModelBadges: Map<String, ConfiguredBadgeDto> = emptyMap(),
+    val groups: List<ModelGroupDto> = emptyList(),
+    @SerialName("extra_models") val extraModels: List<ModelDto> = emptyList(),
+)
+
+/**
+ * One entry of `configured_model_badges`, keyed server-side by model
+ * *spelling*: the same configured model may appear under several keys (bare
+ * id, `@provider:id`, matched catalog spelling), so consumers must normalize
+ * before deduping.
+ */
+@Serializable
+data class ConfiguredBadgeDto(
+    val provider: String? = null,
+    val role: String? = null,
+    val label: String? = null,
+)
+
+@Serializable
+data class ModelGroupDto(
+    val provider: String? = null,
+    @SerialName("provider_id") val providerId: String? = null,
+    val models: List<ModelDto> = emptyList(),
+    @SerialName("extra_models") val extraModels: List<ModelDto> = emptyList(),
+    /** String *or* object depending on the failure; only a display hint. */
+    @SerialName("models_endpoint_error") val modelsEndpointError: JsonElement? = null,
 )
 
 @Serializable
 data class ModelDto(
     val id: String? = null,
+    val label: String? = null,
     val name: String? = null,
     val provider: String? = null,
     @SerialName("supported_efforts") val supportedEfforts: List<String>? = null,
 ) {
-    val label: String get() = name?.takeIf { it.isNotBlank() } ?: id ?: "Unknown model"
+    /** Picker entries carry `label`; other endpoints send `name`. */
+    val displayLabel: String
+        get() = label?.takeIf { it.isNotBlank() }
+            ?: name?.takeIf { it.isNotBlank() }
+            ?: id
+            ?: "Unknown model"
 }
 
 @Serializable

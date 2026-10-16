@@ -20,6 +20,7 @@ import com.dipandhali.hermesnative.core.model.ReasoningResponse
 import com.dipandhali.hermesnative.core.model.SessionBusyResponse
 import com.dipandhali.hermesnative.core.model.SessionDetailResponse
 import com.dipandhali.hermesnative.core.model.SessionListResponse
+import com.dipandhali.hermesnative.core.model.SessionUpdateRequest
 import com.dipandhali.hermesnative.core.model.SteerRequest
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -115,6 +116,20 @@ class HermesApi(private val client: OkHttpClient) {
 
     suspend fun models(baseUrl: String): Result<ModelsResponse> =
         get(baseUrl, "api/models", ModelsResponse.serializer())
+
+    suspend fun updateSession(
+        baseUrl: String,
+        sessionId: String,
+        model: String,
+        modelProvider: String?,
+    ): Result<Unit> = postRaw(
+        baseUrl,
+        "api/session/update",
+        json.encodeToString(
+            SessionUpdateRequest.serializer(),
+            SessionUpdateRequest(sessionId, model, modelProvider),
+        ),
+    )
 
     suspend fun reasoning(baseUrl: String, sessionId: String?): Result<ReasoningResponse> = get(
         baseUrl,

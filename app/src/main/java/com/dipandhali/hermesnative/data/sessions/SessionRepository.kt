@@ -1,6 +1,7 @@
 package com.dipandhali.hermesnative.data.sessions
 
 import com.dipandhali.hermesnative.core.error.DataError
+import com.dipandhali.hermesnative.core.model.ModelsResponse
 import com.dipandhali.hermesnative.core.model.SessionRow
 import com.dipandhali.hermesnative.core.net.ApiException
 import com.dipandhali.hermesnative.core.net.HermesApi
@@ -58,9 +59,16 @@ class SessionRepository @Inject constructor(
     }
 
     /** Models available on the server, for the picker. */
-    suspend fun models(): Result<List<com.dipandhali.hermesnative.core.model.ModelDto>> {
+    suspend fun models(): Result<ModelsResponse> {
         val baseUrl = serverState.currentBaseUrl
             ?: return Result.failure(ApiException(DataError.NotHermes))
-        return api.models(baseUrl).mapCatching { it.models }
+        return api.models(baseUrl)
+    }
+
+    /** Applies the picker's choice to one conversation; effective from the next message. */
+    suspend fun updateSession(sessionId: String, model: String, provider: String?): Result<Unit> {
+        val baseUrl = serverState.currentBaseUrl
+            ?: return Result.failure(ApiException(DataError.NotHermes))
+        return api.updateSession(baseUrl, sessionId, model, provider)
     }
 }
