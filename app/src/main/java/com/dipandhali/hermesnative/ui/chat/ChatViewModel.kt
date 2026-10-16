@@ -7,12 +7,18 @@ import com.dipandhali.hermesnative.core.chat.isClose
 import com.dipandhali.hermesnative.core.error.userMessage
 import com.dipandhali.hermesnative.core.net.ApiException
 import com.dipandhali.hermesnative.data.chat.ChatRepository
+import com.dipandhali.hermesnative.data.sessions.SessionRepository
 import com.dipandhali.hermesnative.data.settings.ServerState
 import com.dipandhali.hermesnative.data.settings.SettingsStore
 import com.dipandhali.hermesnative.domain.composer.BusySendMode
 import com.dipandhali.hermesnative.domain.composer.ComposerAction
 import com.dipandhali.hermesnative.domain.composer.parseComposerCommand
 import com.dipandhali.hermesnative.domain.composer.resolveComposerAction
+import com.dipandhali.hermesnative.domain.modelpicker.ModelSelection
+import com.dipandhali.hermesnative.domain.modelpicker.PickerCatalog
+import com.dipandhali.hermesnative.domain.modelpicker.PickerCatalogBuilder
+import com.dipandhali.hermesnative.domain.modelpicker.explicitPickForSend
+import com.dipandhali.hermesnative.domain.modelpicker.resolveOpen
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.channels.Channel
@@ -40,6 +46,7 @@ import javax.inject.Inject
 @HiltViewModel
 class ChatViewModel @Inject constructor(
     private val chat: ChatRepository,
+    private val sessions: SessionRepository,
     private val settings: SettingsStore,
     private val serverState: ServerState,
     private val todoStore: com.dipandhali.hermesnative.data.panels.TodoStore,
@@ -55,6 +62,15 @@ class ChatViewModel @Inject constructor(
     private val pendingText = StringBuilder()
     private val pendingReasoning = StringBuilder()
     private var flushJob: Job? = null
+
+    /**
+     * The picker's per-session pick, mirroring the web's `_pendingPickMatch`:
+     * set by [pickModel], cleared only after a kickoff that was accepted.
+     */
+    private var pendingPick: ModelSelection? = null
+
+    /** One automatic catalog fetch per ViewModel; a failure retries from [openPicker]. */
+    private var catalogRequested = false
 
     init {
         viewModelScope.launch {
@@ -83,13 +99,115 @@ class ChatViewModel @Inject constructor(
                             activeStreamId = detail.activeStreamId,
                         )
                     }
+                    // A pick made while the transcript was still loading wins;
+                    // applying the resolution afterwards would revert it.
+                    if (pendingPick == null) {
+                        applyOpenResolution(sessionId, detail.model, detail.modelProvider)
+                    }
                     detail.activeStreamId?.let { attachToRunningTurn(it) }
+                    if (!catalogRequested) {
+                        catalogRequested = true
+                        loadModels()
+                    }
                 }
                 .onFailure { error ->
                     _uiState.update {
                         it.copy(isLoading = false, error = error.toMessage())
                     }
                 }
+        }
+    }
+
+    /**
+     * The model this conversation should start from, once its transcript is
+     * known: the session's own model, else the remembered default (which is
+     * also written back [writeRemembered]), else the server's default.
+     */
+    private suspend fun applyOpenResolution(
+        sessionId: String,
+        detailModel: String?,
+        detailProvider: String?,
+    ) {
+        val remembered = settings.model.first().let { (model, provider) ->
+            model?.let { ModelSelection(it, provider) }
+        }
+        val catalog = _uiState.value.picker.catalog
+        val resolution = resolveOpen(
+            detailModel = detailModel,
+            detailProvider = detailProvider,
+            remembered = remembered,
+            defaultModel = catalog?.defaultModel,
+            activeProvider = catalog?.activeProvider,
+        )
+        val selection = resolution.selection ?: return
+        _uiState.update { it.copy(model = selection.model, modelProvider = selection.provider) }
+        if (resolution.writeRemembered) {
+            // Silent by design: writing the remembered default into the session
+            // is bookkeeping, not a user-visible action.
+            settings.setModel(selection.model, selection.provider)
+            sessions.updateSession(sessionId, selection.model, selection.provider)
+        }
+    }
+
+    /** Fetches and builds the picker catalog. Failures are retried from [openPicker]. */
+    fun loadModels() {
+        if (_uiState.value.picker.isLoading) return
+        _uiState.update { it.copy(picker = it.picker.copy(isLoading = true, error = null)) }
+        viewModelScope.launch {
+            sessions.models()
+                .onSuccess { response ->
+                    _uiState.update { state ->
+                        state.copy(
+                            picker = state.picker.copy(
+                                catalog = PickerCatalogBuilder.build(response),
+                                isLoading = false,
+                            ),
+                        )
+                    }
+                }
+                .onFailure { error ->
+                    _uiState.update { state ->
+                        state.copy(
+                            picker = state.picker.copy(isLoading = false, error = error.toMessage()),
+                        )
+                    }
+                }
+        }
+    }
+
+    fun openPicker() {
+        _uiState.update { it.copy(picker = it.picker.copy(open = true)) }
+        val picker = _uiState.value.picker
+        if (picker.catalog == null && !picker.isLoading) loadModels()
+    }
+
+    fun closePicker() {
+        _uiState.update { it.copy(picker = it.picker.copy(open = false)) }
+    }
+
+    /**
+     * Applies a pick to this conversation and remembers it as the default for
+     * new chats. The local apply is immediate; the settings and session writes
+     * are best-effort, and only the session write can fail out loud.
+     */
+    fun pickModel(model: String, provider: String?) {
+        pendingPick = ModelSelection(model, provider)
+        _uiState.update {
+            it.copy(model = model, modelProvider = provider, picker = it.picker.copy(open = false))
+        }
+        _effects.trySend(ChatEffect.ShowMessage("Applies to this conversation from your next message."))
+        viewModelScope.launch { settings.setModel(model, provider) }
+        val sessionId = _uiState.value.sessionId
+        if (sessionId != null) {
+            viewModelScope.launch {
+                sessions.updateSession(sessionId, model, provider).onFailure {
+                    _effects.trySend(
+                        ChatEffect.ShowMessage(
+                            "Couldn't save model for this conversation — it will still apply to your next message here.",
+                        ),
+                    )
+                }
+            }
         }
     }
 
@@ -143,8 +261,24 @@ class ChatViewModel @Inject constructor(
         }
 
         turnJob = viewModelScope.launch {
-            chat.startTurn(body)
+            val state = _uiState.value
+            val selection = state.model?.let { ModelSelection(it, state.modelProvider) }
+            val explicit = explicitPickForSend(
+                pendingPick,
+                selection,
+                state.picker.catalog?.defaultModel,
+                state.picker.catalog?.activeProvider,
+            )
+            chat.startTurn(
+                body,
+                model = selection?.model,
+                modelProvider = selection?.provider,
+                explicitPick = explicit.takeIf { it },
+            )
                 .onSuccess { streamId ->
+                    // Accepted: the pick was delivered, so later sends stop
+                    // claiming it is explicit.
+                    pendingPick = null
                     _uiState.update { it.copy(activeStreamId = streamId) }
                     consumeTurn(streamId)
                 }
@@ -406,6 +540,7 @@ data class ChatUiState(
     val title: String = "Chat",
     val items: List<TranscriptItem> = emptyList(),
     val model: String? = null,
+    val modelProvider: String? = null,
     val queued: List<String> = emptyList(),
     val reasoningEffort: String? = null,
 
@@ -420,6 +555,7 @@ data class ChatUiState(
     val busySendMode: BusySendMode = BusySendMode.STEER,
     /** Set once a message seeded from the home composer has been dispatched. */
     val hasSentInitial: Boolean = false,
+    val picker: ModelPickerUiState = ModelPickerUiState(),
 ) {
     // 2. Derived — never constructor parameters.
     val hasContent: Boolean get() = input.isNotBlank()
@@ -435,3 +571,11 @@ data class ChatUiState(
 
     val isEmpty: Boolean get() = items.isEmpty() && !isLoading
 }
+
+/** Transient state of the model picker; the catalog is built once per ViewModel. */
+data class ModelPickerUiState(
+    val open: Boolean = false,
+    val catalog: PickerCatalog? = null,
+    val isLoading: Boolean = false,
+    val error: String? = null,
+)
