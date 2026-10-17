@@ -87,4 +87,38 @@ class PickerItemsTest {
         assertFalse(pickerRowSelected(row, ModelSelection("openrouter/solar-pro4", "nous")))
         assertFalse(pickerRowSelected(row, ModelSelection("solar-pro4", "openrouter")))
     }
+
+    @Test
+    fun `configured and single-section headers are not collapsible`() {
+        val headers = pickerItems(catalog, "", emptySet(), emptySet())
+            .filterIsInstance<PickerItem.Header>()
+        assertFalse(headers.first { it.label == "CONFIGURED" }.collapsible)
+        assertTrue(headers.first { it.key == "nous" }.collapsible)
+
+        val flat = PickerCatalogBuilder.build(
+            json.decodeFromString(
+                ModelsResponse.serializer(),
+                """{"default_model":"m1","models":[{"id":"m1","label":"Model One"}]}""",
+            ),
+        )
+        val flatHeader = pickerItems(flat, "", emptySet(), emptySet())
+            .filterIsInstance<PickerItem.Header>()
+            .single()
+        assertFalse(flatHeader.collapsible)
+    }
+
+    @Test
+    fun `duplicate rows are dropped before the list and its count`() {
+        val duplicated = PickerCatalogBuilder.build(
+            json.decodeFromString(
+                ModelsResponse.serializer(),
+                """
+                {"groups":[{"provider":"Dup","provider_id":"dup",
+                  "models":[{"id":"m1","label":"M1"},{"id":"m1","label":"M1"}]}]}
+                """.trimIndent(),
+            ),
+        )
+        val items = pickerItems(duplicated, "", expanded = setOf("dup"), revealed = emptySet())
+        assertEquals(listOf("Dup (1)", "M1"), items.map { it.title() })
+    }
 }

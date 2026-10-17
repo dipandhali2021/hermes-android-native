@@ -137,7 +137,7 @@ fun HomeScreen(
                         contentDescription = "Hermes Agent",
                         colorFilter = ColorFilter.tint(MaterialTheme.colorScheme.primary),
                         modifier = Modifier
-                            .height(28.dp)
+                            .height(32.dp)
                             .aspectRatio(73f / 24f),
                     )
                 },

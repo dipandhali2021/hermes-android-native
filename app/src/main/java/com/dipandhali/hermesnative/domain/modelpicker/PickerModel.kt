@@ -333,7 +333,17 @@ object PickerCatalogBuilder {
 
 /** One row of the picker list: a section header, a model row, or overflow. */
 sealed interface PickerItem {
-    data class Header(val key: String, val label: String, val count: Int) : PickerItem
+    /**
+     * A section header. [collapsible] is false for the configured and flat
+     * sections, which always render their rows — the sheet must not offer a
+     * toggle that nothing honours.
+     */
+    data class Header(
+        val key: String,
+        val label: String,
+        val count: Int,
+        val collapsible: Boolean = true,
+    ) : PickerItem
     data class Row(val row: ModelRow) : PickerItem
     data class ShowMore(val groupKey: String, val hiddenCount: Int) : PickerItem
 }
@@ -365,37 +375,66 @@ fun pickerItems(
     val items = mutableListOf<PickerItem>()
 
     if (catalog.groups.isEmpty()) {
-        val matched = catalog.flat.filter { matchesQuery(it, term, foldTerm) }
+        val matched = catalog.flat.distinctRows().filter { matchesQuery(it, term, foldTerm) }
         if (matched.isEmpty()) return items
-        items += PickerItem.Header(FLAT_KEY, "MODELS (${matched.size})", matched.size)
+        items += PickerItem.Header(FLAT_KEY, "MODELS (${matched.size})", matched.size, collapsible = false)
         matched.forEach { items += PickerItem.Row(it) }
-        return items
+        return items.dedupedRows()
     }
 
-    val configuredMatched = catalog.configured.filter { matchesQuery(it, term, foldTerm) }
+    val configuredMatched = catalog.configured.distinctRows().filter { matchesQuery(it, term, foldTerm) }
     if (configuredMatched.isNotEmpty()) {
-        items += PickerItem.Header(CONFIGURED_KEY, "CONFIGURED", configuredMatched.size)
+        items += PickerItem.Header(CONFIGURED_KEY, "CONFIGURED", configuredMatched.size, collapsible = false)
         configuredMatched.forEach { items += PickerItem.Row(it) }
     }
 
     val searching = term.isNotEmpty()
     for (group in catalog.groups) {
-        val candidates = if (searching) group.rows + group.hidden else group.rows
+        val rows = group.rows.distinctRows()
+        val visibleKeys = rows.mapTo(mutableSetOf()) { rowKey(it) }
+        val hidden = group.hidden.distinctRows().filterNot { rowKey(it) in visibleKeys }
+        val candidates = if (searching) rows + hidden else rows
         val matched = candidates.filter { matchesQuery(it, term, foldTerm) }
-        val count = matched.size + if (searching) 0 else group.hidden.size
+        val count = matched.size + if (searching) 0 else hidden.size
         if (count == 0) continue
         items += PickerItem.Header(group.key, "${group.label} ($count)", count)
         if (!searching && group.key !in expanded) continue
         matched.forEach { items += PickerItem.Row(it) }
-        if (!searching && group.hidden.isNotEmpty()) {
+        if (!searching && hidden.isNotEmpty()) {
             if (group.key in revealed) {
-                group.hidden.forEach { items += PickerItem.Row(it) }
+                hidden.forEach { items += PickerItem.Row(it) }
             } else {
-                items += PickerItem.ShowMore(group.key, group.hidden.size)
+                items += PickerItem.ShowMore(group.key, hidden.size)
             }
         }
     }
-    return items
+    return items.dedupedRows()
+}
+
+/** The identity a row renders under: the same pair the list keys it by. */
+private fun rowKey(row: ModelRow): String = "${row.model}|${row.providerId}"
+
+/**
+ * Drops exact duplicate rows from a section.
+ *
+ * Rows are keyed by model + provider, so an exact duplicate — possible from a
+ * hand-edited config listing the same id twice — would be a duplicate key and
+ * crash the list. Deduping here, before counts are taken, keeps a section's
+ * declared count equal to what it renders. First occurrence wins.
+ */
+private fun List<ModelRow>.distinctRows(): List<ModelRow> = distinctBy(::rowKey)
+
+/**
+ * The last-resort guard on the finished list: exact duplicate entries beyond
+ * per-section rows — a second group reusing a provider id, say — must not
+ * reach `LazyColumn` as duplicate keys either.
+ */
+private fun List<PickerItem>.dedupedRows(): List<PickerItem> = distinctBy { item ->
+    when (item) {
+        is PickerItem.Row -> "row|${rowKey(item.row)}"
+        is PickerItem.Header -> "header|${item.key}"
+        is PickerItem.ShowMore -> "more|${item.groupKey}"
+    }
 }
 
 private fun matchesQuery(row: ModelRow, term: String, foldTerm: String): Boolean {

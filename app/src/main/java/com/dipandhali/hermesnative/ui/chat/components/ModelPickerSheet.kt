@@ -175,12 +175,16 @@ fun ModelPickerSheet(
                         when (item) {
                             is PickerItem.Header -> GroupHeader(
                                 label = item.label,
-                                onClick = {
-                                    expanded = if (item.key in expanded) {
-                                        expanded - item.key
-                                    } else {
-                                        expanded + item.key
+                                onClick = if (item.collapsible) {
+                                    {
+                                        expanded = if (item.key in expanded) {
+                                            expanded - item.key
+                                        } else {
+                                            expanded + item.key
+                                        }
                                     }
+                                } else {
+                                    null
                                 },
                             )
 
@@ -205,7 +209,7 @@ fun ModelPickerSheet(
 }
 
 @Composable
-private fun GroupHeader(label: String, onClick: () -> Unit) {
+private fun GroupHeader(label: String, onClick: (() -> Unit)?) {
     Text(
         text = label,
         style = MaterialTheme.typography.labelMedium,
@@ -213,7 +217,9 @@ private fun GroupHeader(label: String, onClick: () -> Unit) {
         color = MaterialTheme.colorScheme.onSurfaceVariant,
         modifier = Modifier
             .fillMaxWidth()
-            .clickable(onClick = onClick)
+            // A non-collapsible header (configured, flat) is a label, not a
+            // control: no ripple, nothing to toggle.
+            .then(if (onClick != null) Modifier.clickable(onClick = onClick) else Modifier)
             .padding(horizontal = 8.dp, vertical = 12.dp),
     )
 }
