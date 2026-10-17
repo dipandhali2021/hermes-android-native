@@ -131,16 +131,19 @@ relaunch recovery.
 - Round 6 combined build: [run 39047481179](https://github.com/dipandhali2021/hermes-android-native/actions/runs/39047481179) — green (merge `0fd8f0b`).
 - Round 6.1 combined build: [run 39050864981](https://github.com/dipandhali2021/hermes-android-native/actions/runs/39050864981) — green (merge `39dbd68`).
 - Round 6.1b combined build: [run 39052164280](https://github.com/dipandhali2021/hermes-android-native/actions/runs/39052164280) — green (merge `ae6eb77`; adds the tile-label wrap).
+- Round 6.1c build: [run 39053012328](https://github.com/dipandhali2021/hermes-android-native/actions/runs/39053012328) — green (`5fe8342`; centres wrapped tile labels).
 - Local: `./gradlew :app:testDebugUnitTest` green at each task commit (12
   separate task-done runs; new suites: profiles, workspaces, switch rules,
   files client, file tree UI).
 
 ## APK paths
-- **Use this one — round 6.1b combined build:** `/tmp/opencode/mp-r61b-combined/hermes-native-debug-apk/app-debug.apk`
-  (md5 `1295b4bd5bc0a0c88cdd6fd282696e5d`, merge `ae6eb77`). Contains the model
+- **Use this one — round 6.1c build:** `/tmp/opencode/mp-r61c-combined/hermes-native-debug-apk/app-debug.apk`
+  (md5 `f6659564fa36478e62508a50f3a6c5d2`, `5fe8342`). Contains the model
   picker, the home-send fix, Rounds 3–5.2, Round 6, and the 6.1 feedback fixes
   (DELETE-verb prompt delete, × delete, de-duplicated prompt text, tools as
-  tiles, long-press send to save, tile labels wrapping to two lines).
+  tiles with centred two-line labels, long-press send to save).
+- Round 6.1b combined build (superseded by 6.1c): `/tmp/opencode/mp-r61b-combined/hermes-native-debug-apk/app-debug.apk`
+  (md5 `1295b4bd5bc0a0c88cdd6fd282696e5d`, merge `ae6eb77`).
 - Round 6.1 combined build (superseded by 6.1b): `/tmp/opencode/mp-r61-combined/hermes-native-debug-apk/app-debug.apk`
   (md5 `07fcb3c32e6c76062f17d0848cd2b3f6`, merge `39dbd68`).
 - Round 6 combined build (superseded by 6.1): `/tmp/opencode/mp-r6-combined/hermes-native-debug-apk/app-debug.apk`
@@ -238,7 +241,7 @@ relaunch recovery.
 27. **Tools tiles:** chat tools look like the Photos/Camera/Files tiles —
     same card, equal widths, press-scale, active profile / workspace as the
     small line under the label; the label itself may wrap to two lines
-    ("Saved" / "prompts") rather than ellipsize.
+    ("Saved" / "prompts"), each line centred, rather than ellipsize.
 
 ## Merge order (important)
 1. `fix/home-send` → master **first** (its own device pass came earlier).
