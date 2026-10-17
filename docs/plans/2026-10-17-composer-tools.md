@@ -432,9 +432,9 @@ The failure modes this round most risks producing, each pinned to its owning tas
 
 ### Task 12: Round wrap-up
 
-- [ ] `./gradlew :app:testDebugUnitTest` full suite green; commit any doc path updates
-- [ ] Update `docs/HANDOFF-model-picker.md` (round 6 section, device-check list)
-- [ ] push feat/model-picker → CI green → merge into test/model-picker-home-send (union with
+- [x] `./gradlew :app:testDebugUnitTest` full suite green; commit any doc path updates
+- [x] Update `docs/HANDOFF-model-picker.md` (round 6 section, device-check list)
+- [x] push feat/model-picker → CI green → merge into test/model-picker-home-send (union with
       state-driven send region) → combined CI → APK to /tmp → ledger final entry
 
 ## Non-goals (this round)
