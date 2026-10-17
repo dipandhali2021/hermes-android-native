@@ -66,6 +66,15 @@ composers:
   system picker into the focused directory, per-row rename + delete
   (confirm; recursive for dirs). Symlink rows render with the escape flag
   honored (no navigation through escape-target links).
+- **Round 6.1 (device feedback, `2ffb5d7`+):** swipe delete never deleted — the
+  client POSTed `{id}` where the server's *save* handler lives; delete is the
+  HTTP **DELETE** verb (fixed plumbing, verb pinned in the test). Prompt rows
+  gained an explicit `×` delete beside the swipe, and a row whose label is the
+  server-derived copy of its own text renders the text **once** (the "2×
+  text" report). Chat tools became tonal tiles matching the Photos/Camera/
+  Files card. **Long-press the send button saves the draft as a prompt**
+  (both hosts; send cannot also fire — the gesture is a combinedClickable on
+  the filled circle, colours from the real defaults).
 - **Availability rule (rows)**: a bare 404 hides a row quietly; every other
   failure keeps the row and surfaces on tap. Profile rows additionally hide
   under `single_profile_mode`.
@@ -205,6 +214,21 @@ relaunch recovery.
     inside the confirm rename dialog) reflects in place; delete asks and
     recurses into folders; upload stages through the document picker and
     lands in the focused directory.
+
+### Round 6.1 device checks
+23. **Swipe delete works:** swiping a prompt row fully left deletes it
+    (optimistic) with the inline undo banner; undo restores the row.
+24. **× delete:** the small ✕ at the end of each prompt row deletes with the
+    same undo banner; rows without an id show no ✕.
+25. **One text:** an unlabeled saved prompt shows its text a single time
+    (server-derived label suppressed in the row).
+26. **Long-press send:** holding the send button (non-empty field) saves the
+    draft as a prompt and shows "Prompt saved"; it does NOT also send. The
+    row appears in Saved prompts with an auto-derived name. Stop/Steer/Queue
+    states and an empty field have no such gesture.
+27. **Tools tiles:** chat tools look like the Photos/Camera/Files tiles —
+    same card, equal widths, press-scale, active profile / workspace as the
+    small line under the label.
 
 ## Merge order (important)
 1. `fix/home-send` → master **first** (its own device pass came earlier).
