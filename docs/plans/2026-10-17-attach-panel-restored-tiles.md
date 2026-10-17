@@ -34,8 +34,8 @@
 - Signature unchanged: `AttachPanel(voiceMode, onVoiceModeChange, onPhotos, onCamera, onFiles, modifier = Modifier)`.
 - Base: the `f1edc59` content (`git show f1edc59:app/src/main/java/com/dipandhali/hermesnative/ui/chat/components/AttachPanel.kt`), with: root becomes `Surface(color = surfaceContainer, shape = shapes.extraLarge, modifier = modifier.fillMaxWidth().padding(top = 8.dp))`; the Column inside keeps `padding(horizontal = 20.dp)` and gains `top = 16.dp`; drop the top `HorizontalDivider(padding(top = 4.dp))` + `Spacer(16.dp)`. Also add top-level `voiceModeIcon(mode: VoiceInputMode): ImageVector` (Mic / GraphicEq) for §9.2.
 
-- [ ] **Step 1:** Apply the revert + card wrapper + `voiceModeIcon`.
-- [ ] **Step 2:** Compile gate + full suite. Commit: `feat(composer): tile panel back in its own card; mic wears the mode`.
+- [x] **Step 1:** Apply the revert + card wrapper + `voiceModeIcon`.
+- [x] **Step 2:** Compile gate + full suite. Commit: `feat(composer): tile panel back in its own card; mic wears the mode`.
 
 ### Task 3: The mic wears the voice mode (both composers)
 
@@ -47,16 +47,16 @@
 - `ChatScreen`: pass `voiceMode = state.voiceMode` next to the existing `attachPanel` slot wiring.
 - `HomeComposer`: mic icon → `voiceModeIcon(voiceMode)` (the mode is already a parameter).
 
-- [ ] **Step 1:** Apply all three files.
-- [ ] **Step 2:** Compile gate + full suite. Commit: `feat(composer): the mic icon follows the voice mode`.
+- [x] **Step 1:** Apply all three files.
+- [x] **Step 2:** Compile gate + full suite. Commit: `feat(composer): the mic icon follows the voice mode`.
 
 ### Task 4: Evidence, CI, combined rebuild, APK
 
 **Files:**
 - Modify: `android-native/docs/plans/2026-10-17-attach-panel-restored-tiles.md` (tick boxes), `.superpowers/sdd/2026-10-17-attach-panel-restored-tiles/progress.md`, `android-native/docs/HANDOFF-model-picker.md`.
 
-- [ ] **Step 1:** Full local run with `--rerun`; record test-case counts from `app/build/test-results/`.
-- [ ] **Step 2:** Push `feat/model-picker`; watch CI; fetch the APK; record run URL + md5.
-- [ ] **Step 3:** Merge the new feat head into `test/model-picker-home-send` (base `3e153a1`; expected conflict only where the mic line meets the state-driven send union); compile + 112 tests; push; CI green; fetch APK; md5.
-- [ ] **Step 4:** Refresh the handoff (§9 rules: tiles back in their own card — no list rows, no handle; composer and panel still separate; mic icon follows the mode live; keyboard swap unchanged).
-- [ ] **Step 5:** Tick boxes and ledgers. No merge to master, no release until the user says so.
+- [x] **Step 1:** Full local run with `--rerun`; record test-case counts from `app/build/test-results/`.
+- [x] **Step 2:** Push `feat/model-picker`; watch CI; fetch the APK; record run URL + md5.
+- [x] **Step 3:** Merge the new feat head into `test/model-picker-home-send` (base `3e153a1`; expected conflict only where the mic line meets the state-driven send union); compile + 112 tests; push; CI green; fetch APK; md5.
+- [x] **Step 4:** Refresh the handoff (§9 rules: tiles back in their own card — no list rows, no handle; composer and panel still separate; mic icon follows the mode live; keyboard swap unchanged).
+- [x] **Step 5:** Tick boxes and ledgers. No merge to master, no release until the user says so.
