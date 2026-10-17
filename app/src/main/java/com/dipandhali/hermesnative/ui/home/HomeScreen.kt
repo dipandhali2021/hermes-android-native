@@ -47,6 +47,7 @@ import androidx.compose.material.icons.automirrored.rounded.Send
 import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.rounded.Mic
 import androidx.compose.material.icons.rounded.MoreHoriz
+import androidx.compose.material.icons.rounded.Bookmarks
 import androidx.compose.material.icons.rounded.Settings
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -94,12 +95,17 @@ import com.dipandhali.hermesnative.core.model.AttachmentDto
 import com.dipandhali.hermesnative.core.model.SessionRow
 import com.dipandhali.hermesnative.data.media.newCameraCaptureUri
 import com.dipandhali.hermesnative.domain.composer.ATTACH_ROTATION_DEGREES
+import com.dipandhali.hermesnative.domain.composer.PromptsUiState
 import com.dipandhali.hermesnative.domain.composer.attachToggleDescription
+import com.dipandhali.hermesnative.domain.composer.composeWithPrompt
 import com.dipandhali.hermesnative.domain.modelpicker.ModelSelection
 import com.dipandhali.hermesnative.domain.modelpicker.displaySelection
 import com.dipandhali.hermesnative.domain.voice.VoiceInputMode
 import com.dipandhali.hermesnative.domain.voice.VoicePhase
 import com.dipandhali.hermesnative.ui.chat.components.AttachPanel
+import com.dipandhali.hermesnative.ui.chat.components.ChatToolsRow
+import com.dipandhali.hermesnative.ui.chat.components.ChatToolsSection
+import com.dipandhali.hermesnative.ui.chat.components.PromptsSheet
 import com.dipandhali.hermesnative.ui.chat.components.AttachmentTray
 import com.dipandhali.hermesnative.ui.chat.components.ComposerAttachment
 import com.dipandhali.hermesnative.ui.chat.components.MAX_ATTACHMENTS
@@ -258,6 +264,13 @@ fun HomeScreen(
                 voiceElapsedMs = viewModel::voiceElapsedMs,
                 voiceAmplitude = viewModel::voiceAmplitude,
                 resetSignal = composerReset,
+                prompts = state.tools.prompts,
+                onOpenPrompts = viewModel::openPrompts,
+                onClosePrompts = viewModel::closePrompts,
+                onSavePrompt = viewModel::savePrompt,
+                onDeletePrompt = viewModel::deletePrompt,
+                onUndoPromptDelete = viewModel::undoPromptDelete,
+                onRetryPrompts = viewModel::retryPrompts,
                 // The composer is the only element that insets itself against the
                 // keyboard and the gesture bar. `inner` below is only a padding
                 // value — it is not consumed — so a second imePadding anywhere in
@@ -398,6 +411,13 @@ private fun HomeComposer(
     voiceElapsedMs: () -> Long,
     voiceAmplitude: () -> Int,
     resetSignal: Int,
+    prompts: PromptsUiState,
+    onOpenPrompts: () -> Unit,
+    onClosePrompts: () -> Unit,
+    onSavePrompt: (String) -> Unit,
+    onDeletePrompt: (String) -> Unit,
+    onUndoPromptDelete: () -> Unit,
+    onRetryPrompts: () -> Unit,
 ) {
     var text by remember { mutableStateOf("") }
     var attachments by remember { mutableStateOf(listOf<ComposerAttachment>()) }
@@ -639,9 +659,41 @@ private fun HomeComposer(
                         attachOpen = false
                         filePicker.launch(arrayOf("*/*"))
                     },
+                    chatTools = {
+                        if (prompts.available != false) {
+                            ChatToolsSection(
+                                rows = listOf(
+                                    ChatToolsRow(
+                                        icon = Icons.Rounded.Bookmarks,
+                                        title = "Saved prompts",
+                                        onClick = {
+                                            attachOpen = false
+                                            onOpenPrompts()
+                                        },
+                                    ),
+                                ),
+                            )
+                        }
+                    },
                 )
             }
         }
+    }
+
+    if (prompts.sheetOpen) {
+        PromptsSheet(
+            state = prompts,
+            draftProvider = { text },
+            onPick = { prompt ->
+                text = composeWithPrompt(text, prompt.textValue)
+                onClosePrompts()
+            },
+            onSave = { onSavePrompt(text) },
+            onDelete = onDeletePrompt,
+            onUndo = onUndoPromptDelete,
+            onRetry = onRetryPrompts,
+            onDismiss = onClosePrompts,
+        )
     }
 }
 

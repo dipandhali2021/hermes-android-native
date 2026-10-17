@@ -8,6 +8,7 @@ import com.dipandhali.hermesnative.core.chat.ChatEvent
 import com.dipandhali.hermesnative.core.chat.isClose
 import com.dipandhali.hermesnative.core.error.userMessage
 import com.dipandhali.hermesnative.core.model.AttachmentDto
+import com.dipandhali.hermesnative.core.model.SavedPrompt
 import com.dipandhali.hermesnative.core.net.ApiException
 import com.dipandhali.hermesnative.data.chat.ChatRepository
 import com.dipandhali.hermesnative.data.media.MediaRepository
@@ -18,8 +19,12 @@ import com.dipandhali.hermesnative.data.settings.ServerState
 import com.dipandhali.hermesnative.data.settings.SettingsStore
 import com.dipandhali.hermesnative.domain.composer.BusySendMode
 import com.dipandhali.hermesnative.domain.composer.ComposerAction
+import com.dipandhali.hermesnative.domain.composer.ComposerToolsState
+import com.dipandhali.hermesnative.domain.composer.PromptsUiState
+import com.dipandhali.hermesnative.domain.composer.composeWithPrompt
 import com.dipandhali.hermesnative.domain.composer.parseComposerCommand
 import com.dipandhali.hermesnative.domain.composer.resolveComposerAction
+import com.dipandhali.hermesnative.domain.composer.rowHiddenByMissingApi
 import com.dipandhali.hermesnative.domain.modelpicker.ModelPickerUiState
 import com.dipandhali.hermesnative.domain.modelpicker.ModelSelection
 import com.dipandhali.hermesnative.domain.modelpicker.PickerCatalogBuilder
@@ -59,6 +64,7 @@ import javax.inject.Inject
 class ChatViewModel @Inject constructor(
     private val chat: ChatRepository,
     private val sessions: SessionRepository,
+    private val promptsRepository: com.dipandhali.hermesnative.data.prompts.PromptsRepository,
     private val media: MediaRepository,
     private val voiceRecorder: VoiceRecorder,
     private val transcription: TranscriptionRepository,
@@ -740,6 +746,161 @@ class ChatViewModel @Inject constructor(
 
     fun dismissError() = _uiState.update { it.copy(error = null) }
 
+    // ---------- Saved prompts (composer chat tools) ----------
+    //
+    // The sheet drives everything: opening it probes the endpoint once — a
+    // 404 hides the panel's row quietly, older failures surface in the sheet
+    // with retry — and every later open refreshes the rows.
+
+    fun openPrompts() {
+        _uiState.update { s ->
+            s.copy(
+                tools = s.tools.copy(
+                    prompts = s.tools.prompts.copy(sheetOpen = true, error = null),
+                ),
+            )
+        }
+        loadPrompts()
+    }
+
+    fun closePrompts() {
+        _uiState.update { s ->
+            s.copy(
+                tools = s.tools.copy(
+                    prompts = s.tools.prompts.copy(sheetOpen = false, recentlyDeleted = null),
+                ),
+            )
+        }
+    }
+
+    fun retryPrompts() = loadPrompts()
+
+    private fun loadPrompts() {
+        _uiState.update { s ->
+            s.copy(
+                tools = s.tools.copy(
+                    prompts = s.tools.prompts.copy(loading = true, error = null),
+                ),
+            )
+        }
+        viewModelScope.launch {
+            promptsRepository.list()
+                .onSuccess { rows ->
+                    _uiState.update { s ->
+                        s.copy(
+                            tools = s.tools.copy(
+                                prompts = s.tools.prompts.copy(
+                                    loading = false,
+                                    error = null,
+                                    prompts = rows,
+                                    available = true,
+                                ),
+                            ),
+                        )
+                    }
+                }
+                .onFailure { err ->
+                    val hidden = rowHiddenByMissingApi(err as? ApiException)
+                    _uiState.update { s ->
+                        s.copy(
+                            tools = s.tools.copy(
+                                prompts = s.tools.prompts.copy(
+                                    loading = false,
+                                    available = if (hidden) false else (s.tools.prompts.available ?: true),
+                                    error = if (hidden) null else err.toMessage(),
+                                ),
+                            ),
+                        )
+                    }
+                }
+        }
+    }
+
+    /** Tapping a row appends its text to the draft and closes the sheet. */
+    fun pickPrompt(prompt: SavedPrompt) {
+        _uiState.update { s ->
+            s.copy(
+                input = composeWithPrompt(s.input, prompt.textValue),
+                tools = s.tools.copy(
+                    prompts = s.tools.prompts.copy(sheetOpen = false),
+                ),
+            )
+        }
+    }
+
+    /** One-tap save of whatever the composer holds (auto-named by the server). */
+    fun saveDraftAsPrompt() = savePrompt(_uiState.value.input)
+
+    fun savePrompt(text: String, label: String? = null) {
+        val trimmed = text.trim()
+        if (trimmed.isEmpty()) return
+        viewModelScope.launch {
+            promptsRepository.save(trimmed, label)
+                .onSuccess {
+                    _effects.trySend(ChatEffect.ShowMessage("Prompt saved"))
+                    loadPrompts()
+                }
+                .onFailure { err -> _effects.trySend(ChatEffect.ShowMessage(err.toMessage())) }
+        }
+    }
+
+    /** Optimistic swipe delete: the row leaves the list at once, undo restores. */
+    fun deletePrompt(id: String) {
+        val victim = _uiState.value.tools.prompts.prompts.firstOrNull { it.id == id } ?: return
+        _uiState.update { s ->
+            s.copy(
+                tools = s.tools.copy(
+                    prompts = s.tools.prompts.copy(
+                        prompts = s.tools.prompts.prompts.filterNot { p -> p.id == id },
+                        recentlyDeleted = victim,
+                    ),
+                ),
+            )
+        }
+        viewModelScope.launch {
+            promptsRepository.delete(id)
+                .onFailure { err ->
+                    _uiState.update { s ->
+                        s.copy(
+                            tools = s.tools.copy(
+                                prompts = s.tools.prompts.copy(
+                                    // The banner claimed a delete that did not
+                                    // happen; drop it and put the row back.
+                                    recentlyDeleted = null,
+                                    prompts = if (s.tools.prompts.prompts.any { p -> p.id == id }) {
+                                        s.tools.prompts.prompts
+                                    } else {
+                                        (s.tools.prompts.prompts + victim)
+                                            .sortedBy { it.createdAt ?: 0.0 }
+                                    },
+                                ),
+                            ),
+                        )
+                    }
+                    _effects.trySend(ChatEffect.ShowMessage(err.toMessage()))
+                }
+        }
+    }
+
+    /** Re-saves the deleted prompt with its *original* label. */
+    fun undoPromptDelete() {
+        val victim = _uiState.value.tools.prompts.recentlyDeleted ?: return
+        viewModelScope.launch {
+            promptsRepository.save(victim.textValue, victim.label)
+                .onSuccess {
+                    _uiState.update { s ->
+                        s.copy(
+                            tools = s.tools.copy(
+                                prompts = s.tools.prompts.copy(recentlyDeleted = null),
+                            ),
+                        )
+                    }
+                    loadPrompts()
+                }
+                .onFailure { err -> _effects.trySend(ChatEffect.ShowMessage(err.toMessage())) }
+        }
+    }
+
     private fun Throwable.toMessage(): String =
         (this as? ApiException)?.error?.userMessage() ?: (message ?: "Something went wrong.")
 
@@ -809,6 +970,8 @@ data class ChatUiState(
     /** Set once a message seeded from the home composer has been dispatched. */
     val hasSentInitial: Boolean = false,
     val picker: ModelPickerUiState = ModelPickerUiState(),
+    /** Composer power tools: saved prompts, later profile and workspace state. */
+    val tools: ComposerToolsState = ComposerToolsState(),
     /** Mic mode, mirrored from settings; the attach sheet's toggle writes it. */
     val voiceMode: VoiceInputMode = VoiceInputMode.TRANSCRIBE,
     val voicePhase: VoicePhase = VoicePhase.Idle,

@@ -32,6 +32,7 @@ import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.ArrowBack
 import androidx.compose.material.icons.rounded.ArrowDownward
+import androidx.compose.material.icons.rounded.Bookmarks
 import androidx.compose.material.icons.rounded.MoreVert
 import androidx.compose.material.icons.rounded.Tune
 import androidx.compose.material3.CircularProgressIndicator
@@ -78,7 +79,10 @@ import com.dipandhali.hermesnative.ui.chat.components.ComposerAttachment
 import com.dipandhali.hermesnative.ui.chat.components.ErrorRow
 import com.dipandhali.hermesnative.ui.chat.components.MAX_ATTACHMENTS
 import com.dipandhali.hermesnative.ui.chat.components.ModelChip
+import com.dipandhali.hermesnative.ui.chat.components.ChatToolsRow
+import com.dipandhali.hermesnative.ui.chat.components.ChatToolsSection
 import com.dipandhali.hermesnative.ui.chat.components.ModelPickerSheet
+import com.dipandhali.hermesnative.ui.chat.components.PromptsSheet
 import com.dipandhali.hermesnative.ui.chat.components.NoticeRow
 import com.dipandhali.hermesnative.ui.chat.components.UserMessage
 import com.dipandhali.hermesnative.ui.theme.HermesMotion
@@ -295,6 +299,22 @@ fun ChatScreen(
                             attachOpen = false
                             filePicker.launch(arrayOf("*/*"))
                         },
+                        chatTools = {
+                            if (state.tools.prompts.available != false) {
+                                ChatToolsSection(
+                                    rows = listOf(
+                                        ChatToolsRow(
+                                            icon = Icons.Rounded.Bookmarks,
+                                            title = "Saved prompts",
+                                            onClick = {
+                                                attachOpen = false
+                                                viewModel.openPrompts()
+                                            },
+                                        ),
+                                    ),
+                                )
+                            }
+                        },
                     )
                 },
                 attachments = state.pendingAttachments.map {
@@ -409,6 +429,18 @@ fun ChatScreen(
         )
     }
 
+    if (state.tools.prompts.sheetOpen) {
+        PromptsSheet(
+            state = state.tools.prompts,
+            draftProvider = { state.input },
+            onPick = viewModel::pickPrompt,
+            onSave = viewModel::saveDraftAsPrompt,
+            onDelete = viewModel::deletePrompt,
+            onUndo = viewModel::undoPromptDelete,
+            onRetry = viewModel::retryPrompts,
+            onDismiss = viewModel::closePrompts,
+        )
+    }
 }
 
 @Composable

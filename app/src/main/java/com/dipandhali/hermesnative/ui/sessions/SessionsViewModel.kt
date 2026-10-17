@@ -9,6 +9,7 @@ import com.dipandhali.hermesnative.core.model.SessionRow
 import com.dipandhali.hermesnative.core.net.ApiException
 import com.dipandhali.hermesnative.data.media.MediaRepository
 import com.dipandhali.hermesnative.data.media.TranscriptionRepository
+import com.dipandhali.hermesnative.data.prompts.PromptsRepository
 import com.dipandhali.hermesnative.data.sessions.SessionRepository
 import com.dipandhali.hermesnative.data.settings.ServerState
 import com.dipandhali.hermesnative.data.settings.SettingsStore
@@ -16,6 +17,8 @@ import com.dipandhali.hermesnative.data.voice.VoiceRecorder
 import com.dipandhali.hermesnative.domain.modelpicker.ModelPickerUiState
 import com.dipandhali.hermesnative.domain.modelpicker.ModelSelection
 import com.dipandhali.hermesnative.domain.modelpicker.PickerCatalogBuilder
+import com.dipandhali.hermesnative.domain.composer.ComposerToolsState
+import com.dipandhali.hermesnative.domain.composer.rowHiddenByMissingApi
 import com.dipandhali.hermesnative.domain.modelpicker.displaySelection
 import com.dipandhali.hermesnative.domain.voice.VoiceInputMode
 import com.dipandhali.hermesnative.domain.voice.VoicePhase
@@ -35,6 +38,7 @@ import javax.inject.Inject
 class SessionsViewModel @Inject constructor(
     private val repository: SessionRepository,
     private val media: MediaRepository,
+    private val promptsRepository: PromptsRepository,
     private val settings: SettingsStore,
     private val serverState: ServerState,
     private val voiceRecorder: VoiceRecorder,
@@ -77,6 +81,143 @@ class SessionsViewModel @Inject constructor(
     }
 
     fun onSearchChange(query: String) = _state.update { it.copy(query = query) }
+
+    // ---------- Saved prompts (composer chat tools) ----------
+    //
+    // Same sheet contract as chat: first open probes availability (404 → row
+    // hidden), every open refreshes. Tapping a row is handled by the sheet's
+    // host — the home composer owns its draft locally — so only store-side
+    // actions live here.
+
+    fun openPrompts() {
+        _state.update { s ->
+            s.copy(
+                tools = s.tools.copy(
+                    prompts = s.tools.prompts.copy(sheetOpen = true, error = null),
+                ),
+            )
+        }
+        loadPrompts()
+    }
+
+    fun closePrompts() {
+        _state.update { s ->
+            s.copy(
+                tools = s.tools.copy(
+                    prompts = s.tools.prompts.copy(sheetOpen = false, recentlyDeleted = null),
+                ),
+            )
+        }
+    }
+
+    fun retryPrompts() = loadPrompts()
+
+    private fun loadPrompts() {
+        _state.update { s ->
+            s.copy(
+                tools = s.tools.copy(
+                    prompts = s.tools.prompts.copy(loading = true, error = null),
+                ),
+            )
+        }
+        viewModelScope.launch {
+            promptsRepository.list()
+                .onSuccess { rows ->
+                    _state.update { s ->
+                        s.copy(
+                            tools = s.tools.copy(
+                                prompts = s.tools.prompts.copy(
+                                    loading = false,
+                                    error = null,
+                                    prompts = rows,
+                                    available = true,
+                                ),
+                            ),
+                        )
+                    }
+                }
+                .onFailure { err ->
+                    val hidden = rowHiddenByMissingApi(err as? ApiException)
+                    _state.update { s ->
+                        s.copy(
+                            tools = s.tools.copy(
+                                prompts = s.tools.prompts.copy(
+                                    loading = false,
+                                    available = if (hidden) false else (s.tools.prompts.available ?: true),
+                                    error = if (hidden) null else err.toMessage(),
+                                ),
+                            ),
+                        )
+                    }
+                }
+        }
+    }
+
+    fun savePrompt(text: String, label: String? = null) {
+        val trimmed = text.trim()
+        if (trimmed.isEmpty()) return
+        viewModelScope.launch {
+            promptsRepository.save(trimmed, label)
+                .onSuccess {
+                    _effects.trySend(SessionsEffect.Message("Prompt saved"))
+                    loadPrompts()
+                }
+                .onFailure { _effects.trySend(SessionsEffect.Message(it.toMessage())) }
+        }
+    }
+
+    fun deletePrompt(id: String) {
+        val victim = _state.value.tools.prompts.prompts.firstOrNull { it.id == id } ?: return
+        _state.update { s ->
+            s.copy(
+                tools = s.tools.copy(
+                    prompts = s.tools.prompts.copy(
+                        prompts = s.tools.prompts.prompts.filterNot { p -> p.id == id },
+                        recentlyDeleted = victim,
+                    ),
+                ),
+            )
+        }
+        viewModelScope.launch {
+            promptsRepository.delete(id)
+                .onFailure { err ->
+                    _state.update { s ->
+                        s.copy(
+                            tools = s.tools.copy(
+                                prompts = s.tools.prompts.copy(
+                                    recentlyDeleted = null,
+                                    prompts = if (s.tools.prompts.prompts.any { p -> p.id == id }) {
+                                        s.tools.prompts.prompts
+                                    } else {
+                                        (s.tools.prompts.prompts + victim)
+                                            .sortedBy { it.createdAt ?: 0.0 }
+                                    },
+                                ),
+                            ),
+                        )
+                    }
+                    _effects.trySend(SessionsEffect.Message(err.toMessage()))
+                }
+        }
+    }
+
+    fun undoPromptDelete() {
+        val victim = _state.value.tools.prompts.recentlyDeleted ?: return
+        viewModelScope.launch {
+            promptsRepository.save(victim.textValue, victim.label)
+                .onSuccess {
+                    _state.update { s ->
+                        s.copy(
+                            tools = s.tools.copy(
+                                prompts = s.tools.prompts.copy(recentlyDeleted = null),
+                            ),
+                        )
+                    }
+                    loadPrompts()
+                }
+                .onFailure { _effects.trySend(SessionsEffect.Message(it.toMessage())) }
+        }
+    }
 
     /** Creates an empty session and opens it. */
     fun createSession() {
@@ -376,6 +517,8 @@ data class SessionsUiState(
     val model: String? = null,
     val modelProvider: String? = null,
     val picker: ModelPickerUiState = ModelPickerUiState(),
+    /** Composer power tools: saved prompts, later profile and workspace state. */
+    val tools: ComposerToolsState = ComposerToolsState(),
     /** Mic mode, mirrored from settings; the attach sheet's toggle writes it. */
     val voiceMode: VoiceInputMode = VoiceInputMode.TRANSCRIBE,
     val voicePhase: VoicePhase = VoicePhase.Idle,
