@@ -47,6 +47,9 @@ import androidx.compose.material.icons.automirrored.rounded.Send
 import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.rounded.Mic
 import androidx.compose.material.icons.rounded.MoreHoriz
+import androidx.compose.material.icons.rounded.Bookmarks
+import androidx.compose.material.icons.rounded.FolderOpen
+import androidx.compose.material.icons.rounded.ManageAccounts
 import androidx.compose.material.icons.rounded.Settings
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -94,12 +97,28 @@ import com.dipandhali.hermesnative.core.model.AttachmentDto
 import com.dipandhali.hermesnative.core.model.SessionRow
 import com.dipandhali.hermesnative.data.media.newCameraCaptureUri
 import com.dipandhali.hermesnative.domain.composer.ATTACH_ROTATION_DEGREES
+import com.dipandhali.hermesnative.domain.composer.PromptsUiState
+import com.dipandhali.hermesnative.domain.composer.ProfilesUiState
+import com.dipandhali.hermesnative.domain.composer.WorkspacesUiState
 import com.dipandhali.hermesnative.domain.composer.attachToggleDescription
+import com.dipandhali.hermesnative.domain.composer.composeWithPrompt
+import com.dipandhali.hermesnative.domain.composer.homeSendWorkspace
+import com.dipandhali.hermesnative.domain.composer.workspaceLabel
 import com.dipandhali.hermesnative.domain.modelpicker.ModelSelection
 import com.dipandhali.hermesnative.domain.modelpicker.displaySelection
 import com.dipandhali.hermesnative.domain.voice.VoiceInputMode
 import com.dipandhali.hermesnative.domain.voice.VoicePhase
+import com.dipandhali.hermesnative.domain.composer.workspaceLabel
 import com.dipandhali.hermesnative.ui.chat.components.AttachPanel
+import com.dipandhali.hermesnative.ui.chat.components.ChatToolsRow
+import com.dipandhali.hermesnative.ui.chat.components.ChatToolsSection
+import com.dipandhali.hermesnative.ui.chat.components.PromptsSheet
+import com.dipandhali.hermesnative.ui.chat.components.ProfilePickerSheet
+import com.dipandhali.hermesnative.ui.chat.components.WorkspacePickerSheet
+import com.dipandhali.hermesnative.ui.profile.ProfileCreateSheet
+import com.dipandhali.hermesnative.ui.profile.ProfileManagerSheet
+import com.dipandhali.hermesnative.ui.workspace.WorkspaceManageSheet
+import com.dipandhali.hermesnative.ui.workspace.WorkspacePathDialog
 import com.dipandhali.hermesnative.ui.chat.components.AttachmentTray
 import com.dipandhali.hermesnative.ui.chat.components.ComposerAttachment
 import com.dipandhali.hermesnative.ui.chat.components.MAX_ATTACHMENTS
@@ -152,6 +171,7 @@ fun HomeScreen(
     )
     val snackbar = remember { SnackbarHostState() }
     var menuOpen by remember { mutableStateOf(false) }
+    var composerReset by remember { mutableStateOf(0) }
 
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
@@ -201,7 +221,12 @@ fun HomeScreen(
                 // A failure that is not shown is indistinguishable from a freeze —
                 // this screen has no transcript to render it into. Voice errors
                 // (permission, transcription) land here too.
-                is SessionsEffect.Message -> snackbar.showSnackbar(effect.text)
+                is SessionsEffect.Message -> {
+                    // Surfaced now that voice errors land here too, and the
+                    // composer's spinner must not survive a failed start.
+                    composerReset++
+                    snackbar.showSnackbar(effect.text)
+                }
             }
         }
     }
@@ -255,6 +280,18 @@ fun HomeScreen(
                 onVoiceCancel = viewModel::cancelVoiceRecording,
                 voiceElapsedMs = viewModel::voiceElapsedMs,
                 voiceAmplitude = viewModel::voiceAmplitude,
+                resetSignal = composerReset,
+                prompts = state.tools.prompts,
+                profiles = state.tools.profiles,
+                workspaces = state.tools.workspaces,
+                onOpenPrompts = viewModel::openPrompts,
+                onClosePrompts = viewModel::closePrompts,
+                onSavePrompt = viewModel::savePrompt,
+                onDeletePrompt = viewModel::deletePrompt,
+                onUndoPromptDelete = viewModel::undoPromptDelete,
+                onRetryPrompts = viewModel::retryPrompts,
+                onOpenProfilePicker = viewModel::openProfilePicker,
+                onOpenWorkspacePicker = viewModel::openWorkspacePicker,
                 // The composer is the only element that insets itself against the
                 // keyboard and the gesture bar. `inner` below is only a padding
                 // value — it is not consumed — so a second imePadding anywhere in
@@ -364,6 +401,78 @@ fun HomeScreen(
             scopeNote = "Applies to new conversations.",
         )
     }
+
+    state.tools.profiles.let { profiles ->
+        if (profiles.pickerOpen) {
+            ProfilePickerSheet(
+                state = profiles,
+                onSwitch = viewModel::switchProfile,
+                onManage = {
+                    viewModel.closeProfilePicker()
+                    viewModel.openProfileManager()
+                },
+                onDismiss = viewModel::closeProfilePicker,
+            )
+        }
+        if (profiles.managerOpen) {
+            ProfileManagerSheet(
+                state = profiles,
+                onCreate = {
+                    viewModel.closeProfileManager()
+                    viewModel.openProfileCreate()
+                },
+                onActivate = viewModel::switchProfile,
+                onDelete = viewModel::deleteProfile,
+                onDismiss = viewModel::closeProfileManager,
+            )
+        }
+        if (profiles.createOpen) {
+            ProfileCreateSheet(
+                state = profiles,
+                catalog = state.picker.catalog,
+                onSubmit = viewModel::createProfile,
+                onBack = {
+                    viewModel.closeProfileCreate()
+                    viewModel.openProfileManager()
+                },
+                onDismiss = viewModel::closeProfileCreate,
+            )
+        }
+
+        val workspaces = state.tools.workspaces
+        if (workspaces.pickerOpen) {
+            WorkspacePickerSheet(
+                state = workspaces,
+                highlightPath = workspaces.pendingPath,
+                onPick = viewModel::pickWorkspace,
+                onWorktree = viewModel::startWorktreeChat,
+                onPathAdd = viewModel::openWorkspacePathDialog,
+                onManage = {
+                    viewModel.closeWorkspacePicker()
+                    viewModel.openWorkspaceManage()
+                },
+                onBrowseFiles = null,
+                onRetry = viewModel::retryWorkspaces,
+                onDismiss = viewModel::closeWorkspacePicker,
+            )
+        }
+        if (workspaces.listEditorOpen) {
+            WorkspaceManageSheet(
+                state = workspaces,
+                onRename = viewModel::renameWorkspace,
+                onRemove = viewModel::removeWorkspace,
+                onDismiss = viewModel::closeWorkspaceManage,
+            )
+        }
+        if (workspaces.pathDialogOpen) {
+            WorkspacePathDialog(
+                state = workspaces,
+                onInput = viewModel::workspacePathQuery,
+                onSubmit = viewModel::submitWorkspacePath,
+                onDismiss = viewModel::closeWorkspacePathDialog,
+            )
+        }
+    }
 }
 
 /**
@@ -398,6 +507,18 @@ private fun HomeComposer(
     onVoiceCancel: () -> Unit,
     voiceElapsedMs: () -> Long,
     voiceAmplitude: () -> Int,
+    resetSignal: Int,
+    prompts: PromptsUiState,
+    profiles: ProfilesUiState,
+    workspaces: WorkspacesUiState,
+    onOpenPrompts: () -> Unit,
+    onClosePrompts: () -> Unit,
+    onSavePrompt: (String) -> Unit,
+    onDeletePrompt: (String) -> Unit,
+    onUndoPromptDelete: () -> Unit,
+    onRetryPrompts: () -> Unit,
+    onOpenProfilePicker: () -> Unit,
+    onOpenWorkspacePicker: () -> Unit,
 ) {
     var text by remember { mutableStateOf("") }
     var attachments by remember { mutableStateOf(listOf<ComposerAttachment>()) }
@@ -635,9 +756,74 @@ private fun HomeComposer(
                         attachOpen = false
                         filePicker.launch(arrayOf("*/*"))
                     },
+                    chatTools = {
+                        buildList {
+                            if (prompts.available != false) {
+                                add(
+                                    ChatToolsRow(
+                                        icon = Icons.Rounded.Bookmarks,
+                                        title = "Saved prompts",
+                                        onClick = {
+                                            attachOpen = false
+                                            onOpenPrompts()
+                                        },
+                                    ),
+                                )
+                            }
+                            if (profiles.available != false && !profiles.singleMode) {
+                                add(
+                                    ChatToolsRow(
+                                        icon = Icons.Rounded.ManageAccounts,
+                                        title = "Profile",
+                                        trailing = profiles.activeName,
+                                        onClick = {
+                                            attachOpen = false
+                                            onOpenProfilePicker()
+                                        },
+                                    ),
+                                )
+                            }
+                            if (workspaces.available != false) {
+                                add(
+                                    ChatToolsRow(
+                                        icon = Icons.Rounded.FolderOpen,
+                                        title = "Workspace",
+                                        trailing = workspaceLabel(
+                                            sessionWorkspace = homeSendWorkspace(
+                                                workspaces.pendingPath,
+                                                profiles.defaultWorkspace,
+                                            ),
+                                            saved = workspaces.workspaces,
+                                            fallback = "Default",
+                                        ),
+                                        onClick = {
+                                            attachOpen = false
+                                            onOpenWorkspacePicker()
+                                        },
+                                    ),
+                                )
+                            }
+                        }.takeIf { it.isNotEmpty() }?.let { ChatToolsSection(rows = it) }
+                    },
                 )
             }
         }
+    }
+
+    if (prompts.sheetOpen) {
+        PromptsSheet(
+            state = prompts,
+            draftProvider = { text },
+            onPick = { prompt ->
+                text = composeWithPrompt(text, prompt.textValue)
+                onClosePrompts()
+            },
+            onSave = { onSavePrompt(text) },
+            onDelete = onDeletePrompt,
+            onUndo = onUndoPromptDelete,
+            onRetry = onRetryPrompts,
+            onDismiss = onClosePrompts,
+        )
     }
 }
 

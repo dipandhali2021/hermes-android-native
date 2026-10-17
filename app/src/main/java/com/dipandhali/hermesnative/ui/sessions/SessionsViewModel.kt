@@ -9,13 +9,23 @@ import com.dipandhali.hermesnative.core.model.SessionRow
 import com.dipandhali.hermesnative.core.net.ApiException
 import com.dipandhali.hermesnative.data.media.MediaRepository
 import com.dipandhali.hermesnative.data.media.TranscriptionRepository
+import com.dipandhali.hermesnative.data.profiles.ProfileRepository
+import com.dipandhali.hermesnative.data.prompts.PromptsRepository
+import com.dipandhali.hermesnative.data.workspace.WorkspaceRepository
 import com.dipandhali.hermesnative.data.sessions.SessionRepository
 import com.dipandhali.hermesnative.data.settings.ServerState
 import com.dipandhali.hermesnative.data.settings.SettingsStore
 import com.dipandhali.hermesnative.data.voice.VoiceRecorder
 import com.dipandhali.hermesnative.domain.modelpicker.ModelPickerUiState
 import com.dipandhali.hermesnative.domain.modelpicker.ModelSelection
+import com.dipandhali.hermesnative.core.model.ProfileCreateRequest
 import com.dipandhali.hermesnative.domain.modelpicker.PickerCatalogBuilder
+import com.dipandhali.hermesnative.domain.composer.ComposerToolsState
+import com.dipandhali.hermesnative.domain.composer.rowHiddenByMissingApi
+import com.dipandhali.hermesnative.domain.composer.WORKSPACE_SUGGEST_DEBOUNCE_MS
+import com.dipandhali.hermesnative.domain.composer.homeSendWorkspace
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
 import com.dipandhali.hermesnative.domain.modelpicker.displaySelection
 import com.dipandhali.hermesnative.domain.voice.VoiceInputMode
 import com.dipandhali.hermesnative.domain.voice.VoicePhase
@@ -35,6 +45,9 @@ import javax.inject.Inject
 class SessionsViewModel @Inject constructor(
     private val repository: SessionRepository,
     private val media: MediaRepository,
+    private val promptsRepository: PromptsRepository,
+    private val profileRepository: ProfileRepository,
+    private val workspaceRepository: WorkspaceRepository,
     private val settings: SettingsStore,
     private val serverState: ServerState,
     private val voiceRecorder: VoiceRecorder,
@@ -61,6 +74,9 @@ class SessionsViewModel @Inject constructor(
                 _state.update { it.copy(voiceMode = mode) }
             }
         }
+        // Boot identity: who is live on the server. New chats on this screen
+        // inherit that profile's default workspace.
+        loadProfileIdentity()
     }
 
     fun refresh() {
@@ -78,11 +94,157 @@ class SessionsViewModel @Inject constructor(
 
     fun onSearchChange(query: String) = _state.update { it.copy(query = query) }
 
+    // ---------- Saved prompts (composer chat tools) ----------
+    //
+    // Same sheet contract as chat: first open probes availability (404 → row
+    // hidden), every open refreshes. Tapping a row is handled by the sheet's
+    // host — the home composer owns its draft locally — so only store-side
+    // actions live here.
+
+    fun openPrompts() {
+        _state.update { s ->
+            s.copy(
+                tools = s.tools.copy(
+                    prompts = s.tools.prompts.copy(sheetOpen = true, error = null),
+                ),
+            )
+        }
+        loadPrompts()
+    }
+
+    fun closePrompts() {
+        _state.update { s ->
+            s.copy(
+                tools = s.tools.copy(
+                    prompts = s.tools.prompts.copy(sheetOpen = false, recentlyDeleted = null),
+                ),
+            )
+        }
+    }
+
+    fun retryPrompts() = loadPrompts()
+
+    private fun loadPrompts() {
+        _state.update { s ->
+            s.copy(
+                tools = s.tools.copy(
+                    prompts = s.tools.prompts.copy(loading = true, error = null),
+                ),
+            )
+        }
+        viewModelScope.launch {
+            promptsRepository.list()
+                .onSuccess { rows ->
+                    _state.update { s ->
+                        s.copy(
+                            tools = s.tools.copy(
+                                prompts = s.tools.prompts.copy(
+                                    loading = false,
+                                    error = null,
+                                    prompts = rows,
+                                    available = true,
+                                ),
+                            ),
+                        )
+                    }
+                }
+                .onFailure { err ->
+                    val hidden = rowHiddenByMissingApi(err as? ApiException)
+                    _state.update { s ->
+                        s.copy(
+                            tools = s.tools.copy(
+                                prompts = s.tools.prompts.copy(
+                                    loading = false,
+                                    available = if (hidden) false else (s.tools.prompts.available ?: true),
+                                    error = if (hidden) null else err.toMessage(),
+                                ),
+                            ),
+                        )
+                    }
+                }
+        }
+    }
+
+    fun savePrompt(text: String, label: String? = null) {
+        val trimmed = text.trim()
+        if (trimmed.isEmpty()) return
+        viewModelScope.launch {
+            promptsRepository.save(trimmed, label)
+                .onSuccess {
+                    _effects.trySend(SessionsEffect.Message("Prompt saved"))
+                    loadPrompts()
+                }
+                .onFailure { _effects.trySend(SessionsEffect.Message(it.toMessage())) }
+        }
+    }
+
+    fun deletePrompt(id: String) {
+        val victim = _state.value.tools.prompts.prompts.firstOrNull { it.id == id } ?: return
+        _state.update { s ->
+            s.copy(
+                tools = s.tools.copy(
+                    prompts = s.tools.prompts.copy(
+                        prompts = s.tools.prompts.prompts.filterNot { p -> p.id == id },
+                        recentlyDeleted = victim,
+                    ),
+                ),
+            )
+        }
+        viewModelScope.launch {
+            promptsRepository.delete(id)
+                .onFailure { err ->
+                    _state.update { s ->
+                        s.copy(
+                            tools = s.tools.copy(
+                                prompts = s.tools.prompts.copy(
+                                    recentlyDeleted = null,
+                                    prompts = if (s.tools.prompts.prompts.any { p -> p.id == id }) {
+                                        s.tools.prompts.prompts
+                                    } else {
+                                        (s.tools.prompts.prompts + victim)
+                                            .sortedBy { it.createdAt ?: 0.0 }
+                                    },
+                                ),
+                            ),
+                        )
+                    }
+                    _effects.trySend(SessionsEffect.Message(err.toMessage()))
+                }
+        }
+    }
+
+    fun undoPromptDelete() {
+        val victim = _state.value.tools.prompts.recentlyDeleted ?: return
+        viewModelScope.launch {
+            promptsRepository.save(victim.textValue, victim.label)
+                .onSuccess {
+                    _state.update { s ->
+                        s.copy(
+                            tools = s.tools.copy(
+                                prompts = s.tools.prompts.copy(recentlyDeleted = null),
+                            ),
+                        )
+                    }
+                    loadPrompts()
+                }
+                .onFailure { _effects.trySend(SessionsEffect.Message(it.toMessage())) }
+        }
+    }
+
     /** Creates an empty session and opens it. */
     fun createSession() {
         viewModelScope.launch {
             val pick = selection()
-            repository.create(model = pick?.model, provider = pick?.provider)
+            repository.create(
+                model = pick?.model,
+                provider = pick?.provider,
+                // Home sends omit `worktree` on purpose (three-value contract):
+                // the profile's config decides isolation, same as a CLI send.
+                workspace = homeSendWorkspace(
+                    pendingWorkspace = _state.value.tools.workspaces.pendingPath,
+                    identityDefault = _state.value.tools.profiles.defaultWorkspace,
+                ),
+            )
                 .onSuccess { sessionId ->
                     // The new session must appear in the list before navigation, or
                     // the tap looks like it did nothing.
@@ -127,7 +289,16 @@ class SessionsViewModel @Inject constructor(
     private fun createAndSend(message: String, attachmentUris: List<String>) {
         viewModelScope.launch {
             val pick = selection()
-            val sessionId = repository.create(model = pick?.model, provider = pick?.provider)
+            val sessionId = repository.create(
+                model = pick?.model,
+                provider = pick?.provider,
+                // As with createSession: pending pick, else profile default,
+                // no explicit worktree key.
+                workspace = homeSendWorkspace(
+                    pendingWorkspace = _state.value.tools.workspaces.pendingPath,
+                    identityDefault = _state.value.tools.profiles.defaultWorkspace,
+                ),
+            )
                 .getOrElse { error ->
                     _state.update {
                         it.copy(isStartingChat = false, voicePhase = VoicePhase.Idle)
@@ -151,6 +322,428 @@ class SessionsViewModel @Inject constructor(
             _state.update { it.copy(isStartingChat = false, voicePhase = VoicePhase.Idle) }
             refresh()
             _effects.trySend(SessionsEffect.OpenSessionAndSend(sessionId, message, attachments))
+        }
+    }
+
+    // ---------- Profile identity & home-side switch ----------
+
+    /**
+     * Boot identity resolution. A 404 from either endpoint means a server
+     * older than profiles — the panel row hides quietly; other failures keep
+     * the row and surface on open.
+     */
+    fun loadProfileIdentity() {
+        _state.update { s ->
+            s.copy(tools = s.tools.copy(profiles = s.tools.profiles.copy(loading = true, error = null)))
+        }
+        viewModelScope.launch {
+            val active = profileRepository.active()
+            val rowsBundle = profileRepository.list()
+
+            val hidden = rowHiddenByMissingApi(active.exceptionOrNull() as? ApiException) ||
+                rowHiddenByMissingApi(rowsBundle.exceptionOrNull() as? ApiException)
+            val activeResult = active.getOrNull()
+            val rows = rowsBundle.getOrNull()
+            _state.update { s ->
+                s.copy(
+                    tools = s.tools.copy(
+                        profiles = s.tools.profiles.copy(
+                            loading = false,
+                            available = !hidden,
+                            activeName = activeResult?.name ?: s.tools.profiles.activeName,
+                            activeIsDefault = activeResult?.isDefault,
+                            defaultWorkspace = activeResult?.defaultWorkspace
+                                ?: s.tools.profiles.defaultWorkspace,
+                            singleMode = rows?.singleProfileMode ?: s.tools.profiles.singleMode,
+                            rows = rows?.profiles?.filter { it.visible != false }
+                                ?: s.tools.profiles.rows,
+                            error = if (hidden) null else {
+                                active.exceptionOrNull()?.toMessage()
+                                    ?: rowsBundle.exceptionOrNull()?.toMessage() ?: s.tools.profiles.error
+                            },
+                        ),
+                    ),
+                )
+            }
+        }
+    }
+
+    /**
+     * Home-side switch: the active profile drives which sessions list follows
+     * and what a NEW chat points at; the composer retargets to that profile's
+     * default workspace. There is no conversation to re-tag here — nothing
+     * exists yet.
+     */
+    fun switchProfile(name: String) {
+        viewModelScope.launch {
+            _state.update { s ->
+                s.copy(
+                    tools = s.tools.copy(
+                        profiles = s.tools.profiles.copy(busySwitching = true, error = null),
+                    ),
+                )
+            }
+            profileRepository.switch(name)
+                .onSuccess { switched ->
+                    _state.update { s ->
+                        s.copy(
+                            tools = s.tools.copy(
+                                profiles = s.tools.profiles.copy(
+                                    busySwitching = false,
+                                    activeName = switched.active ?: name,
+                                    activeIsDefault = switched.isDefault,
+                                    defaultWorkspace = switched.defaultWorkspace
+                                        ?: s.tools.profiles.defaultWorkspace,
+                                    pickerOpen = false,
+                                ),
+                            ),
+                        )
+                    }
+                    _effects.trySend(SessionsEffect.Message("Switched to ${switched.active ?: name}"))
+                    refresh()
+                }
+                .onFailure { err ->
+                    _state.update { s ->
+                        s.copy(
+                            tools = s.tools.copy(
+                                profiles = s.tools.profiles.copy(busySwitching = false),
+                            ),
+                        )
+                    }
+                    _effects.trySend(SessionsEffect.Message(err.toMessage()))
+                }
+        }
+    }
+
+    fun openProfilePicker() {
+        _state.update { s ->
+            s.copy(tools = s.tools.copy(profiles = s.tools.profiles.copy(pickerOpen = true, error = null)))
+        }
+        loadProfileIdentity()
+    }
+
+    fun closeProfilePicker() {
+        _state.update { s ->
+            s.copy(tools = s.tools.copy(profiles = s.tools.profiles.copy(pickerOpen = false)))
+        }
+    }
+
+    // ---------- Workspace (home: registry + next-chat target) ----------
+
+    fun openWorkspacePicker() {
+        _state.update { s ->
+            s.copy(
+                tools = s.tools.copy(
+                    workspaces = s.tools.workspaces.copy(pickerOpen = true, error = null),
+                ),
+            )
+        }
+        loadWorkspaces()
+    }
+
+    fun closeWorkspacePicker() {
+        _state.update { s ->
+            s.copy(tools = s.tools.copy(workspaces = s.tools.workspaces.copy(pickerOpen = false)))
+        }
+    }
+
+    fun retryWorkspaces() = loadWorkspaces()
+
+    private fun loadWorkspaces() {
+        _state.update { s ->
+            s.copy(
+                tools = s.tools.copy(
+                    workspaces = s.tools.workspaces.copy(loading = true, error = null),
+                ),
+            )
+        }
+        viewModelScope.launch {
+            workspaceRepository.list()
+                .onSuccess { bundle ->
+                    _state.update { s ->
+                        s.copy(
+                            tools = s.tools.copy(
+                                workspaces = s.tools.workspaces.copy(
+                                    loading = false,
+                                    error = null,
+                                    available = true,
+                                    workspaces = bundle.workspaces,
+                                    last = bundle.last,
+                                ),
+                            ),
+                        )
+                    }
+                }
+                .onFailure { err ->
+                    val hidden = rowHiddenByMissingApi(err as? ApiException)
+                    _state.update { s ->
+                        s.copy(
+                            tools = s.tools.copy(
+                                workspaces = s.tools.workspaces.copy(
+                                    loading = false,
+                                    available = if (hidden) false else (s.tools.workspaces.available ?: true),
+                                    error = if (hidden) null else err.toMessage(),
+                                ),
+                            ),
+                        )
+                    }
+                }
+        }
+    }
+
+    /** The + panel's pick only retargets the NEXT chat; nothing exists yet. */
+    fun pickWorkspace(path: String) {
+        _state.update { s ->
+            s.copy(
+                tools = s.tools.copy(
+                    workspaces = s.tools.workspaces.copy(
+                        pendingPath = path,
+                        pickerOpen = false,
+                    ),
+                ),
+            )
+        }
+    }
+
+    /** Undoes the pending target: next chats follow the profile default again. */
+    fun clearPendingWorkspace() {
+        _state.update { s ->
+            s.copy(tools = s.tools.copy(workspaces = s.tools.workspaces.copy(pendingPath = null)))
+        }
+    }
+
+    /**
+     * A NEW conversation isolated in a worktree of the pending target (else
+     * the profile default). Pushed like any fresh chat; the composer resets.
+     */
+    fun startWorktreeChat() {
+        viewModelScope.launch {
+            val pick = selection()
+            repository.create(
+                model = pick?.model,
+                provider = pick?.provider,
+                workspace = homeSendWorkspace(
+                    pendingWorkspace = _state.value.tools.workspaces.pendingPath,
+                    identityDefault = _state.value.tools.profiles.defaultWorkspace,
+                ),
+                worktree = true,
+            )
+                .onSuccess { sessionId ->
+                    refresh()
+                    _effects.trySend(SessionsEffect.OpenSession(sessionId))
+                }
+                .onFailure { _effects.trySend(SessionsEffect.Message(it.toMessage())) }
+        }
+    }
+
+    // ---------- Workspace management (picker helper sheets) ----------
+
+    private var workspaceSuggestJob: Job? = null
+
+    fun openWorkspaceManage() {
+        _state.update { s ->
+            s.copy(
+                tools = s.tools.copy(
+                    workspaces = s.tools.workspaces.copy(listEditorOpen = true),
+                ),
+            )
+        }
+        loadWorkspaces()
+    }
+
+    fun closeWorkspaceManage() {
+        _state.update { s ->
+            s.copy(
+                tools = s.tools.copy(
+                    workspaces = s.tools.workspaces.copy(listEditorOpen = false),
+                ),
+            )
+        }
+        closeWorkspacePathDialog()
+    }
+
+    fun openWorkspacePathDialog() {
+        _state.update { s ->
+            s.copy(
+                tools = s.tools.copy(
+                    workspaces = s.tools.workspaces.copy(pathDialogOpen = true, suggestions = emptyList()),
+                ),
+            )
+        }
+    }
+
+    fun closeWorkspacePathDialog() {
+        _state.update { s ->
+            s.copy(
+                tools = s.tools.copy(
+                    workspaces = s.tools.workspaces.copy(
+                        pathDialogOpen = false,
+                        suggestions = emptyList(),
+                        busy = false,
+                    ),
+                ),
+            )
+        }
+    }
+
+    /** Typeahead against the trusted-roots suggest endpoint, debounced. */
+    fun workspacePathQuery(prefix: String) {
+        workspaceSuggestJob?.cancel()
+        if (prefix.isBlank()) return
+        workspaceSuggestJob = viewModelScope.launch {
+            delay(WORKSPACE_SUGGEST_DEBOUNCE_MS)
+            workspaceRepository.suggest(prefix)
+                .onSuccess { rows ->
+                    _state.update { s ->
+                        s.copy(tools = s.tools.copy(workspaces = s.tools.workspaces.copy(suggestions = rows)))
+                    }
+                }
+                .onFailure {
+                    _state.update { s ->
+                        s.copy(tools = s.tools.copy(workspaces = s.tools.workspaces.copy(suggestions = emptyList())))
+                    }
+                }
+        }
+    }
+
+    /**
+     * Registers a typed path and retargets the next chat to it. Server
+     * wording for a bad or already-saved path surfaces verbatim.
+     */
+    fun submitWorkspacePath(path: String) {
+        val trimmed = path.trim()
+        if (trimmed.isEmpty()) return
+        _state.update { s ->
+            s.copy(tools = s.tools.copy(workspaces = s.tools.workspaces.copy(busy = true)))
+        }
+        viewModelScope.launch {
+            workspaceRepository.add(trimmed)
+                .onSuccess { bundle ->
+                    _state.update { s ->
+                        s.copy(
+                            tools = s.tools.copy(
+                                workspaces = s.tools.workspaces.copy(
+                                    busy = false,
+                                    pathDialogOpen = false,
+                                    suggestions = emptyList(),
+                                    available = true,
+                                    workspaces = bundle.workspaces,
+                                    pendingPath = trimmed,
+                                ),
+                            ),
+                        )
+                    }
+                }
+                .onFailure { err ->
+                    _state.update { s ->
+                        s.copy(tools = s.tools.copy(workspaces = s.tools.workspaces.copy(busy = false)))
+                    }
+                    _effects.trySend(SessionsEffect.Message(err.toMessage()))
+                }
+        }
+    }
+
+    fun renameWorkspace(path: String, name: String) {
+        val trimmed = name.trim()
+        if (trimmed.isEmpty()) return
+        viewModelScope.launch {
+            workspaceRepository.rename(path, trimmed)
+                .onSuccess { bundle ->
+                    _state.update { s ->
+                        s.copy(
+                            tools = s.tools.copy(
+                                workspaces = s.tools.workspaces.copy(
+                                    available = true,
+                                    workspaces = bundle.workspaces,
+                                ),
+                            ),
+                        )
+                    }
+                }
+                .onFailure { _effects.trySend(SessionsEffect.Message(it.toMessage())) }
+        }
+    }
+
+    /** Optimistic remove: the row leaves the list at once; the server's list wins back. */
+    fun removeWorkspace(path: String) {
+        _state.update { s ->
+            s.copy(
+                tools = s.tools.copy(
+                    workspaces = s.tools.workspaces.copy(
+                        workspaces = s.tools.workspaces.workspaces.filterNot { it.path == path },
+                    ),
+                ),
+            )
+        }
+        viewModelScope.launch {
+            workspaceRepository.remove(path)
+                .onSuccess { bundle ->
+                    _state.update { s ->
+                        s.copy(
+                            tools = s.tools.copy(
+                                workspaces = s.tools.workspaces.copy(
+                                    available = true,
+                                    workspaces = bundle.workspaces,
+                                ),
+                            ),
+                        )
+                    }
+                }
+                .onFailure { err ->
+                    _effects.trySend(SessionsEffect.Message(err.toMessage()))
+                    loadWorkspaces()
+                }
+        }
+    }
+
+    fun openProfileManager() {
+        _state.update { s ->
+            s.copy(tools = s.tools.copy(profiles = s.tools.profiles.copy(managerOpen = true)))
+        }
+        loadProfileIdentity()
+    }
+
+    fun closeProfileManager() {
+        _state.update { s ->
+            s.copy(tools = s.tools.copy(profiles = s.tools.profiles.copy(managerOpen = false)))
+        }
+    }
+
+    fun openProfileCreate() {
+        _state.update { s ->
+            s.copy(tools = s.tools.copy(profiles = s.tools.profiles.copy(createOpen = true)))
+        }
+        // The form's optional model dropdown rides the picker catalog.
+        if (_state.value.picker.catalog == null) loadModels()
+    }
+
+    fun closeProfileCreate() {
+        _state.update { s ->
+            s.copy(tools = s.tools.copy(profiles = s.tools.profiles.copy(createOpen = false)))
+        }
+    }
+
+    /** Creation runs while the form stays open; failure keeps its fields. */
+    fun createProfile(request: ProfileCreateRequest) {
+        viewModelScope.launch {
+            profileRepository.create(request)
+                .onSuccess {
+                    _effects.trySend(SessionsEffect.Message("Profile \"${request.name}\" created"))
+                    closeProfileCreate()
+                    loadProfileIdentity()
+                }
+                .onFailure { _effects.trySend(SessionsEffect.Message(it.toMessage())) }
+        }
+    }
+
+    fun deleteProfile(name: String) {
+        viewModelScope.launch {
+            profileRepository.delete(name)
+                .onSuccess {
+                    _effects.trySend(SessionsEffect.Message("Profile \"$name\" deleted"))
+                    loadProfileIdentity()
+                }
+                .onFailure { _effects.trySend(SessionsEffect.Message(it.toMessage())) }
         }
     }
 
@@ -387,6 +980,8 @@ data class SessionsUiState(
     val model: String? = null,
     val modelProvider: String? = null,
     val picker: ModelPickerUiState = ModelPickerUiState(),
+    /** Composer power tools: saved prompts, later profile and workspace state. */
+    val tools: ComposerToolsState = ComposerToolsState(),
     /** Mic mode, mirrored from settings; the attach sheet's toggle writes it. */
     val voiceMode: VoiceInputMode = VoiceInputMode.TRANSCRIBE,
     val voicePhase: VoicePhase = VoicePhase.Idle,

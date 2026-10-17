@@ -73,6 +73,8 @@ fun AttachPanel(
     onCamera: () -> Unit,
     onFiles: () -> Unit,
     modifier: Modifier = Modifier,
+    /** Chat tools rows (saved prompts, profile, workspace, files) between tiles and voice. */
+    chatTools: (@Composable () -> Unit)? = null,
 ) {
     Surface(
         color = MaterialTheme.colorScheme.surfaceContainer,
@@ -109,6 +111,8 @@ fun AttachPanel(
                     modifier = Modifier.weight(1f),
                 )
             }
+
+            chatTools?.invoke()
 
             Spacer(Modifier.height(20.dp))
             HorizontalDivider()

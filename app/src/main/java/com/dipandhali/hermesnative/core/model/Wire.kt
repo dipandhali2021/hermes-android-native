@@ -179,14 +179,31 @@ data class NewSessionResponse(val session: SessionDetail? = null)
 data class NewSessionRequest(
     val model: String? = null,
     @SerialName("model_provider") val modelProvider: String? = null,
+    /**
+     * The chat's workspace. Home sends carry it (the composer's target);
+     * chat-side replacement chats carry the switched profile's default.
+     * Absent everywhere means the profile's config default wins.
+     */
+    val workspace: String? = null,
+    /**
+     * Three-value worktree contract (server `#6022`): an absent key inherits
+     * the profile's config-level `worktree:` default so phone sends agree
+     * with CLI sends; explicit `true` demands isolation (rejected on a
+     * non-git workspace); explicit `false` refuses it — for auto-bind and
+     * profile-switch replacement chats only.
+     */
+    val worktree: Boolean? = null,
+    /** Cross-profile new chats: the profile the *new* chat lives under. */
+    val profile: String? = null,
 )
 
-/** Body of `POST /api/session/update`; effective from the next message. */
+/** Body of `POST /api/session/update`; absent keys leave the value untouched. */
 @Serializable
 data class SessionUpdateRequest(
     @SerialName("session_id") val sessionId: String,
-    val model: String,
+    val model: String? = null,
     @SerialName("model_provider") val modelProvider: String? = null,
+    val workspace: String? = null,
 )
 
 @Serializable

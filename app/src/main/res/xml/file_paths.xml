@@ -7,4 +7,7 @@
 <paths>
     <cache-path name="voice" path="voice/" />
     <cache-path name="camera" path="camera/" />
+    <!-- Files-panel "open externally" staging: raw bytes copied from the
+         workspace, handed to other apps through a FileProvider URI. -->
+    <cache-path name="previews" path="previews/" />
 </paths>

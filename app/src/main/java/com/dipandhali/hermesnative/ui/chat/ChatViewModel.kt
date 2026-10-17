@@ -8,6 +8,7 @@ import com.dipandhali.hermesnative.core.chat.ChatEvent
 import com.dipandhali.hermesnative.core.chat.isClose
 import com.dipandhali.hermesnative.core.error.userMessage
 import com.dipandhali.hermesnative.core.model.AttachmentDto
+import com.dipandhali.hermesnative.core.model.SavedPrompt
 import com.dipandhali.hermesnative.core.net.ApiException
 import com.dipandhali.hermesnative.data.chat.ChatRepository
 import com.dipandhali.hermesnative.data.media.MediaRepository
@@ -18,8 +19,21 @@ import com.dipandhali.hermesnative.data.settings.ServerState
 import com.dipandhali.hermesnative.data.settings.SettingsStore
 import com.dipandhali.hermesnative.domain.composer.BusySendMode
 import com.dipandhali.hermesnative.domain.composer.ComposerAction
+import com.dipandhali.hermesnative.domain.composer.ComposerToolsState
+import com.dipandhali.hermesnative.domain.composer.PromptsUiState
+import com.dipandhali.hermesnative.domain.composer.ProfileSwitchMode
+import com.dipandhali.hermesnative.domain.composer.profileSwitchMode
+import com.dipandhali.hermesnative.domain.composer.workspaceLabel
+import com.dipandhali.hermesnative.domain.composer.WORKSPACE_SWITCH_BLOCKED_COPY
+import com.dipandhali.hermesnative.domain.composer.WORKSPACE_SUGGEST_DEBOUNCE_MS
+import com.dipandhali.hermesnative.domain.composer.WorkspaceSwitchCheck
+import com.dipandhali.hermesnative.domain.composer.workspaceSwitchAllowed
+import com.dipandhali.hermesnative.core.model.ProfileCreateRequest
+import com.dipandhali.hermesnative.core.model.ProfileSwitchResponse
+import com.dipandhali.hermesnative.domain.composer.composeWithPrompt
 import com.dipandhali.hermesnative.domain.composer.parseComposerCommand
 import com.dipandhali.hermesnative.domain.composer.resolveComposerAction
+import com.dipandhali.hermesnative.domain.composer.rowHiddenByMissingApi
 import com.dipandhali.hermesnative.domain.modelpicker.ModelPickerUiState
 import com.dipandhali.hermesnative.domain.modelpicker.ModelSelection
 import com.dipandhali.hermesnative.domain.modelpicker.PickerCatalogBuilder
@@ -59,6 +73,9 @@ import javax.inject.Inject
 class ChatViewModel @Inject constructor(
     private val chat: ChatRepository,
     private val sessions: SessionRepository,
+    private val promptsRepository: com.dipandhali.hermesnative.data.prompts.PromptsRepository,
+    private val profilesRepository: com.dipandhali.hermesnative.data.profiles.ProfileRepository,
+    private val workspacesRepository: com.dipandhali.hermesnative.data.workspace.WorkspaceRepository,
     private val media: MediaRepository,
     private val voiceRecorder: VoiceRecorder,
     private val transcription: TranscriptionRepository,
@@ -148,6 +165,8 @@ class ChatViewModel @Inject constructor(
                             items = detail.messages.toTranscript(),
                             isLoading = false,
                             model = detail.model ?: state.model,
+                            modelProvider = detail.modelProvider ?: state.modelProvider,
+                            workspace = detail.workspace ?: state.workspace,
                             isStreaming = detail.isStreaming,
                             activeStreamId = detail.activeStreamId,
                         )
@@ -744,6 +763,599 @@ class ChatViewModel @Inject constructor(
 
     fun dismissError() = _uiState.update { it.copy(error = null) }
 
+    // ---------- Saved prompts (composer chat tools) ----------
+    //
+    // The sheet drives everything: opening it probes the endpoint once — a
+    // 404 hides the panel's row quietly, older failures surface in the sheet
+    // with retry — and every later open refreshes the rows.
+
+    fun openPrompts() {
+        _uiState.update { s ->
+            s.copy(
+                tools = s.tools.copy(
+                    prompts = s.tools.prompts.copy(sheetOpen = true, error = null),
+                ),
+            )
+        }
+        loadPrompts()
+    }
+
+    fun closePrompts() {
+        _uiState.update { s ->
+            s.copy(
+                tools = s.tools.copy(
+                    prompts = s.tools.prompts.copy(sheetOpen = false, recentlyDeleted = null),
+                ),
+            )
+        }
+    }
+
+    fun retryPrompts() = loadPrompts()
+
+    private fun loadPrompts() {
+        _uiState.update { s ->
+            s.copy(
+                tools = s.tools.copy(
+                    prompts = s.tools.prompts.copy(loading = true, error = null),
+                ),
+            )
+        }
+        viewModelScope.launch {
+            promptsRepository.list()
+                .onSuccess { rows ->
+                    _uiState.update { s ->
+                        s.copy(
+                            tools = s.tools.copy(
+                                prompts = s.tools.prompts.copy(
+                                    loading = false,
+                                    error = null,
+                                    prompts = rows,
+                                    available = true,
+                                ),
+                            ),
+                        )
+                    }
+                }
+                .onFailure { err ->
+                    val hidden = rowHiddenByMissingApi(err as? ApiException)
+                    _uiState.update { s ->
+                        s.copy(
+                            tools = s.tools.copy(
+                                prompts = s.tools.prompts.copy(
+                                    loading = false,
+                                    available = if (hidden) false else (s.tools.prompts.available ?: true),
+                                    error = if (hidden) null else err.toMessage(),
+                                ),
+                            ),
+                        )
+                    }
+                }
+        }
+    }
+
+    /** Tapping a row appends its text to the draft and closes the sheet. */
+    fun pickPrompt(prompt: SavedPrompt) {
+        _uiState.update { s ->
+            s.copy(
+                input = composeWithPrompt(s.input, prompt.textValue),
+                tools = s.tools.copy(
+                    prompts = s.tools.prompts.copy(sheetOpen = false),
+                ),
+            )
+        }
+    }
+
+    /** One-tap save of whatever the composer holds (auto-named by the server). */
+    fun saveDraftAsPrompt() = savePrompt(_uiState.value.input)
+
+    fun savePrompt(text: String, label: String? = null) {
+        val trimmed = text.trim()
+        if (trimmed.isEmpty()) return
+        viewModelScope.launch {
+            promptsRepository.save(trimmed, label)
+                .onSuccess {
+                    _effects.trySend(ChatEffect.ShowMessage("Prompt saved"))
+                    loadPrompts()
+                }
+                .onFailure { err -> _effects.trySend(ChatEffect.ShowMessage(err.toMessage())) }
+        }
+    }
+
+    /** Optimistic swipe delete: the row leaves the list at once, undo restores. */
+    fun deletePrompt(id: String) {
+        val victim = _uiState.value.tools.prompts.prompts.firstOrNull { it.id == id } ?: return
+        _uiState.update { s ->
+            s.copy(
+                tools = s.tools.copy(
+                    prompts = s.tools.prompts.copy(
+                        prompts = s.tools.prompts.prompts.filterNot { p -> p.id == id },
+                        recentlyDeleted = victim,
+                    ),
+                ),
+            )
+        }
+        viewModelScope.launch {
+            promptsRepository.delete(id)
+                .onFailure { err ->
+                    _uiState.update { s ->
+                        s.copy(
+                            tools = s.tools.copy(
+                                prompts = s.tools.prompts.copy(
+                                    // The banner claimed a delete that did not
+                                    // happen; drop it and put the row back.
+                                    recentlyDeleted = null,
+                                    prompts = if (s.tools.prompts.prompts.any { p -> p.id == id }) {
+                                        s.tools.prompts.prompts
+                                    } else {
+                                        (s.tools.prompts.prompts + victim)
+                                            .sortedBy { it.createdAt ?: 0.0 }
+                                    },
+                                ),
+                            ),
+                        )
+                    }
+                    _effects.trySend(ChatEffect.ShowMessage(err.toMessage()))
+                }
+        }
+    }
+
+    /** Re-saves the deleted prompt with its *original* label. */
+    fun undoPromptDelete() {
+        val victim = _uiState.value.tools.prompts.recentlyDeleted ?: return
+        viewModelScope.launch {
+            promptsRepository.save(victim.textValue, victim.label)
+                .onSuccess {
+                    _uiState.update { s ->
+                        s.copy(
+                            tools = s.tools.copy(
+                                prompts = s.tools.prompts.copy(recentlyDeleted = null),
+                            ),
+                        )
+                    }
+                    loadPrompts()
+                }
+                .onFailure { err -> _effects.trySend(ChatEffect.ShowMessage(err.toMessage())) }
+        }
+    }
+
+    // ---------- Profile switch ----------
+    //
+    // With content (or a run in flight) the conversation already belongs to
+    // the old profile's world: switch, then create the replacement
+    // immediately and let the host REPLACE this screen on its back stack.
+    // An empty idle conversation just re-tags in place — same id, the new
+    // profile's defaults applied through session/update. 403 bindings and
+    // 409 refusals surface the server's own wording.
+
+    fun switchProfile(name: String) {
+        val snapshot = _uiState.value
+        val mode = profileSwitchMode(
+            hasTranscript = snapshot.items.isNotEmpty(),
+            runInFlight = snapshot.isBusy || snapshot.activeStreamId != null,
+        )
+        viewModelScope.launch {
+            profilesRepository.switch(name)
+                .onSuccess { switched ->
+                    when (mode) {
+                        ProfileSwitchMode.ReplaceChat -> createReplacementChat(switched)
+                        ProfileSwitchMode.ReTagInPlace -> reTagInPlace(snapshot, switched)
+                    }
+                }
+                .onFailure { _effects.trySend(ChatEffect.ShowMessage(it.toMessage())) }
+        }
+    }
+
+    private fun createReplacementChat(switched: ProfileSwitchResponse) {
+        viewModelScope.launch {
+            sessions.create(
+                workspace = switched.defaultWorkspace,
+                worktree = false,
+                profile = switched.active,
+            )
+                .onSuccess { newId ->
+                    _effects.trySend(
+                        ChatEffect.SwitchedSession(
+                            newId,
+                            switched.active ?: "the new profile",
+                        ),
+                    )
+                }
+                .onFailure { _effects.trySend(ChatEffect.ShowMessage(it.toMessage())) }
+        }
+    }
+
+    private suspend fun reTagInPlace(
+        snapshot: ChatUiState,
+        switched: ProfileSwitchResponse,
+    ) {
+        val sessionId = snapshot.sessionId
+        if (sessionId == null) {
+            createReplacementChat(switched)
+            return
+        }
+        sessions.updateContext(
+            sessionId = sessionId,
+            workspace = switched.defaultWorkspace,
+            model = switched.defaultModel ?: snapshot.model,
+            provider = switched.defaultModelProvider ?: snapshot.modelProvider,
+        )
+            .onSuccess {
+                _uiState.update { state ->
+                    state.copy(
+                        workspace = switched.defaultWorkspace ?: state.workspace,
+                        model = switched.defaultModel ?: state.model,
+                        modelProvider = switched.defaultModelProvider ?: state.modelProvider,
+                    )
+                }
+            }
+            .onFailure { _effects.trySend(ChatEffect.ShowMessage(it.toMessage())) }
+    }
+
+    // ---------- Profile sheets (picker / manager / create) ----------
+
+    fun openProfilePicker() {
+        _uiState.update { s ->
+            s.copy(tools = s.tools.copy(profiles = s.tools.profiles.copy(pickerOpen = true, error = null)))
+        }
+        loadProfileIdentity()
+    }
+
+    fun closeProfilePicker() {
+        _uiState.update { s ->
+            s.copy(tools = s.tools.copy(profiles = s.tools.profiles.copy(pickerOpen = false)))
+        }
+    }
+
+    fun openProfileManager() {
+        _uiState.update { s ->
+            s.copy(tools = s.tools.copy(profiles = s.tools.profiles.copy(managerOpen = true)))
+        }
+        loadProfileIdentity()
+    }
+
+    fun closeProfileManager() {
+        _uiState.update { s ->
+            s.copy(tools = s.tools.copy(profiles = s.tools.profiles.copy(managerOpen = false)))
+        }
+    }
+
+    fun openProfileCreate() {
+        _uiState.update { s ->
+            s.copy(tools = s.tools.copy(profiles = s.tools.profiles.copy(createOpen = true)))
+        }
+        // The form's optional model dropdown rides the picker catalog.
+        if (_uiState.value.picker.catalog == null) loadModels()
+    }
+
+    fun closeProfileCreate() {
+        _uiState.update { s ->
+            s.copy(tools = s.tools.copy(profiles = s.tools.profiles.copy(createOpen = false)))
+        }
+    }
+
+    /** Creation runs while the form stays open; failure keeps its fields. */
+    fun createProfile(request: ProfileCreateRequest) {
+        viewModelScope.launch {
+            profilesRepository.create(request)
+                .onSuccess {
+                    _effects.trySend(ChatEffect.ShowMessage("Profile \"${request.name}\" created"))
+                    closeProfileCreate()
+                    loadProfileIdentity()
+                }
+                .onFailure { _effects.trySend(ChatEffect.ShowMessage(it.toMessage())) }
+        }
+    }
+
+    fun deleteProfile(name: String) {
+        viewModelScope.launch {
+            profilesRepository.delete(name)
+                .onSuccess {
+                    _effects.trySend(ChatEffect.ShowMessage("Profile \"$name\" deleted"))
+                    loadProfileIdentity()
+                }
+                .onFailure { _effects.trySend(ChatEffect.ShowMessage(it.toMessage())) }
+        }
+    }
+
+    // ---------- Workspace (registry, in-place switch, worktree) ----------
+
+    fun openWorkspacePicker() {
+        _uiState.update { s ->
+            s.copy(
+                tools = s.tools.copy(
+                    workspaces = s.tools.workspaces.copy(pickerOpen = true, error = null),
+                ),
+            )
+        }
+        loadWorkspaces()
+    }
+
+    fun closeWorkspacePicker() {
+        _uiState.update { s ->
+            s.copy(tools = s.tools.copy(workspaces = s.tools.workspaces.copy(pickerOpen = false)))
+        }
+    }
+
+    fun retryWorkspaces() = loadWorkspaces()
+
+    private fun loadWorkspaces() {
+        _uiState.update { s ->
+            s.copy(
+                tools = s.tools.copy(
+                    workspaces = s.tools.workspaces.copy(loading = true, error = null),
+                ),
+            )
+        }
+        viewModelScope.launch {
+            workspacesRepository.list()
+                .onSuccess { bundle ->
+                    _uiState.update { s ->
+                        s.copy(
+                            tools = s.tools.copy(
+                                workspaces = s.tools.workspaces.copy(
+                                    loading = false,
+                                    error = null,
+                                    available = true,
+                                    workspaces = bundle.workspaces,
+                                    last = bundle.last,
+                                ),
+                            ),
+                        )
+                    }
+                }
+                .onFailure { err ->
+                    val hidden = rowHiddenByMissingApi(err as? ApiException)
+                    _uiState.update { s ->
+                        s.copy(
+                            tools = s.tools.copy(
+                                workspaces = s.tools.workspaces.copy(
+                                    loading = false,
+                                    available = if (hidden) false else (s.tools.workspaces.available ?: true),
+                                    error = if (hidden) null else err.toMessage(),
+                                ),
+                            ),
+                        )
+                    }
+                }
+        }
+    }
+
+    /** Mid-chat re-point: same session, new target, current model pair kept. */
+    fun switchWorkspace(path: String) {
+        val snapshot = _uiState.value
+        if (workspaceSwitchAllowed(isBusy = snapshot.isBusy, isStreaming = snapshot.isStreaming) ==
+            WorkspaceSwitchCheck.Blocked
+        ) {
+            _effects.trySend(ChatEffect.ShowMessage(WORKSPACE_SWITCH_BLOCKED_COPY))
+            return
+        }
+        val sessionId = snapshot.sessionId ?: return
+        viewModelScope.launch {
+            sessions.updateContext(
+                sessionId = sessionId,
+                workspace = path,
+                model = snapshot.model,
+                provider = snapshot.modelProvider,
+            )
+                .onSuccess {
+                    _uiState.update { it.copy(workspace = path) }
+                    _effects.trySend(ChatEffect.ShowMessage("Workspace switched"))
+                }
+                .onFailure { _effects.trySend(ChatEffect.ShowMessage(it.toMessage())) }
+        }
+    }
+
+    /**
+     * A NEW conversation isolated in a worktree of the current target. This
+     * chat keeps running; the replacement is pushed, not swapped, so back
+     * returns to the original conversation.
+     */
+    fun startWorktreeChat() {
+        val snapshot = _uiState.value
+        viewModelScope.launch {
+            sessions.create(
+                model = snapshot.model,
+                provider = snapshot.modelProvider,
+                workspace = snapshot.workspace ?: _uiState.value.tools.profiles.defaultWorkspace,
+                worktree = true,
+            )
+                .onSuccess { newId -> _effects.trySend(ChatEffect.OpenSession(newId)) }
+                .onFailure { _effects.trySend(ChatEffect.ShowMessage(it.toMessage())) }
+        }
+    }
+
+    // ---------- Workspace management (picker helper sheets) ----------
+
+    private var workspaceSuggestJob: Job? = null
+
+    fun openWorkspaceManage() {
+        _uiState.update { s ->
+            s.copy(
+                tools = s.tools.copy(
+                    workspaces = s.tools.workspaces.copy(listEditorOpen = true),
+                ),
+            )
+        }
+        loadWorkspaces()
+    }
+
+    fun closeWorkspaceManage() {
+        _uiState.update { s ->
+            s.copy(
+                tools = s.tools.copy(
+                    workspaces = s.tools.workspaces.copy(listEditorOpen = false),
+                ),
+            )
+        }
+        closeWorkspacePathDialog()
+    }
+
+    fun openWorkspacePathDialog() {
+        _uiState.update { s ->
+            s.copy(
+                tools = s.tools.copy(
+                    workspaces = s.tools.workspaces.copy(pathDialogOpen = true, suggestions = emptyList()),
+                ),
+            )
+        }
+    }
+
+    fun closeWorkspacePathDialog() {
+        _uiState.update { s ->
+            s.copy(
+                tools = s.tools.copy(
+                    workspaces = s.tools.workspaces.copy(
+                        pathDialogOpen = false,
+                        suggestions = emptyList(),
+                        busy = false,
+                    ),
+                ),
+            )
+        }
+    }
+
+    /** Typeahead against the trusted-roots suggest endpoint, debounced. */
+    fun workspacePathQuery(prefix: String) {
+        workspaceSuggestJob?.cancel()
+        if (prefix.isBlank()) return
+        workspaceSuggestJob = viewModelScope.launch {
+            delay(WORKSPACE_SUGGEST_DEBOUNCE_MS)
+            workspacesRepository.suggest(prefix)
+                .onSuccess { rows ->
+                    _uiState.update { s ->
+                        s.copy(tools = s.tools.copy(workspaces = s.tools.workspaces.copy(suggestions = rows)))
+                    }
+                }
+                .onFailure {
+                    _uiState.update { s ->
+                        s.copy(tools = s.tools.copy(workspaces = s.tools.workspaces.copy(suggestions = emptyList())))
+                    }
+                }
+        }
+    }
+
+    /**
+     * Registers a typed path, then lands on it — switching for the live
+     * session, or nothing to switch to yet. Server wording for a bad or
+     * already-saved path surfaces verbatim.
+     */
+    fun submitWorkspacePath(path: String) {
+        val trimmed = path.trim()
+        if (trimmed.isEmpty()) return
+        _uiState.update { s ->
+            s.copy(tools = s.tools.copy(workspaces = s.tools.workspaces.copy(busy = true)))
+        }
+        viewModelScope.launch {
+            workspacesRepository.add(trimmed)
+                .onSuccess { bundle ->
+                    _uiState.update { s ->
+                        s.copy(
+                            tools = s.tools.copy(
+                                workspaces = s.tools.workspaces.copy(
+                                    busy = false,
+                                    pathDialogOpen = false,
+                                    suggestions = emptyList(),
+                                    available = true,
+                                    workspaces = bundle.workspaces,
+                                ),
+                            ),
+                        )
+                    }
+                    switchWorkspace(trimmed)
+                }
+                .onFailure { err ->
+                    _uiState.update { s ->
+                        s.copy(tools = s.tools.copy(workspaces = s.tools.workspaces.copy(busy = false)))
+                    }
+                    _effects.trySend(ChatEffect.ShowMessage(err.toMessage()))
+                }
+        }
+    }
+
+    fun renameWorkspace(path: String, name: String) {
+        val trimmed = name.trim()
+        if (trimmed.isEmpty()) return
+        viewModelScope.launch {
+            workspacesRepository.rename(path, trimmed)
+                .onSuccess { bundle ->
+                    _uiState.update { s ->
+                        s.copy(
+                            tools = s.tools.copy(
+                                workspaces = s.tools.workspaces.copy(
+                                    available = true,
+                                    workspaces = bundle.workspaces,
+                                ),
+                            ),
+                        )
+                    }
+                }
+                .onFailure { _effects.trySend(ChatEffect.ShowMessage(it.toMessage())) }
+        }
+    }
+
+    /** Optimistic remove: the row leaves the list at once; the server's list wins back. */
+    fun removeWorkspace(path: String) {
+        _uiState.update { s ->
+            s.copy(
+                tools = s.tools.copy(
+                    workspaces = s.tools.workspaces.copy(
+                        workspaces = s.tools.workspaces.workspaces.filterNot { it.path == path },
+                    ),
+                ),
+            )
+        }
+        viewModelScope.launch {
+            workspacesRepository.remove(path)
+                .onSuccess { bundle ->
+                    _uiState.update { s ->
+                        s.copy(
+                            tools = s.tools.copy(
+                                workspaces = s.tools.workspaces.copy(
+                                    available = true,
+                                    workspaces = bundle.workspaces,
+                                ),
+                            ),
+                        )
+                    }
+                }
+                .onFailure { err ->
+                    _effects.trySend(ChatEffect.ShowMessage(err.toMessage()))
+                    loadWorkspaces()
+                }
+        }
+    }
+
+    /**
+     * Boot identity for the chat host: the panel row's label and single-mode
+     * hiding come from this. 404 hides quietly; newer failures stay visible.
+     */
+    fun loadProfileIdentity() {
+        viewModelScope.launch {
+            val active = profilesRepository.active()
+            val rowsBundle = profilesRepository.list()
+            val hidden = rowHiddenByMissingApi(active.exceptionOrNull() as? ApiException) ||
+                rowHiddenByMissingApi(rowsBundle.exceptionOrNull() as? ApiException)
+            val activeResult = active.getOrNull()
+            val rows = rowsBundle.getOrNull()
+            _uiState.update { s ->
+                s.copy(
+                    tools = s.tools.copy(
+                        profiles = s.tools.profiles.copy(
+                            available = if (hidden) false else true,
+                            activeName = activeResult?.name ?: s.tools.profiles.activeName,
+                            activeIsDefault = activeResult?.isDefault,
+                            defaultWorkspace = activeResult?.defaultWorkspace
+                                ?: s.tools.profiles.defaultWorkspace,
+                            singleMode = rows?.singleProfileMode ?: s.tools.profiles.singleMode,
+                            rows = rows?.profiles?.filter { it.visible != false }
+                                ?: s.tools.profiles.rows,
+                        ),
+                    ),
+                )
+            }
+        }
+    }
+
     private fun Throwable.toMessage(): String =
         (this as? ApiException)?.error?.userMessage() ?: (message ?: "Something went wrong.")
 
@@ -764,6 +1376,16 @@ class ChatViewModel @Inject constructor(
 
 sealed interface ChatEffect {
     data class ShowMessage(val text: String) : ChatEffect
+
+    /** Open another conversation (worktree chats) — pushed, not replacing. */
+    data class OpenSession(val sessionId: String) : ChatEffect
+
+    /**
+     * A mid-chat profile switch landed: navigate to the replacement
+     * conversation, REPLACING the back-stack entry — back must never reopen
+     * a chat the (new) profile cannot read.
+     */
+    data class SwitchedSession(val sessionId: String, val profileName: String) : ChatEffect
 }
 
 /**
@@ -797,6 +1419,7 @@ data class ChatUiState(
     val items: List<TranscriptItem> = emptyList(),
     val model: String? = null,
     val modelProvider: String? = null,
+    val workspace: String? = null,
     val queued: List<String> = emptyList(),
     val reasoningEffort: String? = null,
     val pendingAttachments: List<PendingAttachment> = emptyList(),
@@ -813,6 +1436,8 @@ data class ChatUiState(
     /** Set once a message seeded from the home composer has been dispatched. */
     val hasSentInitial: Boolean = false,
     val picker: ModelPickerUiState = ModelPickerUiState(),
+    /** Composer power tools: saved prompts, later profile and workspace state. */
+    val tools: ComposerToolsState = ComposerToolsState(),
     /** Mic mode, mirrored from settings; the attach sheet's toggle writes it. */
     val voiceMode: VoiceInputMode = VoiceInputMode.TRANSCRIBE,
     val voicePhase: VoicePhase = VoicePhase.Idle,

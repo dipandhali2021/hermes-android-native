@@ -12,6 +12,7 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.scaleIn
 import androidx.compose.animation.scaleOut
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -32,6 +33,9 @@ import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.ArrowBack
 import androidx.compose.material.icons.rounded.ArrowDownward
+import androidx.compose.material.icons.rounded.Bookmarks
+import androidx.compose.material.icons.rounded.FolderOpen
+import androidx.compose.material.icons.rounded.ManageAccounts
 import androidx.compose.material.icons.rounded.MoreVert
 import androidx.compose.material.icons.rounded.Tune
 import androidx.compose.material3.CircularProgressIndicator
@@ -69,6 +73,7 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.dipandhali.hermesnative.core.model.AttachmentDto
 import com.dipandhali.hermesnative.data.media.newCameraCaptureUri
+import com.dipandhali.hermesnative.domain.composer.workspaceLabel
 import com.dipandhali.hermesnative.domain.modelpicker.ModelSelection
 import com.dipandhali.hermesnative.domain.modelpicker.displaySelection
 import com.dipandhali.hermesnative.ui.chat.components.AssistantTurn
@@ -78,7 +83,16 @@ import com.dipandhali.hermesnative.ui.chat.components.ComposerAttachment
 import com.dipandhali.hermesnative.ui.chat.components.ErrorRow
 import com.dipandhali.hermesnative.ui.chat.components.MAX_ATTACHMENTS
 import com.dipandhali.hermesnative.ui.chat.components.ModelChip
+import com.dipandhali.hermesnative.ui.chat.components.ChatToolsRow
+import com.dipandhali.hermesnative.ui.chat.components.ChatToolsSection
+import com.dipandhali.hermesnative.ui.chat.components.ProfilePickerSheet
+import com.dipandhali.hermesnative.ui.chat.components.PromptsSheet
+import com.dipandhali.hermesnative.ui.chat.components.WorkspacePickerSheet
 import com.dipandhali.hermesnative.ui.chat.components.ModelPickerSheet
+import com.dipandhali.hermesnative.ui.profile.ProfileCreateSheet
+import com.dipandhali.hermesnative.ui.profile.ProfileManagerSheet
+import com.dipandhali.hermesnative.ui.workspace.WorkspaceManageSheet
+import com.dipandhali.hermesnative.ui.workspace.WorkspacePathDialog
 import com.dipandhali.hermesnative.ui.chat.components.NoticeRow
 import com.dipandhali.hermesnative.ui.chat.components.UserMessage
 import com.dipandhali.hermesnative.ui.theme.HermesMotion
@@ -98,13 +112,26 @@ fun ChatScreen(
     onGoHome: () -> Unit,
     initialMessage: String? = null,
     initialAttachments: List<AttachmentDto> = emptyList(),
+    /** Set when this screen was opened by a mid-chat profile switch. */
+    switchedNotice: String? = null,
     onOpenSettings: () -> Unit,
+    /** Navigate to the replacement chat, REPLACING this entry on the stack. */
+    onSwitchSession: (String, String) -> Unit = { _, _ -> },
+    /** Push another conversation (worktree chats) — back returns here. */
+    onOpenNewSession: (String) -> Unit = {},
+    /** The session's workspace Files panel. */
+    onOpenFiles: () -> Unit = {},
     viewModel: ChatViewModel = hiltViewModel(),
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
     val modelSelection = displaySelection(
         state.model?.let { ModelSelection(it, state.modelProvider) },
         state.picker.catalog,
+    )
+    val workspaceLabelText = workspaceLabel(
+        sessionWorkspace = state.workspace,
+        saved = state.tools.workspaces.workspaces,
+        fallback = "Default",
     )
     val listState = rememberLazyListState()
     val snackbar = remember { SnackbarHostState() }
@@ -178,10 +205,16 @@ fun ChatScreen(
         sessionId?.let { viewModel.openSession(it, initialMessage, initialAttachments) }
     }
 
+    LaunchedEffect(sessionId, switchedNotice) {
+        switchedNotice?.let { text -> snackbar.showSnackbar(text) }
+    }
+
     LaunchedEffect(Unit) {
         viewModel.effects.collect { effect ->
             when (effect) {
                 is ChatEffect.ShowMessage -> snackbar.showSnackbar(effect.text)
+                is ChatEffect.SwitchedSession -> onSwitchSession(effect.sessionId, effect.profileName)
+                is ChatEffect.OpenSession -> onOpenNewSession(effect.sessionId)
             }
         }
     }
@@ -236,9 +269,25 @@ fun ChatScreen(
                                 overflow = TextOverflow.Ellipsis,
                             )
                         }
+                        if (state.workspace != null) {
+                            Text(
+                                text = workspaceLabelText,
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                                modifier = Modifier
+                                    .clickable { viewModel.openWorkspacePicker() },
+                            )
+                        }
                     }
                 },
                 actions = {
+                    // One tap from a chat to its workspace's files: the session
+                    // exists by construction on this route.
+                    IconButton(onClick = onOpenFiles) {
+                        Icon(Icons.Rounded.FolderOpen, contentDescription = "Browse workspace files")
+                    }
                     IconButton(onClick = onOpenSettings) {
                         Icon(Icons.Rounded.Tune, contentDescription = "Settings")
                     }
@@ -294,6 +343,50 @@ fun ChatScreen(
                         onFiles = {
                             attachOpen = false
                             filePicker.launch(arrayOf("*/*"))
+                        },
+                        chatTools = {
+                            buildList {
+                                if (state.tools.prompts.available != false) {
+                                    add(
+                                        ChatToolsRow(
+                                            icon = Icons.Rounded.Bookmarks,
+                                            title = "Saved prompts",
+                                            onClick = {
+                                                attachOpen = false
+                                                viewModel.openPrompts()
+                                            },
+                                        ),
+                                    )
+                                }
+                                if (state.tools.profiles.available != false &&
+                                    !state.tools.profiles.singleMode
+                                ) {
+                                    add(
+                                        ChatToolsRow(
+                                            icon = Icons.Rounded.ManageAccounts,
+                                            title = "Profile",
+                                            trailing = state.tools.profiles.activeName,
+                                            onClick = {
+                                                attachOpen = false
+                                                viewModel.openProfilePicker()
+                                            },
+                                        ),
+                                    )
+                                }
+                                if (state.tools.workspaces.available != false) {
+                                    add(
+                                        ChatToolsRow(
+                                            icon = Icons.Rounded.FolderOpen,
+                                            title = "Workspace",
+                                            trailing = workspaceLabelText,
+                                            onClick = {
+                                                attachOpen = false
+                                                viewModel.openWorkspacePicker()
+                                            },
+                                        ),
+                                    )
+                                }
+                            }.takeIf { it.isNotEmpty() }?.let { ChatToolsSection(rows = it) }
                         },
                     )
                 },
@@ -409,6 +502,90 @@ fun ChatScreen(
         )
     }
 
+    if (state.tools.prompts.sheetOpen) {
+        PromptsSheet(
+            state = state.tools.prompts,
+            draftProvider = { state.input },
+            onPick = viewModel::pickPrompt,
+            onSave = viewModel::saveDraftAsPrompt,
+            onDelete = viewModel::deletePrompt,
+            onUndo = viewModel::undoPromptDelete,
+            onRetry = viewModel::retryPrompts,
+            onDismiss = viewModel::closePrompts,
+        )
+    }
+
+    state.tools.profiles.let { profiles ->
+        if (profiles.pickerOpen) {
+            ProfilePickerSheet(
+                state = profiles,
+                onSwitch = viewModel::switchProfile,
+                onManage = {
+                    viewModel.closeProfilePicker()
+                    viewModel.openProfileManager()
+                },
+                onDismiss = viewModel::closeProfilePicker,
+            )
+        }
+        if (profiles.managerOpen) {
+            ProfileManagerSheet(
+                state = profiles,
+                onCreate = {
+                    viewModel.closeProfileManager()
+                    viewModel.openProfileCreate()
+                },
+                onActivate = viewModel::switchProfile,
+                onDelete = viewModel::deleteProfile,
+                onDismiss = viewModel::closeProfileManager,
+            )
+        }
+        if (profiles.createOpen) {
+            ProfileCreateSheet(
+                state = profiles,
+                catalog = state.picker.catalog,
+                onSubmit = viewModel::createProfile,
+                onBack = {
+                    viewModel.closeProfileCreate()
+                    viewModel.openProfileManager()
+                },
+                onDismiss = viewModel::closeProfileCreate,
+            )
+        }
+
+        val workspaces = state.tools.workspaces
+        if (workspaces.pickerOpen) {
+            WorkspacePickerSheet(
+                state = workspaces,
+                highlightPath = state.workspace,
+                onPick = viewModel::switchWorkspace,
+                onWorktree = viewModel::startWorktreeChat,
+                onPathAdd = viewModel::openWorkspacePathDialog,
+                onManage = {
+                    viewModel.closeWorkspacePicker()
+                    viewModel.openWorkspaceManage()
+                },
+                onBrowseFiles = onOpenFiles,
+                onRetry = viewModel::retryWorkspaces,
+                onDismiss = viewModel::closeWorkspacePicker,
+            )
+        }
+        if (workspaces.listEditorOpen) {
+            WorkspaceManageSheet(
+                state = workspaces,
+                onRename = viewModel::renameWorkspace,
+                onRemove = viewModel::removeWorkspace,
+                onDismiss = viewModel::closeWorkspaceManage,
+            )
+        }
+        if (workspaces.pathDialogOpen) {
+            WorkspacePathDialog(
+                state = workspaces,
+                onInput = viewModel::workspacePathQuery,
+                onSubmit = viewModel::submitWorkspacePath,
+                onDismiss = viewModel::closeWorkspacePathDialog,
+            )
+        }
+    }
 }
 
 @Composable

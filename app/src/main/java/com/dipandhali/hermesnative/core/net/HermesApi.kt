@@ -18,6 +18,27 @@ import com.dipandhali.hermesnative.core.model.NewSessionRequest
 import com.dipandhali.hermesnative.core.model.NewSessionResponse
 import com.dipandhali.hermesnative.core.model.ReasoningRequest
 import com.dipandhali.hermesnative.core.model.ReasoningResponse
+import com.dipandhali.hermesnative.core.model.PromptsResponse
+import com.dipandhali.hermesnative.core.model.ProfileActiveResponse
+import com.dipandhali.hermesnative.core.model.ProfileCreateRequest
+import com.dipandhali.hermesnative.core.model.ProfileCreateResponse
+import com.dipandhali.hermesnative.core.model.ProfileSwitchRequest
+import com.dipandhali.hermesnative.core.model.ProfileSwitchResponse
+import com.dipandhali.hermesnative.core.model.SavePromptRequest
+import com.dipandhali.hermesnative.core.model.SavePromptResponse
+import com.dipandhali.hermesnative.core.model.FileCreateRequest
+import com.dipandhali.hermesnative.core.model.FileDeleteRequest
+import com.dipandhali.hermesnative.core.model.FileOpOk
+import com.dipandhali.hermesnative.core.model.FileReadResponse
+import com.dipandhali.hermesnative.core.model.FileRenameRequest
+import com.dipandhali.hermesnative.core.model.FileRenameResponse
+import com.dipandhali.hermesnative.core.model.GitInfoResponse
+import com.dipandhali.hermesnative.core.model.ListDirResponse
+import com.dipandhali.hermesnative.core.model.WorkspaceAddRequest
+import com.dipandhali.hermesnative.core.model.WorkspaceMutationResponse
+import com.dipandhali.hermesnative.core.model.WorkspaceNameRequest
+import com.dipandhali.hermesnative.core.model.WorkspaceSuggestionsResponse
+import com.dipandhali.hermesnative.core.model.WorkspaceUploadEntry
 import com.dipandhali.hermesnative.core.model.SessionBusyResponse
 import com.dipandhali.hermesnative.core.model.SessionDetailResponse
 import com.dipandhali.hermesnative.core.model.SessionListResponse
@@ -143,6 +164,27 @@ class HermesApi(private val client: OkHttpClient) {
         ),
     )
 
+    /**
+     * One settlement that re-points a conversation (workspace switch) and, in
+     * the same request, keeps its model pair coherent with the client state.
+     * Absent model keys leave the server's value untouched (wire tolerance
+     * for sessions that never reported a model).
+     */
+    suspend fun updateConversationContext(
+        baseUrl: String,
+        sessionId: String,
+        workspace: String?,
+        model: String?,
+        modelProvider: String?,
+    ): Result<Unit> = postRaw(
+        baseUrl,
+        "api/session/update",
+        json.encodeToString(
+            SessionUpdateRequest.serializer(),
+            SessionUpdateRequest(sessionId, model, modelProvider, workspace),
+        ),
+    )
+
     suspend fun reasoning(baseUrl: String, sessionId: String?): Result<ReasoningResponse> = get(
         baseUrl,
         "api/reasoning" + (sessionId?.let { "?session_id=${it.urlEncoded()}" } ?: ""),
@@ -224,8 +266,190 @@ class HermesApi(private val client: OkHttpClient) {
     suspend fun workspaces(baseUrl: String): Result<WorkspacesResponse> =
         get(baseUrl, "api/workspaces", WorkspacesResponse.serializer())
 
+    /**
+     * Typeahead under trusted roots only — arbitrary prefixes answer an empty
+     * list, never an error, so the Add Space form can autocomplete freely.
+     */
+    suspend fun workspaceSuggestions(baseUrl: String, prefix: String): Result<WorkspaceSuggestionsResponse> =
+        get(
+            baseUrl,
+            "api/workspaces/suggest?prefix=${prefix.urlEncoded()}",
+            WorkspaceSuggestionsResponse.serializer(),
+        )
+
+    suspend fun addWorkspace(
+        baseUrl: String,
+        path: String,
+        name: String? = null,
+        create: Boolean = false,
+    ): Result<WorkspaceMutationResponse> = post(
+        baseUrl,
+        "api/workspaces/add",
+        json.encodeToString(
+            WorkspaceAddRequest.serializer(),
+            WorkspaceAddRequest(path, name, if (create) true else null),
+        ),
+        WorkspaceMutationResponse.serializer(),
+    )
+
+    suspend fun renameWorkspace(
+        baseUrl: String,
+        path: String,
+        name: String,
+    ): Result<WorkspaceMutationResponse> = post(
+        baseUrl,
+        "api/workspaces/rename",
+        json.encodeToString(WorkspaceNameRequest.serializer(), WorkspaceNameRequest(path, name)),
+        WorkspaceMutationResponse.serializer(),
+    )
+
+    suspend fun removeWorkspace(baseUrl: String, path: String): Result<WorkspaceMutationResponse> =
+        post(
+            baseUrl,
+            "api/workspaces/remove",
+            """{"path":${path.jsonString()}}""",
+            WorkspaceMutationResponse.serializer(),
+        )
+
+    // ---- workspace files (chat-only panel) ----
+
+    suspend fun listFiles(baseUrl: String, sessionId: String, path: String = "."): Result<ListDirResponse> =
+        get(
+            baseUrl,
+            "api/list?session_id=${sessionId.urlEncoded()}&path=${path.urlEncoded()}",
+            ListDirResponse.serializer(),
+        )
+
+    suspend fun readFile(baseUrl: String, sessionId: String, path: String): Result<FileReadResponse> =
+        get(
+            baseUrl,
+            "api/file?session_id=${sessionId.urlEncoded()}&path=${path.urlEncoded()}",
+            FileReadResponse.serializer(),
+        )
+
+    suspend fun downloadFile(baseUrl: String, sessionId: String, path: String): Result<ByteArray> =
+        executeBytes(baseUrl, "api/file/raw?session_id=${sessionId.urlEncoded()}&path=${path.urlEncoded()}") {
+            Request.Builder().url(it).get()
+        }
+
+    suspend fun gitInfo(baseUrl: String, sessionId: String): Result<GitInfoResponse> =
+        get(baseUrl, "api/git-info?session_id=${sessionId.urlEncoded()}", GitInfoResponse.serializer())
+
+    suspend fun createFile(baseUrl: String, sessionId: String, path: String, content: String): Result<FileOpOk> =
+        post(
+            baseUrl,
+            "api/file/create",
+            json.encodeToString(
+                FileCreateRequest.serializer(),
+                FileCreateRequest(sessionId, path, content),
+            ),
+            FileOpOk.serializer(),
+        )
+
+    suspend fun createDir(baseUrl: String, sessionId: String, path: String): Result<FileOpOk> =
+        post(
+            baseUrl,
+            "api/file/create-dir",
+            """{"session_id":${sessionId.jsonString()},"path":${path.jsonString()}}""",
+            FileOpOk.serializer(),
+        )
+
+    suspend fun renameFile(baseUrl: String, sessionId: String, path: String, newName: String): Result<FileRenameResponse> =
+        post(
+            baseUrl,
+            "api/file/rename",
+            json.encodeToString(
+                FileRenameRequest.serializer(),
+                FileRenameRequest(sessionId, path, newName),
+            ),
+            FileRenameResponse.serializer(),
+        )
+
+    suspend fun deleteEntry(
+        baseUrl: String,
+        sessionId: String,
+        path: String,
+        recursive: Boolean = false,
+    ): Result<FileOpOk> = post(
+        baseUrl,
+        "api/file/delete",
+        json.encodeToString(
+            FileDeleteRequest.serializer(),
+            FileDeleteRequest(sessionId, path, if (recursive) true else null),
+        ),
+        FileOpOk.serializer(),
+    )
+
+    /**
+     * Push a file into the session's workspace. Form fields `session_id` and
+     * `path` (the target subdirectory, '' for the root) plus a single `file`
+     * part — the shape `handle_workspace_upload` parses.
+     */
+    suspend fun uploadWorkspaceFile(
+        baseUrl: String,
+        sessionId: String,
+        subPath: String,
+        fileName: String,
+        mimeType: String?,
+        bytes: ByteArray,
+    ): Result<WorkspaceUploadEntry> = execute(baseUrl, "api/workspace/upload", WorkspaceUploadEntry.serializer()) { url ->
+        val builder = MultipartBody.Builder()
+            .setType(MultipartBody.FORM)
+            .addFormDataPart("session_id", sessionId)
+        if (subPath.isNotEmpty()) {
+            builder.addFormDataPart("path", subPath)
+        }
+        builder.addFormDataPart("file", fileName, bytes.toRequestBody(mimeType?.toMediaTypeOrNull()))
+        Request.Builder().url(url).post(builder.build())
+    }
+
     suspend fun profiles(baseUrl: String): Result<ProfilesResponse> =
         get(baseUrl, "api/profiles", ProfilesResponse.serializer())
+
+    suspend fun prompts(baseUrl: String): Result<PromptsResponse> =
+        get(baseUrl, "api/prompts", PromptsResponse.serializer())
+
+    /**
+     * Saves a prompt. The label key is genuinely absent when unset — the undo
+     * path re-saves with the *original* label to restore the same row.
+     */
+    suspend fun savePrompt(baseUrl: String, text: String, label: String?): Result<SavePromptResponse> =
+        post(
+            baseUrl,
+            "api/prompts",
+            json.encodeToString(SavePromptRequest.serializer(), SavePromptRequest(text, label)),
+            SavePromptResponse.serializer(),
+        )
+
+    suspend fun deletePrompt(baseUrl: String, id: String): Result<Unit> =
+        postRaw(baseUrl, "api/prompts", """{"id":${id.jsonString()}}""")
+
+    // ---------- Profiles ----------
+
+    suspend fun profileActive(baseUrl: String): Result<ProfileActiveResponse> =
+        get(baseUrl, "api/profile/active", ProfileActiveResponse.serializer())
+
+    suspend fun switchProfile(baseUrl: String, name: String): Result<ProfileSwitchResponse> =
+        post(
+            baseUrl,
+            "api/profile/switch",
+            json.encodeToString(ProfileSwitchRequest.serializer(), ProfileSwitchRequest(name)),
+            ProfileSwitchResponse.serializer(),
+        )
+
+    suspend fun createProfile(
+        baseUrl: String,
+        request: ProfileCreateRequest,
+    ): Result<ProfileCreateResponse> =
+        post(
+            baseUrl,
+            "api/profile/create",
+            json.encodeToString(ProfileCreateRequest.serializer(), request),
+            ProfileCreateResponse.serializer(),
+        )
+
+    suspend fun deleteProfile(baseUrl: String, name: String): Result<Unit> =
+        postRaw(baseUrl, "api/profile/delete", """{"name":${name.jsonString()}}""")
 
     suspend fun insights(baseUrl: String): Result<InsightsResponse> =
         get(baseUrl, "api/insights", InsightsResponse.serializer())
@@ -256,6 +480,39 @@ class HermesApi(private val client: OkHttpClient) {
         deserializer: DeserializationStrategy<T>,
     ): Result<T> = execute<T>(baseUrl, path, deserializer) {
         Request.Builder().url(it).get()
+    }
+
+    /**
+     * The raw-byte sibling of [execute]: same URL/error mapping, but success
+     * hands back the body bytes (image and other opaque previews ride this).
+     */
+    private suspend fun executeBytes(
+        baseUrl: String,
+        path: String,
+        build: (String) -> Request.Builder,
+    ): Result<ByteArray> = withContext(Dispatchers.IO) {
+        val url = joinUrl(baseUrl, path)
+            ?: return@withContext Result.failure(ApiException(DataError.NotHermes))
+
+        val request = try {
+            build(url).build()
+        } catch (e: IllegalArgumentException) {
+            return@withContext Result.failure(ApiException(DataError.NotHermes))
+        }
+
+        try {
+            client.newCall(request).execute().use { response ->
+                if (!response.isSuccessful) {
+                    val text = response.body?.string().orEmpty()
+                    return@use Result.failure(ApiException(mapStatus(response.code, text)))
+                }
+                val bytes = response.body?.bytes()
+                    ?: return@use Result.failure(ApiException(DataError.Malformed("empty file body")))
+                Result.success(bytes)
+            }
+        } catch (e: Exception) {
+            Result.failure(ApiException(e.toDataError()))
+        }
     }
 
     private suspend fun getUnit(baseUrl: String, path: String): Result<Unit> =
@@ -356,8 +613,15 @@ class HermesApi(private val client: OkHttpClient) {
     }
 
     private fun mapStatus(code: Int, body: String): DataError = when (code) {
-        401, 403 -> DataError.Unauthorized
-        404 -> DataError.NotFound
+        401 -> DataError.Unauthorized
+        403, 404 ->
+            // A structured body means the server is explaining something specific:
+            // a bound profile ("Profile is bound to the current session") or an
+            // oversized file read ("File too large (… max N)") — both are actionable
+            // in a way the generic 403/404 copies are not. A bare status keeps the
+            // long-standing mapping.
+            extractMessage(body)?.let { DataError.Server(code, it) }
+                ?: if (code == 404) DataError.NotFound else DataError.Unauthorized
         409 -> {
             // A busy session carries the id of the run already going, so the UI
             // can offer to attach rather than showing a dead end.
@@ -367,7 +631,7 @@ class HermesApi(private val client: OkHttpClient) {
             if (busy?.activeStreamId != null) {
                 DataError.SessionBusy(busy.activeStreamId)
             } else {
-                DataError.Server(code, "This session is busy.")
+                DataError.Server(409, extractMessage(body) ?: "This session is busy.")
             }
         }
         else -> DataError.Server(code, extractMessage(body))
