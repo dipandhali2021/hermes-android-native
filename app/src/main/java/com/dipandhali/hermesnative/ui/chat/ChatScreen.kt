@@ -1,5 +1,8 @@
 package com.dipandhali.hermesnative.ui.chat
 
+import android.Manifest
+import android.content.pm.PackageManager
+import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
@@ -45,24 +48,30 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalClipboardManager
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.core.content.ContextCompat
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.dipandhali.hermesnative.core.model.AttachmentDto
+import com.dipandhali.hermesnative.data.media.newCameraCaptureUri
 import com.dipandhali.hermesnative.domain.modelpicker.ModelSelection
 import com.dipandhali.hermesnative.domain.modelpicker.displaySelection
 import com.dipandhali.hermesnative.ui.chat.components.AssistantTurn
+import com.dipandhali.hermesnative.ui.chat.components.AttachSheet
 import com.dipandhali.hermesnative.ui.chat.components.Composer
 import com.dipandhali.hermesnative.ui.chat.components.ComposerAttachment
 import com.dipandhali.hermesnative.ui.chat.components.ErrorRow
@@ -72,6 +81,7 @@ import com.dipandhali.hermesnative.ui.chat.components.ModelPickerSheet
 import com.dipandhali.hermesnative.ui.chat.components.NoticeRow
 import com.dipandhali.hermesnative.ui.chat.components.UserMessage
 import com.dipandhali.hermesnative.ui.theme.HermesMotion
+import kotlinx.coroutines.launch
 
 /**
  * The conversation.
@@ -104,6 +114,57 @@ fun ChatScreen(
         ActivityResultContracts.PickMultipleVisualMedia(MAX_ATTACHMENTS),
     ) { uris ->
         if (uris.isNotEmpty()) viewModel.addAttachments(uris.map { it.toString() })
+    }
+
+    var attachSheetOpen by remember { mutableStateOf(false) }
+    var pendingCameraUri by remember { mutableStateOf<Uri?>(null) }
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+
+    val cameraCapture = rememberLauncherForActivityResult(
+        ActivityResultContracts.TakePicture(),
+    ) { saved ->
+        // A cancelled capture leaves an empty placeholder in the cache; the
+        // FileProvider dir is not pruned, so remember the URI and only stage
+        // when the camera actually wrote something.
+        val uri = pendingCameraUri
+        pendingCameraUri = null
+        if (saved && uri != null) viewModel.addAttachments(listOf(uri.toString()))
+    }
+
+    val filePicker = rememberLauncherForActivityResult(
+        ActivityResultContracts.OpenMultipleDocuments(),
+    ) { uris ->
+        if (uris.isNotEmpty()) viewModel.addAttachments(uris.map { it.toString() })
+    }
+
+    val recordPermission = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestPermission(),
+    ) { granted ->
+        if (granted) {
+            viewModel.startVoiceRecording()
+        } else {
+            scope.launch {
+                snackbar.showSnackbar("Microphone permission is needed for voice input.")
+            }
+        }
+    }
+
+    val onMicTap = {
+        if (
+            ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO) ==
+            PackageManager.PERMISSION_GRANTED
+        ) {
+            viewModel.startVoiceRecording()
+        } else {
+            recordPermission.launch(Manifest.permission.RECORD_AUDIO)
+        }
+    }
+
+    // Leaving the screen mid-capture discards the clip: a recording is a
+    // gesture about the composer you are looking at, not background work.
+    DisposableEffect(Unit) {
+        onDispose { viewModel.cancelVoiceRecording() }
     }
 
     // Open, then send: the seed arrives from the home composer, which had to
@@ -208,15 +269,18 @@ fun ChatScreen(
                 onValueChange = viewModel::onInputChange,
                 action = state.composerAction,
                 onAction = viewModel::onPrimaryAction,
-                onAttach = {
-                    attachPicker.launch(
-                        PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly),
-                    )
-                },
+                onAttach = { attachSheetOpen = true },
                 attachments = state.pendingAttachments.map {
                     ComposerAttachment(id = it.id, name = it.name, uriString = it.uriString)
                 },
                 onRemoveAttachment = viewModel::removeAttachment,
+                onMic = onMicTap,
+                micEnabled = !state.isBusy,
+                voicePhase = state.voicePhase,
+                onVoiceStop = viewModel::stopVoiceRecording,
+                onVoiceCancel = viewModel::cancelVoiceRecording,
+                voiceElapsedMs = viewModel::voiceElapsedMs,
+                voiceAmplitude = viewModel::voiceAmplitude,
                 leadingAccessory = {
                     ModelChip(
                         selection = modelSelection,
@@ -314,6 +378,30 @@ fun ChatScreen(
             onPick = viewModel::pickModel,
             onRetry = viewModel::loadModels,
             onDismiss = viewModel::closePicker,
+        )
+    }
+
+    if (attachSheetOpen) {
+        AttachSheet(
+            voiceMode = state.voiceMode,
+            onVoiceModeChange = viewModel::setVoiceMode,
+            onPhotos = {
+                attachSheetOpen = false
+                attachPicker.launch(
+                    PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly),
+                )
+            },
+            onCamera = {
+                attachSheetOpen = false
+                val uri = newCameraCaptureUri(context)
+                pendingCameraUri = uri
+                cameraCapture.launch(uri)
+            },
+            onFiles = {
+                attachSheetOpen = false
+                filePicker.launch(arrayOf("*/*"))
+            },
+            onDismiss = { attachSheetOpen = false },
         )
     }
 }

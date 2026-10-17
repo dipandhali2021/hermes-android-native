@@ -11,6 +11,8 @@ import com.dipandhali.hermesnative.core.model.AttachmentDto
 import com.dipandhali.hermesnative.core.net.ApiException
 import com.dipandhali.hermesnative.data.chat.ChatRepository
 import com.dipandhali.hermesnative.data.media.MediaRepository
+import com.dipandhali.hermesnative.data.media.TranscriptionRepository
+import com.dipandhali.hermesnative.data.voice.VoiceRecorder
 import com.dipandhali.hermesnative.data.sessions.SessionRepository
 import com.dipandhali.hermesnative.data.settings.ServerState
 import com.dipandhali.hermesnative.data.settings.SettingsStore
@@ -23,6 +25,9 @@ import com.dipandhali.hermesnative.domain.modelpicker.ModelSelection
 import com.dipandhali.hermesnative.domain.modelpicker.PickerCatalogBuilder
 import com.dipandhali.hermesnative.domain.modelpicker.explicitPickForSend
 import com.dipandhali.hermesnative.domain.modelpicker.resolveOpen
+import com.dipandhali.hermesnative.domain.voice.VoiceInputMode
+import com.dipandhali.hermesnative.domain.voice.VoicePhase
+import com.dipandhali.hermesnative.domain.voice.assembleDictation
 import com.dipandhali.hermesnative.ui.chat.components.MAX_ATTACHMENTS
 import com.dipandhali.hermesnative.ui.chat.components.attachmentName
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -55,6 +60,8 @@ class ChatViewModel @Inject constructor(
     private val chat: ChatRepository,
     private val sessions: SessionRepository,
     private val media: MediaRepository,
+    private val voiceRecorder: VoiceRecorder,
+    private val transcription: TranscriptionRepository,
     private val settings: SettingsStore,
     private val serverState: ServerState,
     private val savedStateHandle: SavedStateHandle,
@@ -82,6 +89,13 @@ class ChatViewModel @Inject constructor(
         viewModelScope.launch {
             val mode = settings.reasoningEffort.first()
             _uiState.update { it.copy(reasoningEffort = mode) }
+        }
+        // A collector, not a first(): the attach sheet's toggle writes the
+        // setting and the state follows from that single source of truth.
+        viewModelScope.launch {
+            settings.voiceInputMode.collect { mode ->
+                _uiState.update { it.copy(voiceMode = mode) }
+            }
         }
     }
 
@@ -311,6 +325,103 @@ class ChatViewModel @Inject constructor(
         _uiState.update { state ->
             state.copy(pendingAttachments = state.pendingAttachments.filterNot { it.id == id })
         }
+    }
+
+    // ---- voice input ----
+
+    /**
+     * Persists the mic's mode. The attach sheet's toggle never dismisses —
+     * it configures the button, it does not act.
+     */
+    fun setVoiceMode(mode: VoiceInputMode) {
+        _uiState.update { it.copy(voiceMode = mode) }
+        viewModelScope.launch { settings.setVoiceInputMode(mode) }
+    }
+
+    /**
+     * Starts a capture. A run in flight wins: voice auto-sends, and a tap here
+     * during a live run would either attach to the reply or die on the busy
+     * check — neither is what a record button promises.
+     */
+    fun startVoiceRecording() {
+        val state = _uiState.value
+        if (state.isBusy || state.voicePhase != VoicePhase.Idle) return
+        voiceRecorder.start()
+            .onSuccess {
+                _uiState.update { current -> current.copy(voicePhase = VoicePhase.Recording) }
+            }
+            .onFailure { error ->
+                _effects.trySend(ChatEffect.ShowMessage(error.toMessage()))
+            }
+    }
+
+    /**
+     * Stops the capture and sends immediately — no confirmation step is the
+     * entire point of voice input here.
+     *
+     * Transcribe appends the transcript to whatever was typed and rides the
+     * ordinary send (staged attachments included). Voice note stages the clip
+     * as an attachment and rides the same send, with an empty message allowed.
+     */
+    fun stopVoiceRecording() {
+        if (_uiState.value.voicePhase != VoicePhase.Recording) return
+        val uri = voiceRecorder.stop().getOrElse { error ->
+            _uiState.update { it.copy(voicePhase = VoicePhase.Idle) }
+            _effects.trySend(ChatEffect.ShowMessage(error.toMessage()))
+            return
+        }
+        when (_uiState.value.voiceMode) {
+            VoiceInputMode.TRANSCRIBE -> {
+                _uiState.update { it.copy(voicePhase = VoicePhase.Finishing("Transcribing…")) }
+                viewModelScope.launch {
+                    transcription.transcribe(uri)
+                        .onSuccess { transcript ->
+                            _uiState.update { it.copy(voicePhase = VoicePhase.Idle) }
+                            send(assembleDictation(_uiState.value.input, transcript))
+                        }
+                        .onFailure { error ->
+                            // Discarded by design: when the server cannot hear
+                            // the clip, nothing partial is sent.
+                            _uiState.update { it.copy(voicePhase = VoicePhase.Idle) }
+                            _effects.trySend(ChatEffect.ShowMessage(error.toMessage()))
+                        }
+                }
+            }
+
+            VoiceInputMode.VOICE_NOTE -> {
+                val room = MAX_ATTACHMENTS - _uiState.value.pendingAttachments.size
+                _uiState.update { it.copy(voicePhase = VoicePhase.Idle) }
+                if (room <= 0) {
+                    _effects.trySend(
+                        ChatEffect.ShowMessage("Attachment limit reached — remove one and try again."),
+                    )
+                } else {
+                    addAttachments(listOf(uri.toString()))
+                    send()
+                }
+            }
+        }
+    }
+
+    /** Discards the capture. Meaningful while recording; total in any state. */
+    fun cancelVoiceRecording() {
+        if (_uiState.value.voicePhase != VoicePhase.Recording) return
+        voiceRecorder.cancel()
+        _uiState.update { it.copy(voicePhase = VoicePhase.Idle) }
+    }
+
+    /**
+     * The strip's pollers — plain functions on purpose. Elapsed time and
+     * amplitude tick at 10 Hz, and routing them through [ChatUiState] would
+     * recompose the transcript ten times a second for a waveform.
+     */
+    fun voiceElapsedMs(): Long = voiceRecorder.elapsedMs()
+
+    fun voiceAmplitude(): Int = voiceRecorder.amplitude()
+
+    override fun onCleared() {
+        voiceRecorder.release()
+        super.onCleared()
     }
 
     private fun send(override: String? = null) {
@@ -698,6 +809,9 @@ data class ChatUiState(
     /** Set once a message seeded from the home composer has been dispatched. */
     val hasSentInitial: Boolean = false,
     val picker: ModelPickerUiState = ModelPickerUiState(),
+    /** Mic mode, mirrored from settings; the attach sheet's toggle writes it. */
+    val voiceMode: VoiceInputMode = VoiceInputMode.TRANSCRIBE,
+    val voicePhase: VoicePhase = VoicePhase.Idle,
 ) {
     // 2. Derived — never constructor parameters.
     val hasContent: Boolean get() = input.isNotBlank()

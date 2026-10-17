@@ -37,6 +37,7 @@ import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import com.dipandhali.hermesnative.domain.voice.displayAttachmentNames
 import com.dipandhali.hermesnative.ui.chat.ToolItem
 import com.dipandhali.hermesnative.ui.chat.TranscriptItem
 import com.dipandhali.hermesnative.ui.markdown.MessageBody
@@ -81,7 +82,9 @@ fun UserMessage(
                     )
                     if (item.attachments.isNotEmpty()) {
                         Text(
-                            text = item.attachments.joinToString(", "),
+                            // A recorded clip is not a filename to a person:
+                            // it reads as "Voice message" wherever it appears.
+                            text = displayAttachmentNames(item.attachments),
                             style = MaterialTheme.typography.labelSmall,
                             color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.75f),
                             maxLines = 1,
