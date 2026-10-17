@@ -23,6 +23,9 @@ import com.dipandhali.hermesnative.domain.composer.ComposerToolsState
 import com.dipandhali.hermesnative.domain.composer.PromptsUiState
 import com.dipandhali.hermesnative.domain.composer.ProfileSwitchMode
 import com.dipandhali.hermesnative.domain.composer.profileSwitchMode
+import com.dipandhali.hermesnative.domain.composer.WORKSPACE_SWITCH_BLOCKED_COPY
+import com.dipandhali.hermesnative.domain.composer.WorkspaceSwitchCheck
+import com.dipandhali.hermesnative.domain.composer.workspaceSwitchAllowed
 import com.dipandhali.hermesnative.core.model.ProfileCreateRequest
 import com.dipandhali.hermesnative.core.model.ProfileSwitchResponse
 import com.dipandhali.hermesnative.domain.composer.composeWithPrompt
@@ -70,6 +73,7 @@ class ChatViewModel @Inject constructor(
     private val sessions: SessionRepository,
     private val promptsRepository: com.dipandhali.hermesnative.data.prompts.PromptsRepository,
     private val profilesRepository: com.dipandhali.hermesnative.data.profiles.ProfileRepository,
+    private val workspacesRepository: com.dipandhali.hermesnative.data.workspace.WorkspaceRepository,
     private val media: MediaRepository,
     private val voiceRecorder: VoiceRecorder,
     private val transcription: TranscriptionRepository,
@@ -1047,6 +1051,113 @@ class ChatViewModel @Inject constructor(
         }
     }
 
+    // ---------- Workspace (registry, in-place switch, worktree) ----------
+
+    fun openWorkspacePicker() {
+        _uiState.update { s ->
+            s.copy(
+                tools = s.tools.copy(
+                    workspaces = s.tools.workspaces.copy(pickerOpen = true, error = null),
+                ),
+            )
+        }
+        loadWorkspaces()
+    }
+
+    fun closeWorkspacePicker() {
+        _uiState.update { s ->
+            s.copy(tools = s.tools.copy(workspaces = s.tools.workspaces.copy(pickerOpen = false)))
+        }
+    }
+
+    fun retryWorkspaces() = loadWorkspaces()
+
+    private fun loadWorkspaces() {
+        _uiState.update { s ->
+            s.copy(
+                tools = s.tools.copy(
+                    workspaces = s.tools.workspaces.copy(loading = true, error = null),
+                ),
+            )
+        }
+        viewModelScope.launch {
+            workspacesRepository.list()
+                .onSuccess { bundle ->
+                    _uiState.update { s ->
+                        s.copy(
+                            tools = s.tools.copy(
+                                workspaces = s.tools.workspaces.copy(
+                                    loading = false,
+                                    error = null,
+                                    available = true,
+                                    workspaces = bundle.workspaces,
+                                    last = bundle.last,
+                                ),
+                            ),
+                        )
+                    }
+                }
+                .onFailure { err ->
+                    val hidden = rowHiddenByMissingApi(err as? ApiException)
+                    _uiState.update { s ->
+                        s.copy(
+                            tools = s.tools.copy(
+                                workspaces = s.tools.workspaces.copy(
+                                    loading = false,
+                                    available = if (hidden) false else (s.tools.workspaces.available ?: true),
+                                    error = if (hidden) null else err.toMessage(),
+                                ),
+                            ),
+                        )
+                    }
+                }
+        }
+    }
+
+    /** Mid-chat re-point: same session, new target, current model pair kept. */
+    fun switchWorkspace(path: String) {
+        val snapshot = _uiState.value
+        if (workspaceSwitchAllowed(isBusy = snapshot.isBusy, isStreaming = snapshot.isStreaming) ==
+            WorkspaceSwitchCheck.Blocked
+        ) {
+            _effects.trySend(ChatEffect.ShowMessage(WORKSPACE_SWITCH_BLOCKED_COPY))
+            return
+        }
+        val sessionId = snapshot.sessionId ?: return
+        viewModelScope.launch {
+            sessions.updateContext(
+                sessionId = sessionId,
+                workspace = path,
+                model = snapshot.model,
+                provider = snapshot.modelProvider,
+            )
+                .onSuccess {
+                    _uiState.update { it.copy(workspace = path) }
+                    _effects.trySend(ChatEffect.ShowMessage("Workspace switched"))
+                }
+                .onFailure { _effects.trySend(ChatEffect.ShowMessage(it.toMessage())) }
+        }
+    }
+
+    /**
+     * A NEW conversation isolated in a worktree of the current target. This
+     * chat keeps running; the replacement is pushed, not swapped, so back
+     * returns to the original conversation.
+     */
+    fun startWorktreeChat() {
+        val snapshot = _uiState.value
+        viewModelScope.launch {
+            sessions.create(
+                model = snapshot.model,
+                provider = snapshot.modelProvider,
+                workspace = snapshot.workspace ?: _uiState.value.tools.profiles.defaultWorkspace,
+                worktree = true,
+            )
+                .onSuccess { newId -> _effects.trySend(ChatEffect.OpenSession(newId)) }
+                .onFailure { _effects.trySend(ChatEffect.ShowMessage(it.toMessage())) }
+        }
+    }
+
     /**
      * Boot identity for the chat host: the panel row's label and single-mode
      * hiding come from this. 404 hides quietly; newer failures stay visible.
@@ -1098,6 +1209,9 @@ class ChatViewModel @Inject constructor(
 
 sealed interface ChatEffect {
     data class ShowMessage(val text: String) : ChatEffect
+
+    /** Open another conversation (worktree chats) — pushed, not replacing. */
+    data class OpenSession(val sessionId: String) : ChatEffect
 
     /**
      * A mid-chat profile switch landed: navigate to the replacement

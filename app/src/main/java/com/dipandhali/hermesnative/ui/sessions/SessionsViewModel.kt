@@ -11,6 +11,7 @@ import com.dipandhali.hermesnative.data.media.MediaRepository
 import com.dipandhali.hermesnative.data.media.TranscriptionRepository
 import com.dipandhali.hermesnative.data.profiles.ProfileRepository
 import com.dipandhali.hermesnative.data.prompts.PromptsRepository
+import com.dipandhali.hermesnative.data.workspace.WorkspaceRepository
 import com.dipandhali.hermesnative.data.sessions.SessionRepository
 import com.dipandhali.hermesnative.data.settings.ServerState
 import com.dipandhali.hermesnative.data.settings.SettingsStore
@@ -21,6 +22,7 @@ import com.dipandhali.hermesnative.core.model.ProfileCreateRequest
 import com.dipandhali.hermesnative.domain.modelpicker.PickerCatalogBuilder
 import com.dipandhali.hermesnative.domain.composer.ComposerToolsState
 import com.dipandhali.hermesnative.domain.composer.rowHiddenByMissingApi
+import com.dipandhali.hermesnative.domain.composer.homeSendWorkspace
 import com.dipandhali.hermesnative.domain.modelpicker.displaySelection
 import com.dipandhali.hermesnative.domain.voice.VoiceInputMode
 import com.dipandhali.hermesnative.domain.voice.VoicePhase
@@ -42,6 +44,7 @@ class SessionsViewModel @Inject constructor(
     private val media: MediaRepository,
     private val promptsRepository: PromptsRepository,
     private val profileRepository: ProfileRepository,
+    private val workspaceRepository: WorkspaceRepository,
     private val settings: SettingsStore,
     private val serverState: ServerState,
     private val voiceRecorder: VoiceRecorder,
@@ -234,7 +237,10 @@ class SessionsViewModel @Inject constructor(
                 provider = pick?.provider,
                 // Home sends omit `worktree` on purpose (three-value contract):
                 // the profile's config decides isolation, same as a CLI send.
-                workspace = _state.value.tools.profiles.defaultWorkspace,
+                workspace = homeSendWorkspace(
+                    pendingWorkspace = _state.value.tools.workspaces.pendingPath,
+                    identityDefault = _state.value.tools.profiles.defaultWorkspace,
+                ),
             )
                 .onSuccess { sessionId ->
                     // The new session must appear in the list before navigation, or
@@ -277,8 +283,12 @@ class SessionsViewModel @Inject constructor(
             val sessionId = repository.create(
                 model = pick?.model,
                 provider = pick?.provider,
-                // As with createSession: profile default, no explicit worktree key.
-                workspace = _state.value.tools.profiles.defaultWorkspace,
+                // As with createSession: pending pick, else profile default,
+                // no explicit worktree key.
+                workspace = homeSendWorkspace(
+                    pendingWorkspace = _state.value.tools.workspaces.pendingPath,
+                    identityDefault = _state.value.tools.profiles.defaultWorkspace,
+                ),
             )
                 .getOrElse { error ->
                     _state.update { it.copy(voicePhase = VoicePhase.Idle) }
@@ -403,6 +413,90 @@ class SessionsViewModel @Inject constructor(
     fun closeProfilePicker() {
         _state.update { s ->
             s.copy(tools = s.tools.copy(profiles = s.tools.profiles.copy(pickerOpen = false)))
+        }
+    }
+
+    // ---------- Workspace (home: registry + next-chat target) ----------
+
+    fun openWorkspacePicker() {
+        _state.update { s ->
+            s.copy(
+                tools = s.tools.copy(
+                    workspaces = s.tools.workspaces.copy(pickerOpen = true, error = null),
+                ),
+            )
+        }
+        loadWorkspaces()
+    }
+
+    fun closeWorkspacePicker() {
+        _state.update { s ->
+            s.copy(tools = s.tools.copy(workspaces = s.tools.workspaces.copy(pickerOpen = false)))
+        }
+    }
+
+    fun retryWorkspaces() = loadWorkspaces()
+
+    private fun loadWorkspaces() {
+        _state.update { s ->
+            s.copy(
+                tools = s.tools.copy(
+                    workspaces = s.tools.workspaces.copy(loading = true, error = null),
+                ),
+            )
+        }
+        viewModelScope.launch {
+            workspaceRepository.list()
+                .onSuccess { bundle ->
+                    _state.update { s ->
+                        s.copy(
+                            tools = s.tools.copy(
+                                workspaces = s.tools.workspaces.copy(
+                                    loading = false,
+                                    error = null,
+                                    available = true,
+                                    workspaces = bundle.workspaces,
+                                    last = bundle.last,
+                                ),
+                            ),
+                        )
+                    }
+                }
+                .onFailure { err ->
+                    val hidden = rowHiddenByMissingApi(err as? ApiException)
+                    _state.update { s ->
+                        s.copy(
+                            tools = s.tools.copy(
+                                workspaces = s.tools.workspaces.copy(
+                                    loading = false,
+                                    available = if (hidden) false else (s.tools.workspaces.available ?: true),
+                                    error = if (hidden) null else err.toMessage(),
+                                ),
+                            ),
+                        )
+                    }
+                }
+        }
+    }
+
+    /** The + panel's pick only retargets the NEXT chat; nothing exists yet. */
+    fun pickWorkspace(path: String) {
+        _state.update { s ->
+            s.copy(
+                tools = s.tools.copy(
+                    workspaces = s.tools.workspaces.copy(
+                        pendingPath = path,
+                        pickerOpen = false,
+                    ),
+                ),
+            )
+        }
+    }
+
+    /** Undoes the pending target: next chats follow the profile default again. */
+    fun clearPendingWorkspace() {
+        _state.update { s ->
+            s.copy(tools = s.tools.copy(workspaces = s.tools.workspaces.copy(pendingPath = null)))
         }
     }
 

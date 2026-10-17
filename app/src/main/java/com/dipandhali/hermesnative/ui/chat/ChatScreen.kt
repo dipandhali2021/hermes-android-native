@@ -111,6 +111,8 @@ fun ChatScreen(
     onOpenSettings: () -> Unit,
     /** Navigate to the replacement chat, REPLACING this entry on the stack. */
     onSwitchSession: (String, String) -> Unit = { _, _ -> },
+    /** Push another conversation (worktree chats) — back returns here. */
+    onOpenNewSession: (String) -> Unit = {},
     viewModel: ChatViewModel = hiltViewModel(),
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
@@ -199,6 +201,7 @@ fun ChatScreen(
             when (effect) {
                 is ChatEffect.ShowMessage -> snackbar.showSnackbar(effect.text)
                 is ChatEffect.SwitchedSession -> onSwitchSession(effect.sessionId, effect.profileName)
+                is ChatEffect.OpenSession -> onOpenNewSession(effect.sessionId)
             }
         }
     }

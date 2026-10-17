@@ -3,6 +3,7 @@ package com.dipandhali.hermesnative.domain.composer
 import com.dipandhali.hermesnative.core.error.DataError
 import com.dipandhali.hermesnative.core.model.ProfileDto
 import com.dipandhali.hermesnative.core.model.SavedPrompt
+import com.dipandhali.hermesnative.core.model.WorkspaceDto
 import com.dipandhali.hermesnative.core.net.ApiException
 
 /**
@@ -40,9 +41,32 @@ data class ProfilesUiState(
     val busySwitching: Boolean = false,
 )
 
+/**
+ * The `+` panel's workspace registry slice: saved workspaces with the
+ * profile's last-used pointer, an availability probe shared with the other
+ * rows, a picker sheet, an editor sheet (add with typeahead + rename /
+ * remove), and — home only — the pending target for the NEXT chat.
+ */
+data class WorkspacesUiState(
+    /** null until the first open probes the endpoint. */
+    val available: Boolean? = null,
+    val loading: Boolean = false,
+    val error: String? = null,
+    val workspaces: List<WorkspaceDto> = emptyList(),
+    val last: String? = null,
+    val pickerOpen: Boolean = false,
+    val listEditorOpen: Boolean = false,
+    val pathDialogOpen: Boolean = false,
+    val suggestions: List<String> = emptyList(),
+    /** Home only: which workspace the next chat opens under. */
+    val pendingPath: String? = null,
+    val busy: Boolean = false,
+)
+
 data class ComposerToolsState(
     val prompts: PromptsUiState = PromptsUiState(),
     val profiles: ProfilesUiState = ProfilesUiState(),
+    val workspaces: WorkspacesUiState = WorkspacesUiState(),
 )
 
 /**

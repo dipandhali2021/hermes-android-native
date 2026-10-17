@@ -254,6 +254,11 @@ private fun HermesNavHost(startDestination: String) {
                         }
                     }
                 },
+                onOpenNewSession = { newId ->
+                    // A worktree chat is a NEW conversation: pushed, so back
+                    // returns to the chat it was started from.
+                    navController.navigate(Routes.chat(newId))
+                },
             )
         }
 
