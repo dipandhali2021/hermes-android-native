@@ -356,8 +356,15 @@ class HermesApi(private val client: OkHttpClient) {
     }
 
     private fun mapStatus(code: Int, body: String): DataError = when (code) {
-        401, 403 -> DataError.Unauthorized
-        404 -> DataError.NotFound
+        401 -> DataError.Unauthorized
+        403, 404 ->
+            // A structured body means the server is explaining something specific:
+            // a bound profile ("Profile is bound to the current session") or an
+            // oversized file read ("File too large (… max N)") — both are actionable
+            // in a way the generic 403/404 copies are not. A bare status keeps the
+            // long-standing mapping.
+            extractMessage(body)?.let { DataError.Server(code, it) }
+                ?: if (code == 404) DataError.NotFound else DataError.Unauthorized
         409 -> {
             // A busy session carries the id of the run already going, so the UI
             // can offer to attach rather than showing a dead end.
@@ -367,7 +374,7 @@ class HermesApi(private val client: OkHttpClient) {
             if (busy?.activeStreamId != null) {
                 DataError.SessionBusy(busy.activeStreamId)
             } else {
-                DataError.Server(code, "This session is busy.")
+                DataError.Server(409, extractMessage(body) ?: "This session is busy.")
             }
         }
         else -> DataError.Server(code, extractMessage(body))
