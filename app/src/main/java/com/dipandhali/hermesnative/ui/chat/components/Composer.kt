@@ -19,8 +19,9 @@ import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.Send
-import androidx.compose.material.icons.rounded.AttachFile
+import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.rounded.ArrowUpward
+import androidx.compose.material.icons.rounded.Mic
 import androidx.compose.material.icons.rounded.QueuePlayNext
 import androidx.compose.material.icons.rounded.Stop
 import androidx.compose.material3.FilledIconButton
@@ -45,6 +46,7 @@ import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.unit.dp
 import com.dipandhali.hermesnative.domain.composer.ComposerAction
+import com.dipandhali.hermesnative.domain.voice.VoicePhase
 import com.dipandhali.hermesnative.ui.theme.HermesMotion
 
 /**
@@ -69,6 +71,13 @@ fun Composer(
     attachments: List<ComposerAttachment> = emptyList(),
     onRemoveAttachment: (String) -> Unit = {},
     enabled: Boolean = true,
+    onMic: (() -> Unit)? = null,
+    micEnabled: Boolean = true,
+    voicePhase: VoicePhase = VoicePhase.Idle,
+    onVoiceStop: () -> Unit = {},
+    onVoiceCancel: () -> Unit = {},
+    voiceElapsedMs: () -> Long = { 0L },
+    voiceAmplitude: () -> Int = { 0 },
 ) {
     Surface(
         color = MaterialTheme.colorScheme.surfaceContainer,
@@ -83,7 +92,9 @@ fun Composer(
             TextField(
                 value = value,
                 onValueChange = onValueChange,
-                enabled = enabled,
+                // Disabled, not hidden, while a clip is being captured or
+                // converted: a half-typed draft stays readable and waiting.
+                enabled = enabled && voicePhase == VoicePhase.Idle,
                 placeholder = { Text("Send a message…") },
                 keyboardOptions = KeyboardOptions(
                     // Enter inserts a newline on mobile and the button sends; the
@@ -104,32 +115,95 @@ fun Composer(
                     .heightIn(min = 56.dp, max = 180.dp),
             )
 
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(start = 6.dp, end = 6.dp, bottom = 6.dp),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(6.dp),
-            ) {
-                // Attachment first, then the model chip: the row reads
-                // left-to-right as "what it goes with, then what it runs on".
-                if (onAttach != null) {
-                    IconButton(onClick = onAttach, enabled = enabled) {
-                        Icon(
-                            imageVector = Icons.Rounded.AttachFile,
-                            contentDescription = "Attach photos",
-                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
-                    }
+            // The idle toolbar and the recording strip are one slot with two
+            // occupants, crossfaded with the same spring idiom the primary
+            // button uses, so stop/start of a capture never jumps.
+            AnimatedContent(
+                targetState = voicePhase,
+                transitionSpec = {
+                    (scaleIn(HermesMotion.spatialFast()) + fadeIn()) togetherWith
+                        (scaleOut(HermesMotion.spatialFast()) + fadeOut()) using
+                        SizeTransform(clip = false)
+                },
+                label = "composer-controls",
+            ) { phase ->
+                if (phase is VoicePhase.Idle) {
+                    ComposerControls(
+                        enabled = enabled,
+                        onAttach = onAttach,
+                        onMic = onMic,
+                        micEnabled = micEnabled,
+                        leadingAccessory = leadingAccessory,
+                        action = action,
+                        onAction = onAction,
+                    )
+                } else {
+                    VoiceRecordingBar(
+                        phase = phase,
+                        elapsedMsProvider = voiceElapsedMs,
+                        amplitudeProvider = voiceAmplitude,
+                        onCancel = onVoiceCancel,
+                        onStop = onVoiceStop,
+                    )
                 }
-
-                leadingAccessory?.invoke()
-
-                Box(Modifier.weight(1f))
-
-                SendButton(action = action, onClick = onAction, enabled = enabled)
             }
         }
+    }
+}
+
+/**
+ * The idle toolbar: attach, the model chip, the mic, and the five-state
+ * primary button. Split out of [Composer] so the recording strip can replace
+ * it wholesale.
+ */
+@Composable
+private fun ComposerControls(
+    enabled: Boolean,
+    onAttach: (() -> Unit)?,
+    onMic: (() -> Unit)?,
+    micEnabled: Boolean,
+    leadingAccessory: (@Composable () -> Unit)?,
+    action: ComposerAction,
+    onAction: () -> Unit,
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(start = 6.dp, end = 6.dp, bottom = 6.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(6.dp),
+    ) {
+        // Attach first, then the model chip: the row reads left-to-right
+        // as "what it goes with, then what it runs on".
+        if (onAttach != null) {
+            IconButton(onClick = onAttach, enabled = enabled) {
+                Icon(
+                    imageVector = Icons.Rounded.Add,
+                    contentDescription = "Add",
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+        }
+
+        leadingAccessory?.invoke()
+
+        Box(Modifier.weight(1f))
+
+        // The mic sits between the field area and send — the standing
+        // placement: voice is another way to fill a message, send is the send.
+        if (onMic != null) {
+            IconButton(
+                onClick = onMic,
+                enabled = enabled && micEnabled,
+                colors = IconButtonDefaults.iconButtonColors(
+                    contentColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                ),
+            ) {
+                Icon(Icons.Rounded.Mic, contentDescription = "Voice input")
+            }
+        }
+
+        SendButton(action = action, onClick = onAction, enabled = enabled)
     }
 }
 
