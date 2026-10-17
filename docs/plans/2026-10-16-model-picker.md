@@ -678,12 +678,12 @@ Device pass on the Task 10 APK returned five changes; Tasks 11–13 below implem
 ### Task 12: Round 2 — chip pill redesign and combined header lockup
 
 **Files:**
-- Regenerate: `app/src/main/res/drawable/ic_hermes_agent.xml` from `hermesagent-text.svg@v6.0.0` (one path verbatim, viewBox 52×24, `fillType=evenOdd`).
+- Regenerate: `app/src/main/res/drawable/ic_hermes_agent.xml` as the **combined** lockup, mirroring upstream `HermesAgent.Combine` math (icon 56 ⇒ text 0.85×56, gap 0.2×56): face (Mono artwork, 24×24, 3 paths) scaled 56/24, wordmark (`hermesagent-text.svg`, 52×24, one path) scaled 47.6/24 at x=67.2 y=4.2; viewport 170.3333×56 (ratio 73:24), `fillType=evenOdd` throughout. `hermesagent-text.svg` alone is the wordmark only — the face must be composed in from the Mono mark.
 - Modify: `ModelChip.kt`, `HomeScreen.kt` (title), `ConnectScreen.kt` (hero).
 
 **Requirements:**
 - Chip: `Surface(onClick, shape = shapes.extraLarge, color = surfaceContainerHigh, contentColor = onSurface)`; row = label (`labelLarge`, ellipsis, max 160dp) + `Icons.Rounded.KeyboardArrowDown` (18dp); no border, no leading icon; keep `contentDescription = "Model and options"`.
-- Headers: `Image(painterResource(R.drawable.ic_hermes_agent), contentDescription = "Hermes Agent", colorFilter = tint(primary))` — home `height(28.dp)`, Connect `height(48.dp)`.
+- Headers: `Image(painterResource(R.drawable.ic_hermes_agent), contentDescription = "Hermes Agent", colorFilter = tint(primary))` — home `height(28.dp)`, Connect `height(48.dp)`, both `.aspectRatio(73f / 24f)`.
 
 **Steps:**
 - [ ] **Step 1: Implement** both.

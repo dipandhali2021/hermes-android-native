@@ -1,6 +1,7 @@
 package com.dipandhali.hermesnative.ui.home
 
 import androidx.activity.compose.BackHandler
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -10,6 +11,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.WindowInsetsSides
+import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -47,6 +49,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.ColorFilter
 import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.input.pointer.changedToDown
 import androidx.compose.ui.input.pointer.pointerInput
@@ -127,11 +130,15 @@ fun HomeScreen(
                     containerColor = MaterialTheme.colorScheme.surface,
                 ),
                 title = {
-                    Icon(
+                    // The combined Hermes Agent lockup (mark + wordmark),
+                    // matching the HermesAgent.Combine artwork.
+                    Image(
                         painter = painterResource(R.drawable.ic_hermes_agent),
-                        contentDescription = "Hermes",
-                        tint = MaterialTheme.colorScheme.primary,
-                        modifier = Modifier.size(28.dp),
+                        contentDescription = "Hermes Agent",
+                        colorFilter = ColorFilter.tint(MaterialTheme.colorScheme.primary),
+                        modifier = Modifier
+                            .height(28.dp)
+                            .aspectRatio(73f / 24f),
                     )
                 },
                 actions = {

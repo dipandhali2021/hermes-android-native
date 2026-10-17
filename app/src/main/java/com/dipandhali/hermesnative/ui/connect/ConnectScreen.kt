@@ -7,11 +7,13 @@ import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.shrinkVertically
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -49,6 +51,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.rotate
+import androidx.compose.ui.graphics.ColorFilter
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.input.ImeAction
@@ -95,11 +98,15 @@ fun ConnectScreen(
         ) {
             Spacer(Modifier.height(24.dp))
 
-            Icon(
+            // The combined Hermes Agent lockup (mark + wordmark), matching the
+            // HermesAgent.Combine artwork.
+            Image(
                 painter = painterResource(R.drawable.ic_hermes_agent),
-                contentDescription = "Hermes",
-                tint = MaterialTheme.colorScheme.primary,
-                modifier = Modifier.size(48.dp),
+                contentDescription = "Hermes Agent",
+                colorFilter = ColorFilter.tint(MaterialTheme.colorScheme.primary),
+                modifier = Modifier
+                    .height(48.dp)
+                    .aspectRatio(73f / 24f),
             )
             Text(
                 text = "Connect to your Hermes WebUI server",
