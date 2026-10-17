@@ -1,9 +1,19 @@
 package com.dipandhali.hermesnative.ui.home
 
+import android.Manifest
+import android.content.pm.PackageManager
+import android.net.Uri
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.SizeTransform
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.scaleIn
+import androidx.compose.animation.scaleOut
+import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -29,7 +39,8 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.Send
-import androidx.compose.material.icons.rounded.AttachFile
+import androidx.compose.material.icons.rounded.Add
+import androidx.compose.material.icons.rounded.Mic
 import androidx.compose.material.icons.rounded.MoreHoriz
 import androidx.compose.material.icons.rounded.Settings
 import androidx.compose.material3.CircularProgressIndicator
@@ -37,17 +48,22 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.IconButtonDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -57,28 +73,37 @@ import androidx.compose.ui.graphics.ColorFilter
 import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.input.pointer.changedToDown
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.core.content.ContextCompat
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.dipandhali.hermesnative.R
 import com.dipandhali.hermesnative.core.model.AttachmentDto
 import com.dipandhali.hermesnative.core.model.SessionRow
+import com.dipandhali.hermesnative.data.media.newCameraCaptureUri
 import com.dipandhali.hermesnative.domain.modelpicker.ModelSelection
 import com.dipandhali.hermesnative.domain.modelpicker.displaySelection
+import com.dipandhali.hermesnative.domain.voice.VoiceInputMode
+import com.dipandhali.hermesnative.domain.voice.VoicePhase
+import com.dipandhali.hermesnative.ui.chat.components.AttachSheet
 import com.dipandhali.hermesnative.ui.chat.components.AttachmentTray
 import com.dipandhali.hermesnative.ui.chat.components.ComposerAttachment
 import com.dipandhali.hermesnative.ui.chat.components.MAX_ATTACHMENTS
 import com.dipandhali.hermesnative.ui.chat.components.ModelChip
 import com.dipandhali.hermesnative.ui.chat.components.ModelPickerSheet
+import com.dipandhali.hermesnative.ui.chat.components.VoiceRecordingBar
 import com.dipandhali.hermesnative.ui.chat.components.stageAttachments
 import com.dipandhali.hermesnative.ui.components.FabMenu
 import com.dipandhali.hermesnative.ui.components.FabMenuAction
 import com.dipandhali.hermesnative.ui.sessions.SessionsEffect
 import com.dipandhali.hermesnative.ui.sessions.SessionsViewModel
 import com.dipandhali.hermesnative.ui.sessions.relativeTime
+import com.dipandhali.hermesnative.ui.theme.HermesMotion
+import kotlinx.coroutines.launch
 
 /** How many recent conversations the hub shows before deferring to the full list. */
 private const val RECENT_LIMIT = 5
@@ -115,6 +140,40 @@ fun HomeScreen(
     )
     var menuOpen by remember { mutableStateOf(false) }
 
+    val snackbar = remember { SnackbarHostState() }
+    var composerReset by remember { mutableStateOf(0) }
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+
+    val recordPermission = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestPermission(),
+    ) { granted ->
+        if (granted) {
+            viewModel.startVoiceRecording()
+        } else {
+            scope.launch {
+                snackbar.showSnackbar("Microphone permission is needed for voice input.")
+            }
+        }
+    }
+
+    val onMicTap = {
+        if (
+            ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO) ==
+            PackageManager.PERMISSION_GRANTED
+        ) {
+            viewModel.startVoiceRecording()
+        } else {
+            recordPermission.launch(Manifest.permission.RECORD_AUDIO)
+        }
+    }
+
+    // Leaving the screen mid-capture discards the clip: a recording is a
+    // gesture about the composer you are looking at, not background work.
+    DisposableEffect(Unit) {
+        onDispose { viewModel.cancelVoiceRecording() }
+    }
+
     BackHandler(enabled = menuOpen) { menuOpen = false }
 
     LaunchedEffect(Unit) { viewModel.refresh() }
@@ -128,13 +187,19 @@ fun HomeScreen(
                 // navigation, or the chat screen never learns what to send.
                 is SessionsEffect.OpenSessionAndSend ->
                     onOpenSessionAndSend(effect.sessionId, effect.message, effect.attachments)
-                is SessionsEffect.Message -> Unit
+                is SessionsEffect.Message -> {
+                    // Surfaced now that voice errors land here too, and the
+                    // composer's spinner must not survive a failed start.
+                    composerReset++
+                    snackbar.showSnackbar(effect.text)
+                }
             }
         }
     }
 
     Scaffold(
         contentWindowInsets = WindowInsets.safeDrawing,
+        snackbarHost = { SnackbarHost(snackbar) },
         topBar = {
             TopAppBar(
                 colors = TopAppBarDefaults.topAppBarColors(
@@ -172,6 +237,15 @@ fun HomeScreen(
                         onClick = viewModel::openPicker,
                     )
                 },
+                voiceMode = state.voiceMode,
+                voicePhase = state.voicePhase,
+                onVoiceModeChange = viewModel::setVoiceMode,
+                onMicTap = onMicTap,
+                onVoiceStop = viewModel::stopVoiceRecording,
+                onVoiceCancel = viewModel::cancelVoiceRecording,
+                voiceElapsedMs = viewModel::voiceElapsedMs,
+                voiceAmplitude = viewModel::voiceAmplitude,
+                resetSignal = composerReset,
                 // The composer is the only element that insets itself against the
                 // keyboard and the gesture bar. `inner` below is only a padding
                 // value — it is not consumed — so a second imePadding anywhere in
@@ -303,14 +377,50 @@ private fun HomeComposer(
     onPress: () -> Unit,
     modifier: Modifier = Modifier,
     leadingAccessory: (@Composable () -> Unit)? = null,
+    voiceMode: VoiceInputMode,
+    voicePhase: VoicePhase,
+    onVoiceModeChange: (VoiceInputMode) -> Unit,
+    onMicTap: () -> Unit,
+    onVoiceStop: (String, List<String>) -> Unit,
+    onVoiceCancel: () -> Unit,
+    voiceElapsedMs: () -> Long,
+    voiceAmplitude: () -> Int,
+    resetSignal: Int,
 ) {
     var text by remember { mutableStateOf("") }
     var attachments by remember { mutableStateOf(listOf<ComposerAttachment>()) }
     var isStarting by remember { mutableStateOf(false) }
     val currentOnPress by rememberUpdatedState(onPress)
 
+    // A failed start (session create or upload) reports through the same
+    // channel as everything else; the tick hands the send button back instead
+    // of leaving the spinner as the only way out.
+    LaunchedEffect(resetSignal) { isStarting = false }
+
+    var attachSheetOpen by remember { mutableStateOf(false) }
+    var pendingCameraUri by remember { mutableStateOf<Uri?>(null) }
+    val context = LocalContext.current
+
     val attachPicker = rememberLauncherForActivityResult(
         ActivityResultContracts.PickMultipleVisualMedia(MAX_ATTACHMENTS),
+    ) { uris ->
+        if (uris.isNotEmpty()) {
+            attachments = (attachments + stageAttachments(uris)).take(MAX_ATTACHMENTS)
+        }
+    }
+
+    val cameraCapture = rememberLauncherForActivityResult(
+        ActivityResultContracts.TakePicture(),
+    ) { saved ->
+        val uri = pendingCameraUri
+        pendingCameraUri = null
+        if (saved && uri != null) {
+            attachments = (attachments + stageAttachments(listOf(uri))).take(MAX_ATTACHMENTS)
+        }
+    }
+
+    val filePicker = rememberLauncherForActivityResult(
+        ActivityResultContracts.OpenMultipleDocuments(),
     ) { uris ->
         if (uris.isNotEmpty()) {
             attachments = (attachments + stageAttachments(uris)).take(MAX_ATTACHMENTS)
@@ -344,6 +454,9 @@ private fun HomeComposer(
             androidx.compose.material3.TextField(
                 value = text,
                 onValueChange = { text = it },
+                // Disabled, not hidden, while a clip is being captured or
+                // converted: a half-typed draft stays readable and waiting.
+                enabled = voicePhase == VoicePhase.Idle,
                 placeholder = { Text("Ask anything…") },
                 colors = androidx.compose.material3.TextFieldDefaults.colors(
                     focusedContainerColor = androidx.compose.ui.graphics.Color.Transparent,
@@ -355,59 +468,111 @@ private fun HomeComposer(
                     .fillMaxWidth()
                     .heightIn(min = 56.dp, max = 160.dp),
             )
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(start = 8.dp, end = 8.dp, bottom = 8.dp),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.End,
-            ) {
-                IconButton(
-                    onClick = {
-                        attachPicker.launch(
-                            PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly),
-                        )
-                    },
-                    enabled = !isStarting,
-                ) {
-                    Icon(
-                        imageVector = Icons.Rounded.AttachFile,
-                        contentDescription = "Attach photos",
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                }
-
-                leadingAccessory?.invoke()
-
-                Box(Modifier.weight(1f))
-
-                androidx.compose.material3.FilledIconButton(
-                    onClick = {
-                        val trimmed = text.trim()
-                        if (trimmed.isNotEmpty() || attachments.isNotEmpty()) {
-                            isStarting = true
-                            onSend(trimmed, attachments.mapNotNull { it.uriString })
+            AnimatedContent(
+                targetState = voicePhase,
+                transitionSpec = {
+                    (scaleIn(HermesMotion.spatialFast()) + fadeIn()) togetherWith
+                        (scaleOut(HermesMotion.spatialFast()) + fadeOut()) using
+                        SizeTransform(clip = false)
+                },
+                label = "home-composer-controls",
+            ) { phase ->
+                if (phase is VoicePhase.Idle) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(start = 8.dp, end = 8.dp, bottom = 8.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.End,
+                    ) {
+                        IconButton(
+                            onClick = { attachSheetOpen = true },
+                            enabled = !isStarting,
+                        ) {
+                            Icon(
+                                imageVector = Icons.Rounded.Add,
+                                contentDescription = "Add",
+                                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
                         }
-                    },
-                    enabled = (text.isNotBlank() || attachments.isNotEmpty()) && !isStarting,
-                    modifier = Modifier.size(44.dp),
-                ) {
-                    if (isStarting) {
-                        CircularProgressIndicator(
-                            modifier = Modifier.size(18.dp),
-                            strokeWidth = 2.dp,
-                            color = MaterialTheme.colorScheme.onPrimary,
-                        )
-                    } else {
-                        Icon(
-                            imageVector = Icons.AutoMirrored.Rounded.Send,
-                            contentDescription = "Start a new conversation",
-                            modifier = Modifier.size(18.dp),
-                        )
+
+                        leadingAccessory?.invoke()
+
+                        Box(Modifier.weight(1f))
+
+                        IconButton(
+                            onClick = onMicTap,
+                            enabled = !isStarting,
+                            colors = IconButtonDefaults.iconButtonColors(
+                                contentColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                            ),
+                        ) {
+                            Icon(Icons.Rounded.Mic, contentDescription = "Voice input")
+                        }
+
+                        androidx.compose.material3.FilledIconButton(
+                            onClick = {
+                                val trimmed = text.trim()
+                                if (trimmed.isNotEmpty() || attachments.isNotEmpty()) {
+                                    isStarting = true
+                                    onSend(trimmed, attachments.mapNotNull { it.uriString })
+                                }
+                            },
+                            enabled = (text.isNotBlank() || attachments.isNotEmpty()) && !isStarting,
+                            modifier = Modifier.size(44.dp),
+                        ) {
+                            if (isStarting) {
+                                CircularProgressIndicator(
+                                    modifier = Modifier.size(18.dp),
+                                    strokeWidth = 2.dp,
+                                    color = MaterialTheme.colorScheme.onPrimary,
+                                )
+                            } else {
+                                Icon(
+                                    imageVector = Icons.AutoMirrored.Rounded.Send,
+                                    contentDescription = "Start a new conversation",
+                                    modifier = Modifier.size(18.dp),
+                                )
+                            }
+                        }
                     }
+                } else {
+                    VoiceRecordingBar(
+                        phase = phase,
+                        elapsedMsProvider = voiceElapsedMs,
+                        amplitudeProvider = voiceAmplitude,
+                        onCancel = onVoiceCancel,
+                        onStop = { onVoiceStop(text.trim(), attachments.mapNotNull { it.uriString }) },
+                    )
                 }
             }
         }
+    }
+
+    // A sibling of the composer's Surface, like the chat screen's sheet: the
+    // sheet owns its own window and nothing here waits on the composer layout.
+    if (attachSheetOpen) {
+        AttachSheet(
+            voiceMode = voiceMode,
+            onVoiceModeChange = onVoiceModeChange,
+            onPhotos = {
+                attachSheetOpen = false
+                attachPicker.launch(
+                    PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly),
+                )
+            },
+            onCamera = {
+                attachSheetOpen = false
+                val uri = newCameraCaptureUri(context)
+                pendingCameraUri = uri
+                cameraCapture.launch(uri)
+            },
+            onFiles = {
+                attachSheetOpen = false
+                filePicker.launch(arrayOf("*/*"))
+            },
+            onDismiss = { attachSheetOpen = false },
+        )
     }
 }
 
