@@ -325,6 +325,8 @@ fun ChatScreen(
                 // Long-press send: hold the send button to keep the draft for
                 // reuse — the sheet's "Save current input", one gesture away.
                 onSavePrompt = { viewModel.saveDraftAsPrompt() },
+                // The context ring appears beside the mic once usage exists.
+                contextUsage = state.usage,
                 onAttach = { attachOpen = !attachOpen },
                 attachOpen = attachOpen,
                 attachPanel = {

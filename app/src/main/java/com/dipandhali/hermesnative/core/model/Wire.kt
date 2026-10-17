@@ -94,6 +94,17 @@ data class SessionDetail(
     val messages: List<MessageDto> = emptyList(),
     @SerialName("active_stream_id") val activeStreamId: String? = null,
     @SerialName("is_streaming") val isStreaming: Boolean = false,
+    // Persisted context-window counters the session payload carries
+    // (models.py `compact()`); all optional — older servers omit them.
+    @SerialName("input_tokens") val inputTokens: Long? = null,
+    @SerialName("output_tokens") val outputTokens: Long? = null,
+    @SerialName("estimated_cost") val estimatedCost: Double? = null,
+    @SerialName("cache_read_tokens") val cacheReadTokens: Long? = null,
+    @SerialName("cache_write_tokens") val cacheWriteTokens: Long? = null,
+    @SerialName("context_length") val contextLength: Long? = null,
+    @SerialName("threshold_tokens") val thresholdTokens: Long? = null,
+    @SerialName("last_prompt_tokens") val lastPromptTokens: Long? = null,
+    @SerialName("post_compression_context_tokens_estimate") val postCompressionEstimate: Long? = null,
 )
 
 @Serializable
