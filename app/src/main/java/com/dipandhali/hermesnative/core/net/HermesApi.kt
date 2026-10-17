@@ -23,6 +23,7 @@ import com.dipandhali.hermesnative.core.model.SessionDetailResponse
 import com.dipandhali.hermesnative.core.model.SessionListResponse
 import com.dipandhali.hermesnative.core.model.SessionUpdateRequest
 import com.dipandhali.hermesnative.core.model.SteerRequest
+import com.dipandhali.hermesnative.core.model.UploadResponse
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.DeserializationStrategy
@@ -33,6 +34,8 @@ import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.contentOrNull
 import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 import okhttp3.MediaType.Companion.toMediaType
+import okhttp3.MediaType.Companion.toMediaTypeOrNull
+import okhttp3.MultipartBody
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
@@ -156,6 +159,31 @@ class HermesApi(private val client: OkHttpClient) {
 
     suspend fun cancel(baseUrl: String, streamId: String): Result<Unit> =
         getUnit(baseUrl, "api/chat/cancel?stream_id=${streamId.urlEncoded()}")
+
+    /**
+     * Uploads one file into a session's attachment directory.
+     *
+     * Multipart with `session_id` and `file` fields — the shape the web client
+     * sends (`static/ui.js`), and the only way the server associates the file
+     * with the session whose messages will reference it. The response carries
+     * the name/path/mime/size/is_image that `/api/chat/start` accepts as an
+     * attachment entry.
+     */
+    suspend fun upload(
+        baseUrl: String,
+        sessionId: String,
+        fileName: String,
+        mimeType: String?,
+        bytes: ByteArray,
+    ): Result<UploadResponse> = execute(baseUrl, "api/upload", UploadResponse.serializer()) { url ->
+        Request.Builder().url(url).post(
+            MultipartBody.Builder()
+                .setType(MultipartBody.FORM)
+                .addFormDataPart("session_id", sessionId)
+                .addFormDataPart("file", fileName, bytes.toRequestBody(mimeType?.toMediaTypeOrNull()))
+                .build(),
+        )
+    }
 
     // ---- side panels ----
 

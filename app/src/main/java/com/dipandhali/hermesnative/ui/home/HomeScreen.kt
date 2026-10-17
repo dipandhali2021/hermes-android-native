@@ -1,6 +1,9 @@
 package com.dipandhali.hermesnative.ui.home
 
 import androidx.activity.compose.BackHandler
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.PickVisualMediaRequest
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -26,6 +29,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.Send
+import androidx.compose.material.icons.rounded.AttachFile
 import androidx.compose.material.icons.rounded.MoreHoriz
 import androidx.compose.material.icons.rounded.Settings
 import androidx.compose.material3.CircularProgressIndicator
@@ -62,11 +66,16 @@ import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.dipandhali.hermesnative.R
+import com.dipandhali.hermesnative.core.model.AttachmentDto
 import com.dipandhali.hermesnative.core.model.SessionRow
 import com.dipandhali.hermesnative.domain.modelpicker.ModelSelection
 import com.dipandhali.hermesnative.domain.modelpicker.displaySelection
+import com.dipandhali.hermesnative.ui.chat.components.AttachmentTray
+import com.dipandhali.hermesnative.ui.chat.components.ComposerAttachment
+import com.dipandhali.hermesnative.ui.chat.components.MAX_ATTACHMENTS
 import com.dipandhali.hermesnative.ui.chat.components.ModelChip
 import com.dipandhali.hermesnative.ui.chat.components.ModelPickerSheet
+import com.dipandhali.hermesnative.ui.chat.components.stageAttachments
 import com.dipandhali.hermesnative.ui.components.FabMenu
 import com.dipandhali.hermesnative.ui.components.FabMenuAction
 import com.dipandhali.hermesnative.ui.sessions.SessionsEffect
@@ -95,7 +104,7 @@ private const val RECENT_LIMIT = 5
 @Composable
 fun HomeScreen(
     onOpenSession: (String) -> Unit,
-    onOpenSessionAndSend: (String, String) -> Unit,
+    onOpenSessionAndSend: (String, String, List<AttachmentDto>) -> Unit,
     onSeeAllSessions: () -> Unit,
     onOpenSettings: () -> Unit,
     fabActions: List<FabMenuAction>,
@@ -121,7 +130,7 @@ fun HomeScreen(
                 // Sent from the home composer: the message has to travel with the
                 // navigation, or the chat screen never learns what to send.
                 is SessionsEffect.OpenSessionAndSend ->
-                    onOpenSessionAndSend(effect.sessionId, effect.message)
+                    onOpenSessionAndSend(effect.sessionId, effect.message, effect.attachments)
                 // A failure that is not shown is indistinguishable from a freeze —
                 // this screen has no transcript to render it into.
                 is SessionsEffect.Message -> snackbar.showSnackbar(effect.text)
@@ -145,7 +154,7 @@ fun HomeScreen(
                         contentDescription = "Hermes Agent",
                         colorFilter = ColorFilter.tint(MaterialTheme.colorScheme.primary),
                         modifier = Modifier
-                            .height(28.dp)
+                            .height(32.dp)
                             .aspectRatio(73f / 24f),
                     )
                 },
@@ -160,7 +169,7 @@ fun HomeScreen(
         },
         bottomBar = {
             HomeComposer(
-                onSend = { text -> viewModel.startChatWith(text) },
+                onSend = { text, attachmentUris -> viewModel.startChatWith(text, attachmentUris) },
                 onPress = { menuOpen = false },
                 leadingAccessory = {
                     ModelChip(
@@ -300,14 +309,23 @@ fun HomeScreen(
  */
 @Composable
 private fun HomeComposer(
-    onSend: (String) -> Unit,
+    onSend: (String, List<String>) -> Unit,
     onPress: () -> Unit,
     isStarting: Boolean,
     modifier: Modifier = Modifier,
     leadingAccessory: (@Composable () -> Unit)? = null,
 ) {
     var text by remember { mutableStateOf("") }
+    var attachments by remember { mutableStateOf(listOf<ComposerAttachment>()) }
     val currentOnPress by rememberUpdatedState(onPress)
+
+    val attachPicker = rememberLauncherForActivityResult(
+        ActivityResultContracts.PickMultipleVisualMedia(MAX_ATTACHMENTS),
+    ) { uris ->
+        if (uris.isNotEmpty()) {
+            attachments = (attachments + stageAttachments(uris)).take(MAX_ATTACHMENTS)
+        }
+    }
 
     Surface(
         color = MaterialTheme.colorScheme.surfaceContainer,
@@ -326,6 +344,13 @@ private fun HomeComposer(
             },
     ) {
         Column {
+            if (attachments.isNotEmpty()) {
+                AttachmentTray(
+                    attachments = attachments,
+                    onRemove = { id -> attachments = attachments.filterNot { it.id == id } },
+                )
+            }
+
             androidx.compose.material3.TextField(
                 value = text,
                 onValueChange = { text = it },
@@ -347,6 +372,21 @@ private fun HomeComposer(
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.End,
             ) {
+                IconButton(
+                    onClick = {
+                        attachPicker.launch(
+                            PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly),
+                        )
+                    },
+                    enabled = !isStarting,
+                ) {
+                    Icon(
+                        imageVector = Icons.Rounded.AttachFile,
+                        contentDescription = "Attach photos",
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+
                 leadingAccessory?.invoke()
 
                 Box(Modifier.weight(1f))
@@ -354,9 +394,11 @@ private fun HomeComposer(
                 androidx.compose.material3.FilledIconButton(
                     onClick = {
                         val trimmed = text.trim()
-                        if (trimmed.isNotEmpty()) onSend(trimmed)
+                        if (trimmed.isNotEmpty() || attachments.isNotEmpty()) {
+                            onSend(trimmed, attachments.mapNotNull { it.uriString })
+                        }
                     },
-                    enabled = text.isNotBlank() && !isStarting,
+                    enabled = (text.isNotBlank() || attachments.isNotEmpty()) && !isStarting,
                     modifier = Modifier.size(44.dp),
                 ) {
                     if (isStarting) {

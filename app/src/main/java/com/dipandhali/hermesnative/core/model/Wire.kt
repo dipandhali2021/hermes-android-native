@@ -124,6 +124,21 @@ data class AttachmentDto(
     @SerialName("is_image") val isImage: Boolean = false,
 )
 
+/**
+ * `POST /api/upload` success body: the stored file as the server names it.
+ *
+ * Every field is optional: the server can also answer `{"error": ...}` with a
+ * 2xx status, and a missing [path] is treated as a failed upload.
+ */
+@Serializable
+data class UploadResponse(
+    val filename: String? = null,
+    val path: String? = null,
+    val size: Long? = null,
+    val mime: String? = null,
+    @SerialName("is_image") val isImage: Boolean = false,
+)
+
 @Serializable
 data class ChatStartResponse(
     @SerialName("stream_id") val streamId: String? = null,

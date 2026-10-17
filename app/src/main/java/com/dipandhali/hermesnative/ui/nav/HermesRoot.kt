@@ -24,6 +24,7 @@ import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
+import com.dipandhali.hermesnative.core.model.AttachmentDto
 import com.dipandhali.hermesnative.ui.chat.ChatScreen
 import com.dipandhali.hermesnative.ui.components.FabMenuAction
 import com.dipandhali.hermesnative.ui.connect.ConnectScreen
@@ -33,6 +34,11 @@ import com.dipandhali.hermesnative.ui.home.HomeScreen
 import com.dipandhali.hermesnative.ui.sessions.SessionsListScreen
 import com.dipandhali.hermesnative.ui.settings.SettingsScreen
 import com.dipandhali.hermesnative.ui.theme.HermesNativeTheme
+import kotlinx.serialization.builtins.ListSerializer
+import kotlinx.serialization.json.Json
+
+/** Encodes the attachment list a seeded chat route carries. */
+private val routeJson = Json { explicitNulls = false }
 
 object Routes {
     const val CONNECT = "connect"
@@ -51,21 +57,30 @@ object Routes {
     const val CHAT = "chat"
 
     /**
-     * A chat route carrying an optional first message.
+     * A chat route carrying an optional first message and its attachments.
      *
      * The message rides in the route because the home composer has to create the
      * session before it can hand the text over, and sending it from home would
-     * leave the user watching a run they cannot see. It is URL-encoded because a
-     * message is arbitrary user text and can contain `/`, which would otherwise
-     * split the path.
+     * leave the user watching a run they cannot see. The message is URL-encoded
+     * because it is arbitrary user text and can contain `/`, which would
+     * otherwise split the path. Attachments ride as a JSON array — they were
+     * uploaded during creation and are small value objects.
      */
-    fun chat(sessionId: String, initialMessage: String? = null): String {
+    fun chat(
+        sessionId: String,
+        initialMessage: String? = null,
+        attachments: List<AttachmentDto> = emptyList(),
+    ): String {
         val base = "$CHAT/${java.net.URLEncoder.encode(sessionId, "UTF-8")}"
-        return if (initialMessage.isNullOrBlank()) {
-            base
-        } else {
-            "$base?message=${java.net.URLEncoder.encode(initialMessage, "UTF-8")}"
+        val params = mutableListOf<String>()
+        if (!initialMessage.isNullOrBlank()) {
+            params += "message=${java.net.URLEncoder.encode(initialMessage, "UTF-8")}"
         }
+        if (attachments.isNotEmpty()) {
+            val encoded = routeJson.encodeToString(ListSerializer(AttachmentDto.serializer()), attachments)
+            params += "attachments=${java.net.URLEncoder.encode(encoded, "UTF-8")}"
+        }
+        return if (params.isEmpty()) base else "$base?${params.joinToString("&")}"
     }
 }
 
@@ -147,8 +162,8 @@ private fun HermesNavHost(startDestination: String) {
         composable(Routes.HOME) {
             HomeScreen(
                 onOpenSession = { sessionId -> navController.navigate(Routes.chat(sessionId)) },
-                onOpenSessionAndSend = { sessionId, message ->
-                    navController.navigate(Routes.chat(sessionId, message))
+                onOpenSessionAndSend = { sessionId, message, attachments ->
+                    navController.navigate(Routes.chat(sessionId, message, attachments))
                 },
                 onSeeAllSessions = { navController.navigate(Routes.SESSIONS) },
                 onOpenSettings = { navController.navigate(Routes.SETTINGS) },
@@ -165,10 +180,15 @@ private fun HermesNavHost(startDestination: String) {
         }
 
         composable(
-            route = "${Routes.CHAT}/{sessionId}?message={message}",
+            route = "${Routes.CHAT}/{sessionId}?message={message}&attachments={attachments}",
             arguments = listOf(
                 navArgument("sessionId") { type = NavType.StringType },
                 navArgument("message") {
+                    type = NavType.StringType
+                    nullable = true
+                    defaultValue = null
+                },
+                navArgument("attachments") {
                     type = NavType.StringType
                     nullable = true
                     defaultValue = null
@@ -177,9 +197,24 @@ private fun HermesNavHost(startDestination: String) {
         ) { entry ->
             val sessionId = entry.arguments?.getString("sessionId")
             val message = entry.arguments?.getString("message")
+            // Decoding is best-effort: the seed's attachments are a convenience,
+            // and a route that cannot parse them still opens the conversation.
+            val attachments = remember(entry) {
+                entry.arguments?.getString("attachments")
+                    ?.let { raw ->
+                        runCatching {
+                            routeJson.decodeFromString(
+                                ListSerializer(AttachmentDto.serializer()),
+                                raw,
+                            )
+                        }.getOrNull()
+                    }
+                    .orEmpty()
+            }
             ChatScreen(
                 sessionId = sessionId,
                 initialMessage = message,
+                initialAttachments = attachments,
                 // The hamburger is gone: this is a home button, and it goes back to
                 // the default screen rather than opening a drawer.
                 onGoHome = {

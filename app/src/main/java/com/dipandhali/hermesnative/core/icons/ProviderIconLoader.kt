@@ -11,8 +11,10 @@ import javax.inject.Inject
 import javax.inject.Named
 import javax.inject.Singleton
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Deferred
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.async
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
@@ -57,6 +59,14 @@ class ProviderIconLoader @Inject constructor(
     private val mutex = Mutex()
     private val inFlight = mutableMapOf<String, Deferred<ImageBitmap?>>()
 
+    /**
+     * Owner of shared fetches. A fetch is not tied to the caller that started
+     * it: a `produceState` in a scrolling row can be cancelled while its icon
+     * is in flight, and the completed download should still benefit every
+     * later request. Caller cancellation only cancels that caller's `await`.
+     */
+    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+
     /** The decoded icon, or null when unavailable. Safe to call per frame. */
     suspend fun load(iconId: String, variant: ProviderIconVariant): ImageBitmap? {
         val key = "${variant.dirName}/$iconId"
@@ -65,20 +75,33 @@ class ProviderIconLoader @Inject constructor(
             val deferred = mutex.withLock {
                 memory.get(key)?.let { return@withContext it }
                 if (key in failed) return@withContext null
-                inFlight.getOrPut(key) { async { decodeFromDiskOrFetch(iconId, variant) } }
+                inFlight.getOrPut(key) {
+                    scope.async {
+                        val result = try {
+                            decodeFromDiskOrFetch(iconId, variant)
+                        } catch (e: CancellationException) {
+                            throw e
+                        } catch (e: Exception) {
+                            null
+                        }
+                        mutex.withLock {
+                            // Only the task itself finalises its entry, so a
+                            // cancelled waiter can never leave a dead deferred
+                            // behind for the next load to await.
+                            inFlight.remove(key)
+                            if (result != null) memory.put(key, result) else failed.add(key)
+                        }
+                        result
+                    }
+                }
             }
-            val result = try {
+            try {
                 deferred.await()
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
                 null
             }
-            mutex.withLock {
-                inFlight.remove(key)
-                if (result != null) memory.put(key, result) else failed.add(key)
-            }
-            result
         }
     }
 

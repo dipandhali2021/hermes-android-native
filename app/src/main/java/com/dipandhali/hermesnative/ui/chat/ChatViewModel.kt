@@ -1,12 +1,16 @@
 package com.dipandhali.hermesnative.ui.chat
 
+import android.net.Uri
+import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.dipandhali.hermesnative.core.chat.ChatEvent
 import com.dipandhali.hermesnative.core.chat.isClose
 import com.dipandhali.hermesnative.core.error.userMessage
+import com.dipandhali.hermesnative.core.model.AttachmentDto
 import com.dipandhali.hermesnative.core.net.ApiException
 import com.dipandhali.hermesnative.data.chat.ChatRepository
+import com.dipandhali.hermesnative.data.media.MediaRepository
 import com.dipandhali.hermesnative.data.sessions.SessionRepository
 import com.dipandhali.hermesnative.data.settings.ServerState
 import com.dipandhali.hermesnative.data.settings.SettingsStore
@@ -19,7 +23,10 @@ import com.dipandhali.hermesnative.domain.modelpicker.ModelSelection
 import com.dipandhali.hermesnative.domain.modelpicker.PickerCatalogBuilder
 import com.dipandhali.hermesnative.domain.modelpicker.explicitPickForSend
 import com.dipandhali.hermesnative.domain.modelpicker.resolveOpen
+import com.dipandhali.hermesnative.ui.chat.components.MAX_ATTACHMENTS
+import com.dipandhali.hermesnative.ui.chat.components.attachmentName
 import dagger.hilt.android.lifecycle.HiltViewModel
+import java.util.UUID
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.delay
@@ -47,8 +54,10 @@ import javax.inject.Inject
 class ChatViewModel @Inject constructor(
     private val chat: ChatRepository,
     private val sessions: SessionRepository,
+    private val media: MediaRepository,
     private val settings: SettingsStore,
     private val serverState: ServerState,
+    private val savedStateHandle: SavedStateHandle,
     private val todoStore: com.dipandhali.hermesnative.data.panels.TodoStore,
 ) : ViewModel() {
 
@@ -82,9 +91,15 @@ class ChatViewModel @Inject constructor(
      *
      * [initialMessage] is the seed from the home composer, sent only after the
      * transcript has been applied — the load replaces the whole list, so a
-     * message appended before it lands would be erased by it.
+     * message appended before it lands would be erased by it. [initialAttachments]
+     * were already uploaded by the home flow (uploads are session-scoped) and
+     * ride the same seed send.
      */
-    fun openSession(sessionId: String, initialMessage: String? = null) {
+    fun openSession(
+        sessionId: String,
+        initialMessage: String? = null,
+        initialAttachments: List<AttachmentDto> = emptyList(),
+    ) {
         if (_uiState.value.sessionId == sessionId && _uiState.value.items.isNotEmpty()) return
         turnJob?.cancel()
         // One loader at a time: a slow response for a session the user has left
@@ -92,6 +107,23 @@ class ChatViewModel @Inject constructor(
         loadJob?.cancel()
         serverState.setActiveSession(sessionId)
         _uiState.update { it.copy(sessionId = sessionId, isLoading = true, error = null) }
+
+        // Staged before the load so the composer shows the picks while the
+        // transcript arrives, ready for the seed send below.
+        if (initialAttachments.isNotEmpty() && _uiState.value.pendingAttachments.isEmpty()) {
+            _uiState.update { state ->
+                state.copy(
+                    pendingAttachments = initialAttachments.mapIndexed { index, attachment ->
+                        PendingAttachment(
+                            id = "seed-$index-${attachment.path.hashCode()}",
+                            name = attachment.name,
+                            uriString = null,
+                            uploaded = attachment,
+                        )
+                    },
+                )
+            }
+        }
 
         loadJob = viewModelScope.launch {
             chat.loadTranscript(sessionId)
@@ -121,7 +153,9 @@ class ChatViewModel @Inject constructor(
                     }
                 }
             // Seed send, after the load has settled (see the KDoc above).
-            if (!initialMessage.isNullOrBlank()) sendInitialMessage(initialMessage)
+            if (!initialMessage.isNullOrBlank() || initialAttachments.isNotEmpty()) {
+                sendInitialMessage(sessionId, initialMessage.orEmpty())
+            }
         }
     }
 
@@ -244,17 +278,49 @@ class ChatViewModel @Inject constructor(
      * Sends the first message of a conversation created by the home composer.
      *
      * Called by [openSession] once the transcript load has settled; guarded
-     * anyway, because a recreated composition must not fire it twice.
+     * twice, because the seed rides the nav back stack, whose arguments survive
+     * process death: [ChatUiState.hasSentInitial] covers a recreated
+     * composition on a live ViewModel, and the [savedStateHandle] record —
+     * keyed by session — covers a recreated ViewModel, which would otherwise
+     * re-read the restored arguments and send the message a second time.
      */
-    private fun sendInitialMessage(message: String) {
+    private fun sendInitialMessage(sessionId: String, message: String) {
         if (_uiState.value.hasSentInitial || _uiState.value.isBusy) return
+        val key = seedSentKey(sessionId)
+        if (savedStateHandle.get<Boolean>(key) == true) return
+        savedStateHandle[key] = true
         _uiState.update { it.copy(hasSentInitial = true) }
         send(message)
     }
 
+    /** Stages picked photos for the next message, up to [MAX_ATTACHMENTS]. */
+    fun addAttachments(uriStrings: List<String>) {
+        if (uriStrings.isEmpty()) return
+        _uiState.update { state ->
+            val room = MAX_ATTACHMENTS - state.pendingAttachments.size
+            if (room <= 0) return@update state
+            val staged = uriStrings.take(room).map { raw ->
+                val uri = Uri.parse(raw)
+                PendingAttachment(
+                    id = "stage-${UUID.randomUUID()}",
+                    name = attachmentName(uri),
+                    uriString = raw,
+                )
+            }
+            state.copy(pendingAttachments = state.pendingAttachments + staged)
+        }
+    }
+
+    fun removeAttachment(id: String) {
+        _uiState.update { state ->
+            state.copy(pendingAttachments = state.pendingAttachments.filterNot { it.id == id })
+        }
+    }
+
     private fun send(override: String? = null) {
         val text = (override ?: _uiState.value.input).trim()
-        if (text.isEmpty()) return
+        val staged = _uiState.value.pendingAttachments
+        if (text.isEmpty() && staged.isEmpty()) return
 
         // The command prefix is a control word, not part of the message.
         val body = text.removeCommandPrefix()
@@ -262,7 +328,11 @@ class ChatViewModel @Inject constructor(
         _uiState.update {
             it.copy(
                 input = "",
-                items = it.items + TranscriptItem.User("u-${it.items.size}", body),
+                items = it.items + TranscriptItem.User(
+                    key = "u-${it.items.size}",
+                    text = body,
+                    attachments = staged.map { attachment -> attachment.name },
+                ),
                 isBusy = true,
                 error = null,
             )
@@ -270,6 +340,19 @@ class ChatViewModel @Inject constructor(
 
         turnJob = viewModelScope.launch {
             val state = _uiState.value
+            val sessionId = state.sessionId
+            if (sessionId == null) {
+                _uiState.update { it.copy(isBusy = false, error = "No conversation is open.") }
+                return@launch
+            }
+            // Uploads happen before the turn starts, because the message's
+            // attachment entries must reference stored files. A failure keeps
+            // the staged picks — a retry uploads and sends again.
+            val attachments = uploadStaged(sessionId)
+            if (attachments == null) {
+                _uiState.update { it.copy(isBusy = false) }
+                return@launch
+            }
             val selection = state.model?.let { ModelSelection(it, state.modelProvider) }
             val explicit = explicitPickForSend(
                 pendingPick,
@@ -279,6 +362,7 @@ class ChatViewModel @Inject constructor(
             )
             chat.startTurn(
                 body,
+                attachments = attachments,
                 model = selection?.model,
                 modelProvider = selection?.provider,
                 explicitPick = explicit.takeIf { it },
@@ -287,7 +371,9 @@ class ChatViewModel @Inject constructor(
                     // Accepted: the pick was delivered, so later sends stop
                     // claiming it is explicit.
                     pendingPick = null
-                    _uiState.update { it.copy(activeStreamId = streamId) }
+                    _uiState.update {
+                        it.copy(activeStreamId = streamId, pendingAttachments = emptyList())
+                    }
                     consumeTurn(streamId)
                 }
                 .onFailure { error ->
@@ -304,6 +390,43 @@ class ChatViewModel @Inject constructor(
                 }
         }
     }
+
+    /**
+     * Uploads every not-yet-uploaded staged attachment, preserving order.
+     *
+     * On success the server's own reference is written back into the staged
+     * item, so a later retry — after a failed `/api/chat/start`, say — reuses
+     * the uploaded file instead of uploading it again. Returns null when an
+     * upload failed; the message is already in [ChatUiState.error].
+     */
+    private suspend fun uploadStaged(sessionId: String): List<AttachmentDto>? {
+        val staged = _uiState.value.pendingAttachments
+        if (staged.isEmpty()) return emptyList()
+        val uploaded = mutableListOf<AttachmentDto>()
+        for (item in staged) {
+            val existing = item.uploaded
+            if (existing != null) {
+                uploaded += existing
+                continue
+            }
+            val uriString = item.uriString ?: continue
+            val attachment = media.upload(Uri.parse(uriString), sessionId).getOrElse { error ->
+                _uiState.update { it.copy(error = error.toMessage()) }
+                return null
+            }
+            uploaded += attachment
+            _uiState.update { state ->
+                state.copy(
+                    pendingAttachments = state.pendingAttachments.map {
+                        if (it.id == item.id) it.copy(uploaded = attachment) else it
+                    },
+                )
+            }
+        }
+        return uploaded
+    }
+
+    private fun seedSentKey(sessionId: String) = "seed_sent_$sessionId"
 
     private fun steer() {
         val text = _uiState.value.input.trim()
@@ -533,6 +656,20 @@ sealed interface ChatEffect {
 }
 
 /**
+ * A file staged for the next message.
+ *
+ * [uploaded] is set for attachments that arrived already uploaded with a
+ * seeded home-composer message, and for ones uploaded during a send that then
+ * failed; a locally staged pick uploads lazily on send.
+ */
+data class PendingAttachment(
+    val id: String,
+    val name: String,
+    val uriString: String?,
+    val uploaded: AttachmentDto? = null,
+)
+
+/**
  * Screen state.
  *
  * Split into the four buckets that behave differently: editable input, derived
@@ -551,6 +688,7 @@ data class ChatUiState(
     val modelProvider: String? = null,
     val queued: List<String> = emptyList(),
     val reasoningEffort: String? = null,
+    val pendingAttachments: List<PendingAttachment> = emptyList(),
 
     // 4. Transient UI-only
     val isLoading: Boolean = false,
@@ -568,9 +706,15 @@ data class ChatUiState(
     // 2. Derived — never constructor parameters.
     val hasContent: Boolean get() = input.isNotBlank()
 
+    /** Staged attachments make a send possible with no text at all. */
+    val hasSendableContent: Boolean get() = hasContent || pendingAttachments.isNotEmpty()
+
     val composerAction: ComposerAction
         get() = resolveComposerAction(
-            hasContent = hasContent,
+            // While a run is in flight the staged files cannot ride a steer —
+            // steering is text-only — so the busy states keep their text-only
+            // semantics, and an empty composer still offers Stop.
+            hasContent = if (isBusy) hasContent else hasSendableContent,
             isBusy = isBusy,
             hasActiveStream = activeStreamId != null,
             busySendMode = busySendMode,

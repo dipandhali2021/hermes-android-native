@@ -176,7 +176,48 @@ Device pass on the Task 10 APK changed six things; this section overrides confli
 
 1. **The home composer ships the picker.** The home composer gains the chip + the same sheet. A pick there updates the remembered default and closes the sheet; no snackbar on home (its effect plumbing lands with the pending `fix/home-send` branch). The sheet scope note is parameterized: chat = "Applies to this conversation from your next message.", home = "Applies to new conversations.".
 2. **New sessions carry the pick (web parity).** `POST /api/session/new` accepts `model` + `model_provider` and stores them on the session (`static/sessions.js` L2139; `api/routes.py` new-session path). `SessionRepository.create(model, provider)` sends the home screen's current effective selection, so a chat created from home opens already on the pick — no open-time override ("seeded session" case) is needed.
-3. **Chip redesign.** Filled pill (`surfaceContainerHigh`, `shapes.extraLarge`): label + thin chevron-down; no border, no leading provider icon (per the reference image). Provider icons remain on the sheet rows.
+3. **Chip redesign.** Filled pill (`surfaceContainerHigh`, `shapes.extraLarge`): label + thin chevron-down; no border, no leading provider icon (per the reference image). Provider icons remain on the sheet rows. *(The chevron was removed in Round 3 — see §14.1.)*
 4. **Effective selection is displayed.** `displaySelection(selection, catalog)` — the session/remembered pick, else the catalog default — feeds both the chip label and the sheet's SELECTED marking, so a fresh chat shows the model it will actually run on.
 5. **Tune icon removed; composer position parity.** The composer's `onOpenSettings`/Tune icon is gone (settings remain in both top bars). The chat composer adopts the home inset treatment (`safeDrawing` bottom + 12dp), dropping the composer-internal `imePadding()`. `ChatViewModel.loadModels()` becomes idempotent and `ModelPickerUiState` moves to `domain/modelpicker/` for reuse by `SessionsViewModel`.
 6. **Header mark is the `HermesAgent.Combine` lockup.** `ic_hermes_agent.xml` is rebuilt from the pinned `hermesagent-text.svg` (one path, viewBox 52×24): face + "HERMES AGENT" wordmark, replacing the 3-path square mark in Home and Connect.
+
+## 14. Round 3 amendments (device feedback, 2026-10-17)
+
+Device pass on the Task 13 APK changed four things; this section overrides
+conflicting earlier text (§4.1 chip drawing, §13 item 3's chevron), adds the
+composer's attachment model, and records two accepted review divergences.
+
+1. **The chip is a label, not a control.** The chevron-down is gone: on device
+   it read as a second control beside the label, and the user asked for it
+   removed. The pill and its tap target carry the affordance; the selection
+   stays exposed to accessibility as `stateDescription`
+   (`selection?.model ?: "default"`).
+2. **The lockup drawable is transform-free.** `ic_hermes_agent.xml` stores
+   absolute path data — no `<group>`/transform nodes. The grouped form is
+   faithful (Compose composes `M = T·R·S` exactly as the SVG does; verified by
+   rendering both side by side), but flat paths take the renderer out of the
+   equation at zero rendering cost. The home lockup renders at 32dp (was
+   28dp) for legibility; Connect keeps 48dp.
+3. **Attachments ride the message from either composer.** The row is now
+   `[attach][chip] … [send]` (a mic, once its processing decision lands, sits
+   before send). Uploads use `POST /api/upload` — multipart `session_id` +
+   `file`, the web client's own shape (`static/ui.js`) — and its response
+   (`filename`, `path`, `mime`, `size`, `is_image`) is exactly the attachment
+   object `/api/chat/start` accepts. Because uploads are session-scoped, the
+   home flow is create → upload → navigate (refs travel in the route as JSON;
+   a failure lands on the composer still holding the picks) and the chat flow
+   uploads at send time (a failure keeps the picks; a completed upload is
+   remembered on the staged item so a retry never re-uploads). The Photo
+   Picker keeps the flow permission-free; 10 files per message; the client
+   refuses files over the web client's own 20 MB cap.
+4. **Accepted divergences (review M3/M5).**
+   - The icon loader's failed-id set is per process by design (pinned by
+     `ProviderIconLoaderTest`): icons that fail while offline return on the
+     next app launch, not on reconnect. The handoff checklist says exactly
+     that.
+   - The catalog's configured-section dedupe picks its survivor by display
+     priority only, while the web's `_deduplicateModelPickerOptions(sel,
+     sel.value)` keeps the currently selected spelling. A session stored under
+     a deduped-away spelling can therefore miss the SELECTED mark in the
+     sheet. Selection-aware dedupe would rebuild catalog rows per selection
+     for a cosmetic mark; accepted, to revisit if it shows up on a device.

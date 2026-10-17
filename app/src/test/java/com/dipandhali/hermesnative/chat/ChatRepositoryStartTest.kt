@@ -1,5 +1,6 @@
 package com.dipandhali.hermesnative.chat
 
+import com.dipandhali.hermesnative.core.model.AttachmentDto
 import com.dipandhali.hermesnative.core.net.HermesApi
 import com.dipandhali.hermesnative.core.net.SseClient
 import com.dipandhali.hermesnative.data.chat.ChatRepository
@@ -68,5 +69,29 @@ class ChatRepositoryStartTest {
         val body = server.takeRequest().body?.utf8() ?: ""
         assertFalse(body.contains("explicit_model_pick"))
         assertFalse(body.contains(""""model""""))
+    }
+
+    @Test
+    fun `startTurn carries attachments and omits the field when there are none`() = runTest {
+        server.enqueue(MockResponse.Builder().code(200).body("""{"stream_id":"st-1"}""").build())
+        repository().startTurn(
+            "see this",
+            attachments = listOf(
+                AttachmentDto(
+                    name = "photo.jpg",
+                    path = "/home/u/.hermes/sessions/sess-1/attachments/photo.jpg",
+                    mime = "image/jpeg",
+                    size = 1234,
+                    isImage = true,
+                ),
+            ),
+        )
+        val body = server.takeRequest().body?.utf8() ?: ""
+        assertTrue(body.contains(""""attachments":[{"""))
+        assertTrue(body.contains(""""name":"photo.jpg""""))
+        assertTrue(body.contains(""""path":"/home/u/.hermes/sessions/sess-1/attachments/photo.jpg""""))
+        assertTrue(body.contains(""""mime":"image/jpeg""""))
+        assertTrue(body.contains(""""is_image":true"""))
+        assertFalse(body.contains("explicit_model_pick"))
     }
 }
