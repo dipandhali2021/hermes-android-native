@@ -46,29 +46,32 @@ relaunch recovery.
 - Round 5.1 feature build: [run 39023202460](https://github.com/dipandhali2021/hermes-android-native/actions/runs/39023202460) — green (`2f0fe29`).
 - Local: `./gradlew :app:testDebugUnitTest` green at each task commit (110
   tests on `feat/model-picker`, 112 on the combined build).
-- Round 5.1 combined build: [run 39031187257](https://github.com/dipandhali2021/hermes-android-native/actions/runs/39031187257) — green (`1302a06`).
+- Round 5.1 combined build: [run 39031187257](https://github.com/dipandhali2021/hermes-android-native/actions/runs/39031187257) — green (`1302a06`) (superseded UI).
+- Round 5.2 feature build: [run 39032241812](https://github.com/dipandhali2021/hermes-android-native/actions/runs/39032241812) — green (`b0e8bb5`).
+- Round 5.2 combined build: [run 39032335261](https://github.com/dipandhali2021/hermes-android-native/actions/runs/39032335261) — green (`37083a0`).
 
 ## APK paths
 - **Combined build — use this one:** `/tmp/opencode/mp-r5-combined/hermes-native-debug-apk/app-debug.apk`
-  (md5 `e055c2f0b31b26ebc949fa4f01ab968b`, commit `1302a06`). Contains the model
-  picker, the home-send fix, and all of Rounds 3–5.1. The same file is also
+  (md5 `cc1db9722ec4190543ee0416e5fd4408`, commit `37083a0`). Contains the model
+  picker, the home-send fix, and all of Rounds 3–5.2. The same file is also
   kept at the familiar path `/tmp/opencode/model-picker-home-send-apk/app-debug.apk`.
-- Feature-only build: `/tmp/opencode/mp-r5-feat/hermes-native-debug-apk/app-debug.apk`
-  (md5 `70f201e5b0d6b03ca9d51b938312625b`, commit `f1edc59`; the 5.1 feat
-  artifact is the combined build's twin).
 
 ## Device checklist
 1. Install the combined APK (upgrade over the previous build is fine).
 2. **Two cards, not one:** tap `+` → the composer keeps its rounded card and
-   the panel appears as its **own separate card below it** (grab handle on
-   top), like the Notion reference. Composer stays put through the
-   keyboard↔panel swap — no jump, no reflow.
-3. **Panel contents:** `Photos — Choose from your library` /
-   `Files — Attach a document or archive` / `Camera — Take a photo now` as
-   rows, then the voice section below a divider.
+   the panel appears as its **own separate card below it**. Composer stays
+   put through the keyboard↔panel swap — no jump, no reflow.
+3. **Tile card is back (round 5.2):** the panel is the round-5 design again —
+   `Photos` / `Camera` / `Files` tonal tiles with the press-scale, then the
+   voice section below a divider. No list rows, no grab handle (the 5.1 list
+   restyle was withdrawn at the user's request — only the separation
+   stayed).
 4. **Toggle:** `+` rotates into a `×` and takes the accent tint; tapping it
    again (or back, or tapping the text field) closes the panel; tapping the
    field also raises the keyboard in the same move.
+4b. **Mode on the mic (round 5.2):** with Voice note selected in the panel,
+   the composer's mic shows the waveform icon (Transcribe shows the mic);
+   switching modes flips it live while the panel is open — both composers.
 5. **Tiles→rows work the same:** Photos opens the picker; Camera captures and
    stages; Files opens the document picker; rows launch *after* the panel
    closes.
@@ -94,7 +97,7 @@ relaunch recovery.
    `HomeScreen` (composer send path), `ChatViewModel` (loader line + seed
    guard), `SessionsViewModel`, `HermesRoot`, `ChatScreen`. The resolution is
    already proven on `test/model-picker-home-send`, whose current build
-   (`3e153a1`) resolves them as the union: pick rides with `NewSessionRequest`,
+   (`37083a0`) resolves them as the union: pick rides with `NewSessionRequest`,
    response read nested, state-driven `isStartingChat` + snackbar, and the
    Round 3–5.1 composer/attach plumbing.
 3. Do **not** merge `test/model-picker-home-send` itself — it exists only as
