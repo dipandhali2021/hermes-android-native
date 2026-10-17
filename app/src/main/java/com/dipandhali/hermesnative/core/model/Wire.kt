@@ -140,6 +140,13 @@ data class UploadResponse(
 )
 
 @Serializable
+data class TranscribeResponse(
+    val ok: Boolean = false,
+    val transcript: String? = null,
+    val error: String? = null,
+)
+
+@Serializable
 data class ChatStartResponse(
     @SerialName("stream_id") val streamId: String? = null,
     @SerialName("session_id") val sessionId: String? = null,

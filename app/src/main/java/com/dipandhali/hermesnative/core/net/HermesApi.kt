@@ -23,6 +23,7 @@ import com.dipandhali.hermesnative.core.model.SessionDetailResponse
 import com.dipandhali.hermesnative.core.model.SessionListResponse
 import com.dipandhali.hermesnative.core.model.SessionUpdateRequest
 import com.dipandhali.hermesnative.core.model.SteerRequest
+import com.dipandhali.hermesnative.core.model.TranscribeResponse
 import com.dipandhali.hermesnative.core.model.UploadResponse
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -180,6 +181,30 @@ class HermesApi(private val client: OkHttpClient) {
             MultipartBody.Builder()
                 .setType(MultipartBody.FORM)
                 .addFormDataPart("session_id", sessionId)
+                .addFormDataPart("file", fileName, bytes.toRequestBody(mimeType?.toMediaTypeOrNull()))
+                .build(),
+        )
+    }
+
+    /**
+     * One-shot speech-to-text for a recorded clip.
+     *
+     * Multipart with exactly one `file` part — the shape the web client sends
+     * (`static/boot.js` `_transcribeBlob`) and the endpoint is deliberately not
+     * session-scoped, so unlike [upload] there is no `session_id` field. The
+     * server answers `{"ok":true,"transcript":…}`, or `{"error": …}` with
+     * 400/503 when speech is unavailable; failures ride the usual [DataError]
+     * mapping and the caller surfaces the server's own wording.
+     */
+    suspend fun transcribe(
+        baseUrl: String,
+        fileName: String,
+        mimeType: String?,
+        bytes: ByteArray,
+    ): Result<TranscribeResponse> = execute(baseUrl, "api/transcribe", TranscribeResponse.serializer()) { url ->
+        Request.Builder().url(url).post(
+            MultipartBody.Builder()
+                .setType(MultipartBody.FORM)
                 .addFormDataPart("file", fileName, bytes.toRequestBody(mimeType?.toMediaTypeOrNull()))
                 .build(),
         )
