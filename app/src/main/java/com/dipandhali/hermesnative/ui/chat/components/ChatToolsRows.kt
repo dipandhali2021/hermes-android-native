@@ -119,7 +119,9 @@ private fun ToolTile(
             Text(
                 text = row.title,
                 style = MaterialTheme.typography.labelLarge,
-                maxLines = 1,
+                // Two lines by design: "Saved prompts" wraps where one line
+                // would ellipsize the whole point of the tile.
+                maxLines = 2,
                 overflow = TextOverflow.Ellipsis,
             )
             row.trailing?.let {
