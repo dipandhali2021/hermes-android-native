@@ -257,3 +257,94 @@ flow, camera round-trip — covered by the device checklist in the plan.
 - Voice steering of a live run.
 - Transcribe failure fallback to voice note (explicitly discarded).
 - Multiple simultaneous recordings; background recording service.
+
+## 7. Amendment — Round 5 (device feedback): the attach panel
+
+Supersedes §3.3's `ModalBottomSheet`. The user asked: opening `+` must move the
+composer above the panel the way it sits above the keyboard; the icon must
+animate `+` → `×` with a proper colour; and the keyboard/panel swap must be
+seamless. All three are pinned here.
+
+### 7.1 Layout — panel, not sheet
+
+No modal, no scrim, no drag handle, no partial state. The panel lives inside
+the composer surface, below the toolbar row, so the composer is always
+visible and always above it:
+
+```
+  ┌───────────────────────────────────────────┐
+  │  [tray if any]                            │
+  │  [ text field                          ]  │
+  │  [+] [chip]      [mic] [send]             │
+  │  ─────────────────────────────────────    │
+  │   ┌────────┐  ┌────────┐  ┌────────┐      │
+  │   │  🖼     │  │  📷    │  │  📄    │      │
+  │   │ Photos │  │ Camera │  │ Files  │      │
+  │   └────────┘  └────────┘  └────────┘      │
+  │  Voice input                              │
+  │  [ 🎤 Transcribe │ 📈 Voice note ]        │
+  │  <supporting line for the mode>           │
+  └───────────────────────────────────────────┘
+```
+
+- Same tiles, same voice section, same callbacks and pinned strings as §3.3 —
+  only the container changes. Tiles keep the springy press scale.
+- Reveal is `AnimatedVisibility` — `expandVertically`/`shrinkVertically`
+  top-anchored with `HermesMotion.spatial()`, plus an `HermesMotion.effects()`
+  fade.
+- The panel never coexists with the recording strip: its visibility also
+  requires `VoicePhase.Idle`, and a mic tap closes it.
+
+### 7.2 The seamless swap
+
+All three mechanisms are needed:
+
+- Opening `+` calls `focusManager.clearFocus()` first: the keyboard leaves.
+- The panel's minimum height **is the keyboard's height**: the tallest IME
+  inset seen since the composer entered composition, minus the gesture-bar
+  inset that remains when the keyboard is down (`safeDrawing` bottom while
+  the IME is hidden) — `minHeightPx = tallestImePx − navBottomPx`. So the
+  composer's top edge does not move through the swap: the bottom inset gives
+  up the keyboard and the panel takes exactly that space. Fallback when no
+  keyboard has been seen, or when the measurement is a partial capture:
+  `320.dp`; measurements under `200.dp` are rejected as partial.
+- Tapping the field while the panel is open closes it. The signal is field
+  **focus** (`onFocusChanged`), never IME visibility — in the frame the panel
+  opens the IME is still animating down and would close it right back.
+
+Dismissal paths: `+` again (the `×`), back press (`BackHandler` while open),
+field focus, mic tap, and the three tiles (close first, then launch, as
+before). The voice-mode toggle keeps the panel open — it configures the mic.
+
+### 7.3 The `+` → `×` toggle
+
+- `Icons.Rounded.Add` rotated `45° × progress`, progress =
+  `animateFloatAsState(attachOpen, HermesMotion.spatialFast())`: open, it is
+  a clean `×`.
+- Tint animates `onSurfaceVariant` → `primary` via
+  `animateColorAsState(HermesMotion.effects())`.
+- Content description flips with state: `Add` → **`Close attachments`**
+  (pinned, new).
+- `enabled` gating unchanged per composer: home `!isStartingChat`; chat
+  always enabled (attach works mid-stream).
+
+### 7.4 Files
+
+- `ui/chat/components/AttachSheet.kt` — **deleted**. Content moves to
+  `ui/chat/components/AttachPanel.kt` (`AttachPanel(voiceMode,
+  onVoiceModeChange, onPhotos, onCamera, onFiles, modifier)`; no `onDismiss`
+  — dismissal belongs to the host), together with
+  `rememberKeyboardHeight(fallback: Dp = 320.dp, minAccept: Dp = 200.dp): Dp`
+  used by both composers.
+- `domain/composer/AttachPanelLogic.kt` — pure + tested:
+  `ATTACH_ROTATION_DEGREES = 45f`, `attachToggleDescription(open): String`,
+  `attachPanelMinHeightPx(tallestImePx, navBottomPx, fallbackPx, minAcceptPx): Int`.
+- `Composer` gains `attachOpen: Boolean = false` and
+  `attachPanel: (@Composable () -> Unit)? = null`; `onAttach` becomes the
+  toggle (the host flips `attachOpen`). Chat and home hosts keep owning state
+  and launchers; home keeps its bespoke composer and grows the same panel.
+
+### 7.5 Non-goals (added)
+
+- No sheet semantics, scrim, drag handle, or partial-height state.
+- No change to the launchers, caps, three-action copy, or the voice modes.

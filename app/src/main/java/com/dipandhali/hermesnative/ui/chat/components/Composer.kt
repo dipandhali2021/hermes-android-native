@@ -1,11 +1,16 @@
 package com.dipandhali.hermesnative.ui.chat.components
 
 import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.SizeTransform
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.scaleIn
 import androidx.compose.animation.scaleOut
+import androidx.compose.animation.shrinkVertically
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -41,11 +46,16 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.rotate
+import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.unit.dp
+import com.dipandhali.hermesnative.domain.composer.ATTACH_ROTATION_DEGREES
 import com.dipandhali.hermesnative.domain.composer.ComposerAction
+import com.dipandhali.hermesnative.domain.composer.attachToggleDescription
 import com.dipandhali.hermesnative.domain.voice.VoicePhase
 import com.dipandhali.hermesnative.ui.theme.HermesMotion
 
@@ -78,7 +88,12 @@ fun Composer(
     onVoiceCancel: () -> Unit = {},
     voiceElapsedMs: () -> Long = { 0L },
     voiceAmplitude: () -> Int = { 0 },
+    attachOpen: Boolean = false,
+    attachPanel: (@Composable () -> Unit)? = null,
 ) {
+    val focusManager = LocalFocusManager.current
+    val panelMinHeight = rememberKeyboardHeight()
+
     Surface(
         color = MaterialTheme.colorScheme.surfaceContainer,
         shape = MaterialTheme.shapes.extraLarge,
@@ -112,7 +127,13 @@ fun Composer(
                 ),
                 modifier = Modifier
                     .fillMaxWidth()
-                    .heightIn(min = 56.dp, max = 180.dp),
+                    .heightIn(min = 56.dp, max = 180.dp)
+                    // Focus, never IME visibility: in the frame the panel
+                    // opens the keyboard is still animating down, and a
+                    // visibility signal would close it right back.
+                    .onFocusChanged { focus ->
+                        if (focus.isFocused && attachOpen) onAttach?.invoke()
+                    },
             )
 
             // The idle toolbar and the recording strip are one slot with two
@@ -130,8 +151,20 @@ fun Composer(
                 if (phase is VoicePhase.Idle) {
                     ComposerControls(
                         enabled = enabled,
-                        onAttach = onAttach,
-                        onMic = onMic,
+                        onAttach = onAttach?.let { tap ->
+                            // The field gives up focus so the keyboard
+                            // leaves and the panel takes its place.
+                            { focusManager.clearFocus(); tap() }
+                        },
+                        attachOpen = attachOpen,
+                        onMic = onMic?.let { tap ->
+                            {
+                                // The strip replaces the row; a panel under
+                                // a recording is not a thing.
+                                if (attachOpen) onAttach?.invoke()
+                                tap()
+                            }
+                        },
                         micEnabled = micEnabled,
                         leadingAccessory = leadingAccessory,
                         action = action,
@@ -147,6 +180,23 @@ fun Composer(
                     )
                 }
             }
+
+            if (attachPanel != null) {
+                AnimatedVisibility(
+                    visible = attachOpen && voicePhase == VoicePhase.Idle,
+                    enter = expandVertically(
+                        animationSpec = HermesMotion.contentSize,
+                        expandFrom = Alignment.Top,
+                    ) + fadeIn(HermesMotion.effects()),
+                    exit = shrinkVertically(
+                        animationSpec = HermesMotion.contentSize,
+                        shrinkTowards = Alignment.Top,
+                    ) + fadeOut(HermesMotion.effects()),
+                    label = "attach-panel",
+                ) {
+                    Box(Modifier.heightIn(min = panelMinHeight)) { attachPanel() }
+                }
+            }
         }
     }
 }
@@ -160,6 +210,7 @@ fun Composer(
 private fun ComposerControls(
     enabled: Boolean,
     onAttach: (() -> Unit)?,
+    attachOpen: Boolean,
     onMic: (() -> Unit)?,
     micEnabled: Boolean,
     leadingAccessory: (@Composable () -> Unit)?,
@@ -176,11 +227,28 @@ private fun ComposerControls(
         // Attach first, then the model chip: the row reads left-to-right
         // as "what it goes with, then what it runs on".
         if (onAttach != null) {
+            // The toggle signs itself: the plus folds a quarter turn into a
+            // close mark and takes the accent role while the panel is open.
+            val progress by animateFloatAsState(
+                targetValue = if (attachOpen) 1f else 0f,
+                animationSpec = HermesMotion.spatialFast(),
+                label = "attach-toggle-rotation",
+            )
+            val tint by animateColorAsState(
+                targetValue = if (attachOpen) {
+                    MaterialTheme.colorScheme.primary
+                } else {
+                    MaterialTheme.colorScheme.onSurfaceVariant
+                },
+                animationSpec = HermesMotion.effects(),
+                label = "attach-toggle-tint",
+            )
             IconButton(onClick = onAttach, enabled = enabled) {
                 Icon(
                     imageVector = Icons.Rounded.Add,
-                    contentDescription = "Add",
-                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    contentDescription = attachToggleDescription(attachOpen),
+                    tint = tint,
+                    modifier = Modifier.rotate(ATTACH_ROTATION_DEGREES * progress),
                 )
             }
         }
