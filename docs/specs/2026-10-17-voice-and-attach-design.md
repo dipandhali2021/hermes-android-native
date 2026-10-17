@@ -407,3 +407,37 @@ The keyboard swap arithmetic (§7.2), the dismissal set (§7.2), and the
 toggle (§7.3 — the `+`/`×` at 45°, accent tint, `Add`/`Close attachments`).
 The handle is a marker, not a control: no drag behaviour, no dismissal paths
 added or removed.
+
+## 9. Amendment — Round 5.2 (device feedback): tiles back, mode on the mic
+
+Device feedback on §8: the list restyle was over-reach — *"i only told you to
+separate the composer and this new attachment"*. §8.1 (two cards) stands; §8.2
+(list rows, grab handle) is withdrawn.
+
+### 9.1 The panel is the §7 tile card again — in its own card
+
+`AttachPanel` returns to the round-5 composition verbatim — the Photos /
+Camera / Files tonal tiles with the press scale, then the divider, the
+`Voice input` label, the mode control, and the supporting line — with two
+wrapper changes only:
+
+- the round-5 top divider and its lead-in spacer are gone (they were the
+  intra-card separator of the merged layout; the card's own rounded edge
+  replaces them), the Column gains `top = 16.dp` where that divider used to
+  start;
+- the Column now lives inside the panel's own `Surface` — `surfaceContainer`,
+  `shapes.extraLarge` — with the `8.dp` gap above it baked in as top padding,
+  as §8.1 already specified.
+
+Copy unchanged from §7 (`Photos`, `Camera`, `Files`, voice modes, supporting
+lines). No handle.
+
+### 9.2 The composer's mic wears the voice mode
+
+The mic toolbar button (both composers) shows the selected mode's icon —
+`Mic` for Transcribe, `GraphicEq` for Voice note, the same pairing as the
+panel's mode control — and follows a mode change live while the panel is
+open. Shared: `voiceModeIcon(mode)` top-level in `AttachPanel.kt`;
+`Composer` grows a `voiceMode` parameter (default `Transcribe`) threaded to
+`ComposerControls`'s mic; `ChatScreen` passes `state.voiceMode`; home already
+holds the mode. Everything else about the mic round-trip is untouched.

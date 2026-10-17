@@ -108,6 +108,7 @@ import com.dipandhali.hermesnative.ui.chat.components.ModelPickerSheet
 import com.dipandhali.hermesnative.ui.chat.components.VoiceRecordingBar
 import com.dipandhali.hermesnative.ui.chat.components.rememberKeyboardHeight
 import com.dipandhali.hermesnative.ui.chat.components.stageAttachments
+import com.dipandhali.hermesnative.ui.chat.components.voiceModeIcon
 import com.dipandhali.hermesnative.ui.components.FabMenu
 import com.dipandhali.hermesnative.ui.components.FabMenuAction
 import com.dipandhali.hermesnative.ui.sessions.SessionsEffect
@@ -555,7 +556,10 @@ private fun HomeComposer(
                                     contentColor = MaterialTheme.colorScheme.onSurfaceVariant,
                                 ),
                             ) {
-                                Icon(Icons.Rounded.Mic, contentDescription = "Voice input")
+                                Icon(
+                                    imageVector = voiceModeIcon(voiceMode),
+                                    contentDescription = "Voice input",
+                                )
                             }
 
                             androidx.compose.material3.FilledIconButton(
