@@ -111,6 +111,8 @@ data class WorkspaceDto(
 data class WorkspacesResponse(
     val workspaces: List<WorkspaceDto> = emptyList(),
     val active: String? = null,
+    /** `/api/workspaces` surfaces the profile's last-used workspace. */
+    val last: String? = null,
 )
 
 // ---------- Profiles ----------

@@ -26,6 +26,10 @@ import com.dipandhali.hermesnative.core.model.ProfileSwitchRequest
 import com.dipandhali.hermesnative.core.model.ProfileSwitchResponse
 import com.dipandhali.hermesnative.core.model.SavePromptRequest
 import com.dipandhali.hermesnative.core.model.SavePromptResponse
+import com.dipandhali.hermesnative.core.model.WorkspaceAddRequest
+import com.dipandhali.hermesnative.core.model.WorkspaceMutationResponse
+import com.dipandhali.hermesnative.core.model.WorkspaceNameRequest
+import com.dipandhali.hermesnative.core.model.WorkspaceSuggestionsResponse
 import com.dipandhali.hermesnative.core.model.SessionBusyResponse
 import com.dipandhali.hermesnative.core.model.SessionDetailResponse
 import com.dipandhali.hermesnative.core.model.SessionListResponse
@@ -252,6 +256,51 @@ class HermesApi(private val client: OkHttpClient) {
 
     suspend fun workspaces(baseUrl: String): Result<WorkspacesResponse> =
         get(baseUrl, "api/workspaces", WorkspacesResponse.serializer())
+
+    /**
+     * Typeahead under trusted roots only — arbitrary prefixes answer an empty
+     * list, never an error, so the Add Space form can autocomplete freely.
+     */
+    suspend fun workspaceSuggestions(baseUrl: String, prefix: String): Result<WorkspaceSuggestionsResponse> =
+        get(
+            baseUrl,
+            "api/workspaces/suggest?prefix=${prefix.urlEncoded()}",
+            WorkspaceSuggestionsResponse.serializer(),
+        )
+
+    suspend fun addWorkspace(
+        baseUrl: String,
+        path: String,
+        name: String? = null,
+        create: Boolean = false,
+    ): Result<WorkspaceMutationResponse> = post(
+        baseUrl,
+        "api/workspaces/add",
+        json.encodeToString(
+            WorkspaceAddRequest.serializer(),
+            WorkspaceAddRequest(path, name, if (create) true else null),
+        ),
+        WorkspaceMutationResponse.serializer(),
+    )
+
+    suspend fun renameWorkspace(
+        baseUrl: String,
+        path: String,
+        name: String,
+    ): Result<WorkspaceMutationResponse> = post(
+        baseUrl,
+        "api/workspaces/rename",
+        json.encodeToString(WorkspaceNameRequest.serializer(), WorkspaceNameRequest(path, name)),
+        WorkspaceMutationResponse.serializer(),
+    )
+
+    suspend fun removeWorkspace(baseUrl: String, path: String): Result<WorkspaceMutationResponse> =
+        post(
+            baseUrl,
+            "api/workspaces/remove",
+            """{"path":${path.jsonString()}}""",
+            WorkspaceMutationResponse.serializer(),
+        )
 
     suspend fun profiles(baseUrl: String): Result<ProfilesResponse> =
         get(baseUrl, "api/profiles", ProfilesResponse.serializer())

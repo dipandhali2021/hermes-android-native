@@ -90,3 +90,30 @@ data class ProfileCreateResponse(
     val ok: Boolean = false,
     val profile: ProfileDto? = null,
 )
+
+// ---------- Workspaces ----------
+
+@Serializable
+data class WorkspaceSuggestionsResponse(
+    val suggestions: List<String> = emptyList(),
+    val prefix: String? = null,
+)
+
+@Serializable
+data class WorkspaceAddRequest(
+    val path: String,
+    val name: String? = null,
+    val create: Boolean? = null,
+)
+
+@Serializable
+data class WorkspaceNameRequest(
+    val path: String,
+    val name: String,
+)
+
+@Serializable
+data class WorkspaceMutationResponse(
+    val ok: Boolean = false,
+    val workspaces: List<WorkspaceDto> = emptyList(),
+)
