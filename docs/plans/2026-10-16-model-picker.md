@@ -626,7 +626,7 @@ Record the `android.yml` run URL; all suites `failures="0"`; APK artifact downlo
   - chip shows the session's model (or remembered/default) with a provider icon;
   - sheet: search filters (incl. hidden/overflow rows), custom ID adds+selects, CONFIGURED shows Primary/Fallback badges + SELECTED, groups expand, "Show more" reveals;
   - pick → snackbar copy above; reopen the chat → chip keeps the pick; new chat starts on it;
-  - airplane mode first-open → monograms, no crash; back online → icons appear;
+  - airplane mode first-open → monograms, no crash; icons that failed while offline return on the next app launch (the failed-id set is per process by design — `ProviderIconLoaderTest.kt` pins "no refetch of a failed id"; see Round 3 Task 16);
   - Home + Connect headers show the Hermes mark (no "Hermes" text).
 - [ ] **Step 3: Commit** — `docs(model-picker): device verification handoff` (docs only; the handoff note itself stays untracked until the device pass, matching the home-send cycle).
 
@@ -682,7 +682,7 @@ Device pass on the Task 10 APK returned five changes; Tasks 11–13 below implem
 - Modify: `ModelChip.kt`, `HomeScreen.kt` (title), `ConnectScreen.kt` (hero).
 
 **Requirements:**
-- Chip: `Surface(onClick, shape = shapes.extraLarge, color = surfaceContainerHigh, contentColor = onSurface)`; row = label (`labelLarge`, ellipsis, max 160dp) + `Icons.Rounded.KeyboardArrowDown` (18dp); no border, no leading icon; keep `contentDescription = "Model and options"`.
+- Chip: `Surface(onClick, shape = shapes.extraLarge, color = surfaceContainerHigh, contentColor = onSurface)`; row = label (`labelLarge`, ellipsis, max 160dp) + `Icons.Rounded.KeyboardArrowDown` (18dp); no border, no leading icon; keep `contentDescription = "Model and options"`. **(Superseded by Round 3 Task 14: the chevron was removed — the chip is a label only.)**
 - Headers: `Image(painterResource(R.drawable.ic_hermes_agent), contentDescription = "Hermes Agent", colorFilter = tint(primary))` — home `height(28.dp)`, Connect `height(48.dp)`, both `.aspectRatio(73f / 24f)`.
 
 **Steps:**
@@ -700,3 +700,68 @@ Device pass on the Task 10 APK returned five changes; Tasks 11–13 below implem
 - [ ] **Step 2:** Combined device build: `git checkout -b test/model-picker-home-send feat/model-picker && git merge fix/home-send`; resolve conflicts keeping both intents (nested `NewSessionResponse` from the fix; picker state from this branch; home snackbar + `isStartingChat` from the fix); push the test branch; CI green; download APK. The home pick's end-to-end path (create carries the model; seed sends after the transcript settles) is only verifiable on this combined build.
 - [ ] **Step 3:** Fresh-context branch review over `58a82a0..HEAD` including the plan's Review Focus items; fix Critical/Important findings and re-run CI.
 - [ ] **Step 4:** Handoff note: what changed, CI links, APK paths, device checklist, and the merge-order note (`fix/home-send` first, then `feat/model-picker`).
+
+---
+
+## Round 3 — device feedback amendments (2026-10-17)
+
+Device pass on the Task 13 APK returned four changes plus the fresh-context
+review's follow-ups; Tasks 14–17 implement, evidence and document them, and
+the spec's §14 records the design overrides.
+
+### Task 14: Round 3 — chip without chevron, transform-free lockup, picker-list hardening
+
+**Context:** the chip's chevron read as a second control on device and was removed — the pill is a label (§14.1). The combined lockup drawable stored its math in `<group>` transforms; it is flattened to absolute paths (§14.2) and the home lockup renders at 32dp. This task also carries the review findings that touch these files: **M1** (chip `stateDescription`), **M2** (CONFIGURED/flat headers offered a no-op toggle), **M4** (LazyColumn duplicate-key hardening) and **I1** (`ProviderIconLoader`'s shared fetch could be killed by a cancelled caller, poisoning later loads).
+
+**Files:**
+- Modify: `ui/chat/components/ModelChip.kt` — label only; `stateDescription = selection?.model ?: "default"`.
+- Regenerate: `res/drawable/ic_hermes_agent.xml` — absolute paths, no `<group>` nodes.
+- Modify: `ui/home/HomeScreen.kt` — home lockup height 28dp → 32dp.
+- Modify: `domain/modelpicker/PickerModel.kt` — `PickerItem.Header.collapsible` (false for CONFIGURED/flat); per-section row dedupe before counts, finished-list dedupe as the last guard.
+- Modify: `ui/chat/components/ModelPickerSheet.kt` — header toggle only when `collapsible`.
+- Modify: `core/icons/ProviderIconLoader.kt` — the loader owns a `CoroutineScope(SupervisorJob() + Dispatchers.IO)` for shared fetches; the task itself finalises its in-flight entry.
+- Tests: `PickerItemsTest.kt` (collapsible flags; duplicate row dropped with its count), `ProviderIconLoaderTest.kt` (caller cancellation leaves the fetch alive and the next load resolves).
+
+**Steps:**
+- [ ] **Step 1:** Implement; `./gradlew :app:testDebugUnitTest` green (new cases included).
+- [ ] **Step 2: Commit** — `feat(model-picker): chip is a label, transform-free lockup, picker hardening`.
+
+### Task 15: Round 3 — attach photos from either composer
+
+**Context:** the attach button sits before the model chip, and uploads are full media (`POST /api/upload`, multipart `session_id` + `file` — the web client's own shape; the response is the attachment object `/api/chat/start` accepts). Uploads are session-scoped server-side, so the home flow uploads after session creation and the chat flow uploads at send time. The Photo Picker keeps the flow permission-free. This task also carries **I2** (the nav-seeded first message re-sending after process death).
+
+**Files:**
+- Modify: `core/model/Wire.kt` (`UploadResponse`); `core/net/HermesApi.kt` (`upload`).
+- Create: `data/media/MediaRepository.kt` — content-URI read, 20 MB cap (the web client's own), `AttachmentDto` mapping.
+- Create: `ui/chat/components/AttachmentTray.kt` — tray, `ComposerAttachment`, `MAX_ATTACHMENTS = 10`.
+- Modify: `ui/chat/components/Composer.kt` (row order `[attach][chip] … [send]`; tray above the field), `ui/chat/ChatViewModel.kt` (staged attachments; `uploadStaged` on send; `SavedStateHandle` seed guard), `ui/chat/ChatScreen.kt` (picker launcher), `ui/home/HomeScreen.kt` (home picker, tray, `onSend(text, uris)`), `ui/sessions/SessionsViewModel.kt` (create → upload → effect with refs), `ui/nav/HermesRoot.kt` (attachment refs as JSON in the chat route).
+- Tests: `ChatRepositoryStartTest.kt` (attachment serialization), new `media/UploadApiTest.kt` (multipart contract + rejection mapping).
+
+**Interfaces:**
+- `HermesApi.upload(baseUrl, sessionId, fileName, mimeType, bytes): Result<UploadResponse>`.
+- `MediaRepository.upload(uri, sessionId): Result<AttachmentDto>`.
+- `Composer(..., attachments: List<ComposerAttachment>, onRemoveAttachment: (String) -> Unit)`.
+- `SessionsEffect.OpenSessionAndSend(sessionId, message, attachments: List<AttachmentDto>)`.
+- `ChatUiState.pendingAttachments: List<PendingAttachment>`; `hasSendableContent`; busy states keep text-only semantics — staged files cannot ride a steer, and an empty busy composer still offers Stop.
+
+**Steps:**
+- [ ] **Step 1:** Implement; suite green including the new wire tests.
+- [ ] **Step 2: Commit** — `feat(chat): attach photos from either composer`.
+
+### Task 16: Round 3 — branch rebuild, evidence, review reconciliation
+
+**Files:**
+- Update: `docs/HANDOFF-model-picker.md` (untracked).
+
+**Steps:**
+- [ ] **Step 1:** Cherry-pick Tasks 14–15 onto `feat/model-picker`; push; CI green (record run URL + APK).
+- [ ] **Step 2:** Rebuild `test/model-picker-home-send` as `12d49dd` + merge `feat/model-picker`; resolve the overlapping files (composer send path, ViewModel plumbing, chat route) as the union of both branches — byte-identical to the earlier hand-built combination, which was already green; push; CI green; fetch the APK.
+- [ ] **Step 3:** Review reconciliation. **M3:** reworded the Task 13 checklist — the loader's failed-id set is per process by design (`ProviderIconLoaderTest` pins it), so icons that failed while offline return on the next app launch, not on reconnect. **M5:** accepted parity divergence — the web's `_deduplicateModelPickerOptions(sel, sel.value)` keeps the selected spelling when deduping configured rows, Android dedupes by display priority only, so a session stored under a deduped-away spelling can miss the SELECTED mark; making this selection-aware would rebuild catalog rows per selection for a cosmetic mark (§14.4).
+
+### Task 17: Round 3 — mic research and device handoff
+
+**Context:** the mic is explicitly gated: the user asked to find what ChatGPT's voice input is and will decide the processing afterwards ("find what is this then i will tell to how to process"). So this round ships the research and no dead icon.
+
+**Steps:**
+- [ ] **Step 1:** Research report: ChatGPT's app voice input is server-side transcription (Whisper-family); the Hermes server already exposes `POST /api/transcribe` (multipart `file`) plus `GET /api/transcribe/capability` with faster-whisper/OpenAI/Mistral providers — the same architecture, so a mic can be wired client-side later without protocol work.
+- [ ] **Step 2:** Refresh the handoff note: APK path + md5, this round's checklist, the merge-order note, and the mic decision pending.
