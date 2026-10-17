@@ -40,7 +40,7 @@
 - `fun attachToggleDescription(open: Boolean): String` → `"Add"` / `"Close attachments"`.
 - `fun attachPanelMinHeightPx(tallestImePx: Int, navBottomPx: Int, fallbackPx: Int, minAcceptPx: Int): Int` → `tallestImePx - navBottomPx` when that is `>= minAcceptPx`, else `fallbackPx`.
 
-- [ ] **Step 1: Write the failing test** — `AttachPanelLogicTest.kt` (plain JUnit4):
+- [x] **Step 1: Write the failing test** — `AttachPanelLogicTest.kt` (plain JUnit4):
 
 ```kotlin
 package com.dipandhali.hermesnative.composer
@@ -77,9 +77,9 @@ class AttachPanelLogicTest {
 }
 ```
 
-- [ ] **Step 2: Run it and watch it fail** — `./gradlew :app:testDebugUnitTest --tests com.dipandhali.hermesnative.composer.AttachPanelLogicTest`. Expected: compilation failure (types do not exist). Record in the ledger.
-- [ ] **Step 3: Implement `AttachPanelLogic.kt`** — three declarations above; KDoc the height rule (the keyboard vacates `tallestIme − navBottom`; shorter/zero measurements are partial captures, not keyboards).
-- [ ] **Step 4: Rerun the test; green.** Commit: `feat(composer): attach-panel logic (rotation, description, keyboard-height rule)`.
+- [x] **Step 2: Run it and watch it fail** — `./gradlew :app:testDebugUnitTest --tests com.dipandhali.hermesnative.composer.AttachPanelLogicTest`. Expected: compilation failure (types do not exist). Record in the ledger.
+- [x] **Step 3: Implement `AttachPanelLogic.kt`** — three declarations above; KDoc the height rule (the keyboard vacates `tallestIme − navBottom`; shorter/zero measurements are partial captures, not keyboards).
+- [x] **Step 4: Rerun the test; green.** Commit: `feat(composer): attach-panel logic (rotation, description, keyboard-height rule)`.
 
 ### Task 3: `AttachPanel` + `Composer` slot + `+`→`×` — chat wiring
 
@@ -95,7 +95,7 @@ class AttachPanelLogicTest {
 - `Composer` new params: `attachOpen: Boolean = false`, `attachPanel: (@Composable () -> Unit)? = null`.
 - `ChatScreen` keeps `attachOpen` state, launchers and callbacks; hosts `AttachPanel` through the slot.
 
-- [ ] **Step 1: Create `AttachPanel.kt`** — panel UI as above plus `rememberKeyboardHeight`:
+- [x] **Step 1: Create `AttachPanel.kt`** — panel UI as above plus `rememberKeyboardHeight`:
 
   ```kotlin
   if (imeBottom > tallestImePx) tallestImePx = imeBottom
@@ -103,7 +103,7 @@ class AttachPanelLogicTest {
   // is up it IS the IME, so remember the gesture bar only with it down.
   if (imeBottom == 0) navBottomPx = safeBottom
   ```
-- [ ] **Step 2: Rework `Composer.kt`**
+- [x] **Step 2: Rework `Composer.kt`**
   - `val focusManager = LocalFocusManager.current`; `val panelMinHeight = rememberKeyboardHeight()`.
   - TextField modifier gains `.onFocusChanged { focus -> if (focus.isFocused && attachOpen) onAttach?.invoke() }` — with the toggle semantics, that is the close on field tap (focus, never IME visibility — the IME is still animating down in the opening frame).
   - `ComposerControls` gains `attachOpen: Boolean`; the `+` tap wrapper is `{ focusManager.clearFocus(); onAttach?.invoke() }`; the mic wrapper is `{ if (attachOpen) onAttach?.invoke(); onMic?.invoke() }`.
@@ -120,8 +120,8 @@ class AttachPanelLogicTest {
       Box(Modifier.heightIn(min = panelMinHeight)) { attachPanel() }
   }
   ```
-- [ ] **Step 3: Wire `ChatScreen.kt`** — rename `attachSheetOpen` → `attachOpen`; `onAttach = { attachOpen = !attachOpen }`; pass `attachOpen` + `attachPanel = { AttachPanel(voiceMode = state.voiceMode, onVoiceModeChange = viewModel::setVoiceMode, onPhotos = { attachOpen = false; attachPicker.launch(...) }, onCamera = { attachOpen = false; ...camera... }, onFiles = { attachOpen = false; filePicker.launch(arrayOf("*/*")) }) }`; delete the `if (attachSheetOpen) { AttachSheet(...) }` block and its import; add `BackHandler(enabled = attachOpen) { attachOpen = false }` (`androidx.activity.compose.BackHandler`).
-- [ ] **Step 4: Compile gate + tests** — `./gradlew :app:testDebugUnitTest --console=plain`. Commit: `feat(composer): inline attach panel, animated plus-to-close toggle (chat)`.
+- [x] **Step 3: Wire `ChatScreen.kt`** — rename `attachSheetOpen` → `attachOpen`; `onAttach = { attachOpen = !attachOpen }`; pass `attachOpen` + `attachPanel = { AttachPanel(voiceMode = state.voiceMode, onVoiceModeChange = viewModel::setVoiceMode, onPhotos = { attachOpen = false; attachPicker.launch(...) }, onCamera = { attachOpen = false; ...camera... }, onFiles = { attachOpen = false; filePicker.launch(arrayOf("*/*")) }) }`; delete the `if (attachSheetOpen) { AttachSheet(...) }` block and its import; add `BackHandler(enabled = attachOpen) { attachOpen = false }` (`androidx.activity.compose.BackHandler`).
+- [x] **Step 4: Compile gate + tests** — `./gradlew :app:testDebugUnitTest --console=plain`. Commit: `feat(composer): inline attach panel, animated plus-to-close toggle (chat)`.
 
 ### Task 4: Home composer parity
 
@@ -136,15 +136,15 @@ class AttachPanelLogicTest {
 - `BackHandler(enabled = attachOpen) { attachOpen = false }` inside `HomeComposer` (composed after the screen's FAB-menu handler, so it wins while open).
 - Delete the `if (attachSheetOpen) { AttachSheet(...) }` block at the end of `HomeComposer`; imports swap `AttachSheet` → `AttachPanel` (+ `rememberKeyboardHeight`, `LocalFocusManager`, `rotate`, `animateColorAsState`, `AnimatedVisibility`, `expandVertically`, `shrinkVertically`, `onFocusChanged`).
 
-- [ ] **Step 1:** Apply the rework. **Step 2:** Compile gate + full suite (`./gradlew :app:testDebugUnitTest --console=plain`). Commit: `feat(composer): inline attach panel on home (parity)`.
+- [x] **Step 1:** Apply the rework. **Step 2:** Compile gate + full suite (`./gradlew :app:testDebugUnitTest --console=plain`). Commit: `feat(composer): inline attach panel on home (parity)`.
 
 ### Task 5: Evidence, CI, combined branch, APK
 
 **Files:**
 - Modify: `android-native/docs/plans/2026-10-17-attach-panel.md` (tick boxes), `.superpowers/sdd/2026-10-17-attach-panel/progress.md` (ledger), `android-native/docs/HANDOFF-model-picker.md` (untracked; refresh with the round-5 device checklist). No CHANGELOG edits.
 
-- [ ] **Step 1:** Full local run: `./gradlew :app:testDebugUnitTest --console=plain --rerun` — record test-case counts from `app/build/test-results/`.
-- [ ] **Step 2:** Push `feat/model-picker`; watch CI; fetch `hermes-native-debug-apk`; record run URL + md5.
-- [ ] **Step 3:** Rebuild `test/model-picker-home-send` (merge the new feat head; the resolution follows the round-4 proven union); force-push with lease; CI green; fetch APK; md5.
-- [ ] **Step 4:** Device checklist (into the handoff): panel opens below the composer with the keyboard out of the way; composer does not jump through the swap; `+` rotates to a tinted `×` and back; field tap closes the panel and raises the keyboard; back closes the panel; tiles launch after closing; mic closes the panel; both composers; mid-stream attach (chat) still works.
-- [ ] **Step 5:** Update ledger + handoff. No merge/release until the user says so.
+- [x] **Step 1:** Full local run: `./gradlew :app:testDebugUnitTest --console=plain --rerun` — record test-case counts from `app/build/test-results/`.
+- [x] **Step 2:** Push `feat/model-picker`; watch CI; fetch `hermes-native-debug-apk`; record run URL + md5.
+- [x] **Step 3:** Rebuild `test/model-picker-home-send` (merge the new feat head; the resolution follows the round-4 proven union); force-push with lease; CI green; fetch APK; md5.
+- [x] **Step 4:** Device checklist (into the handoff): panel opens below the composer with the keyboard out of the way; composer does not jump through the swap; `+` rotates to a tinted `×` and back; field tap closes the panel and raises the keyboard; back closes the panel; tiles launch after closing; mic closes the panel; both composers; mid-stream attach (chat) still works.
+- [x] **Step 5:** Update ledger + handoff. No merge/release until the user says so.

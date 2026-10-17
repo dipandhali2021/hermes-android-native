@@ -38,8 +38,8 @@
 - New private `AttachRow(icon: ImageVector, title: String, subtitle: String, onClick: () -> Unit)`; the old `AttachTile` and its press-scale machinery (`MutableInteractionSource`, `collectIsPressedAsState`, `animateFloatAsState`, `graphicsLayer`) are deleted.
 - `rememberKeyboardHeight` and the `voiceModeLabel`/`voiceModeSupportingLine` helpers are untouched.
 
-- [ ] **Step 1: Rewrite the file** — handle pill (`32x4 dp`, `CircleShape`, `outlineVariant`, centred, `padding(top = 12.dp)`), then the rows in the pinned order — Photos, Files, Camera — each title + supporting line, then `Spacer(8.dp)`, `HorizontalDivider()`, and the voice section with 20 dp horizontal padding and 20 dp bottom padding, as in §8.2.
-- [ ] **Step 2: Compile gate + full suite** — `./gradlew :app:testDebugUnitTest --console=plain`. Commit: `feat(composer): attach panel as its own card with list rows`.
+- [x] **Step 1: Rewrite the file** — handle pill (`32x4 dp`, `CircleShape`, `outlineVariant`, centred, `padding(top = 12.dp)`), then the rows in the pinned order — Photos, Files, Camera — each title + supporting line, then `Spacer(8.dp)`, `HorizontalDivider()`, and the voice section with 20 dp horizontal padding and 20 dp bottom padding, as in §8.2.
+- [x] **Step 2: Compile gate + full suite** — `./gradlew :app:testDebugUnitTest --console=plain`. Commit: `feat(composer): attach panel as its own card with list rows`.
 
 ### Task 3: `Composer` two-card restructure (chat)
 
@@ -55,8 +55,8 @@ Box(Modifier.heightIn(min = panelMinHeight)) { attachPanel() }
 
 - `ChatScreen.kt` does **not** change (its call-site modifier now lands on the root; the slot API is unchanged).
 
-- [ ] **Step 1:** Apply the restructure; keep the round-5 comments accurate (the inset note: the modifier wraps both cards).
-- [ ] **Step 2:** Compile gate + full suite. Commit: `feat(composer): two cards — panel outside the composer surface (chat)`.
+- [x] **Step 1:** Apply the restructure; keep the round-5 comments accurate (the inset note: the modifier wraps both cards).
+- [x] **Step 2:** Compile gate + full suite. Commit: `feat(composer): two cards — panel outside the composer surface (chat)`.
 
 ### Task 4: Home composer two-card restructure
 
@@ -66,16 +66,16 @@ Box(Modifier.heightIn(min = panelMinHeight)) { attachPanel() }
 **Interfaces:**
 - `HomeComposer` root becomes `Column(modifier.fillMaxWidth().pointerInput(…) { … currentOnPress() … })` (the press-listener moves from the `Surface` to the root so the panel card is covered); then `Surface(…, modifier = Modifier.fillMaxWidth())` with `Column { tray; field; AnimatedContent(controls) }`, then the existing `AnimatedVisibility` panel block below the surface.
 
-- [ ] **Step 1:** Apply; the listener comment now reads: a tap anywhere in the composer *or its panel* closes the FAB menu and still lands on the control.
-- [ ] **Step 2:** Compile gate + full suite. Commit: `feat(composer): two cards on home`.
+- [x] **Step 1:** Apply; the listener comment now reads: a tap anywhere in the composer *or its panel* closes the FAB menu and still lands on the control.
+- [x] **Step 2:** Compile gate + full suite. Commit: `feat(composer): two cards on home`.
 
 ### Task 5: Evidence, CI, combined rebuild, APK
 
 **Files:**
 - Modify: `android-native/docs/plans/2026-10-17-attach-panel-separate.md` (tick boxes), `.superpowers/sdd/2026-10-17-attach-panel-separate/progress.md`, `android-native/docs/HANDOFF-model-picker.md` (untracked on feat; refresh as the round-5 + 5.1 handoff).
 
-- [ ] **Step 1:** Full local run with `--rerun`; record test-case counts from `app/build/test-results/`.
-- [ ] **Step 2:** Push `feat/model-picker`; watch CI; fetch the APK artifact; record run URL + md5.
-- [ ] **Step 3:** Merge the new feat head into `test/model-picker-home-send` (the round-5 merge at `03b69f3` is the base; resolution follows the proven union: take the combined side for state-driven `isStartingChat`); CI green; fetch APK; md5.
-- [ ] **Step 4:** Refresh the handoff with the round-5 + 5.1 device checklist (two cards; list rows; handle; swap still still; toggle unchanged; panel taps close the FAB menu on home).
-- [ ] **Step 5:** Close both plans' task boxes and ledgers. No merge to master, no release until the user says so.
+- [x] **Step 1:** Full local run with `--rerun`; record test-case counts from `app/build/test-results/`.
+- [x] **Step 2:** Push `feat/model-picker`; watch CI; fetch the APK artifact; record run URL + md5.
+- [x] **Step 3:** Merge the new feat head into `test/model-picker-home-send` (the round-5 merge at `03b69f3` is the base; resolution follows the proven union: take the combined side for state-driven `isStartingChat`); CI green; fetch APK; md5.
+- [x] **Step 4:** Refresh the handoff with the round-5 + 5.1 device checklist (two cards; list rows; handle; swap still still; toggle unchanged; panel taps close the FAB menu on home).
+- [x] **Step 5:** Close both plans' task boxes and ledgers. No merge to master, no release until the user says so.
