@@ -67,6 +67,50 @@ class SseEventParserTest {
     }
 
     @Test
+    fun `parses metering with the live usage snapshot`() {
+        // Shape taken from `_live_usage_snapshot()` + the metering ticker in
+        // api/streaming.py (~11960-12033): the snapshot nests the same usage
+        // object `done` carries, context-window fields included.
+        val event = SseEventParser.parse(
+            "metering",
+            """{"session_id":"s1","usage":{"input_tokens":1500000,"output_tokens":10700,
+               "estimated_cost":0.12,"cache_read_tokens":900,"cache_write_tokens":100,
+               "context_length":1000000,"threshold_tokens":800000,
+               "last_prompt_tokens":780000,"post_compression_context_tokens_estimate":300000,
+               "cache_hit_percent":82}}""".trimIndent(),
+        )
+        event as ChatEvent.Metering
+        val usage = event.usage!!
+        assertEquals(1500000L, usage.inputTokens)
+        assertEquals(10700L, usage.outputTokens)
+        assertEquals(1000000L, usage.contextLength)
+        assertEquals(800000L, usage.thresholdTokens)
+        assertEquals(780000L, usage.lastPromptTokens)
+        assertEquals(300000L, usage.postCompressionEstimate)
+    }
+
+    @Test
+    fun `metering without a snapshot still parses`() {
+        // An older server's tick carries no usage object; the event must
+        // survive as a bare tick rather than drop the stream.
+        assertEquals(ChatEvent.Metering(null), SseEventParser.parse("metering", "{}"))
+        assertEquals(ChatEvent.Metering(null), SseEventParser.parse("metering", "not json"))
+    }
+
+    @Test
+    fun `done usage carries the context window fields`() {
+        val event = SseEventParser.parse(
+            "done",
+            """{"session":{},"usage":{"input_tokens":1200,"output_tokens":340,
+               "context_length":131072,"threshold_tokens":104857,"last_prompt_tokens":98000}}""".trimIndent(),
+        )
+        event as ChatEvent.Done
+        assertEquals(131072L, event.usage?.contextLength)
+        assertEquals(104857L, event.usage?.thresholdTokens)
+        assertEquals(98000L, event.usage?.lastPromptTokens)
+    }
+
+    @Test
     fun `done does not close the stream`() {
         // The single most important rule in the protocol. The server emits
         // `title` and `stream_end` AFTER `done`, so a client that closes here

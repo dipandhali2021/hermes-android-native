@@ -677,7 +677,7 @@ class ChatViewModel @Inject constructor(
                     is ChatEvent.Cancelled -> flushPending()
 
                     ChatEvent.ApprovalRequested, ChatEvent.ClarificationRequested,
-                    ChatEvent.Metering, ChatEvent.ContextStatus, ChatEvent.Goal,
+                    is ChatEvent.Metering, ChatEvent.ContextStatus, ChatEvent.Goal,
                     ChatEvent.StateSaved, ChatEvent.Heartbeat,
                     is ChatEvent.TitleStatus,
                     -> Unit

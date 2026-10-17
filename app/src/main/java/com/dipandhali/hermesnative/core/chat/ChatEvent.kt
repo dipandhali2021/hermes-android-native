@@ -73,8 +73,13 @@ sealed interface ChatEvent {
     /** SSE fence. The stream is finished. */
     data object StreamEnd : ChatEvent
 
-    /** Token/cost metering snapshot. Not journal-replayed, so never backfilled. */
-    data object Metering : ChatEvent
+    /**
+     * Token/cost metering snapshot, emitted at ~1 Hz while a session is
+     * active. Nests the same usage shape [Done] carries — context-window
+     * fields included — and is never journal-replayed, so it only ever
+     * describes the live session.
+     */
+    data class Metering(val usage: TokenUsage?) : ChatEvent
 
     /** Context-window usage changed. */
     data object ContextStatus : ChatEvent
@@ -137,4 +142,10 @@ data class TokenUsage(
     @SerialName("cache_read_tokens") val cacheReadTokens: Long? = null,
     @SerialName("cache_write_tokens") val cacheWriteTokens: Long? = null,
     @SerialName("estimated_cost") val estimatedCost: Double? = null,
+    // Context-window fields. The server's usage snapshots (metering + done)
+    // carry these; all optional so an older server simply omits them.
+    @SerialName("context_length") val contextLength: Long? = null,
+    @SerialName("threshold_tokens") val thresholdTokens: Long? = null,
+    @SerialName("last_prompt_tokens") val lastPromptTokens: Long? = null,
+    @SerialName("post_compression_context_tokens_estimate") val postCompressionEstimate: Long? = null,
 )
