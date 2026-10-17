@@ -5,8 +5,9 @@ Rounds 1–3 (model picker, home-send fix, chip/lockup/attachments), Round 4
 (voice: auto-send, both modes), Round 5 + 5.1 (the `+` attach panel), 5.2
 (tile restyle), and **Round 6 (composer power tools: saved prompts, agent
 profiles, workspace switcher, workspace files panel)** are implemented.
-Round 6 is local-committed on `feat/model-picker` (`6f3a27e`) and pushing to
-CI; device passes for Rounds 3–5.2 remain unreported. **No version bump this
+Round 6 is implemented and CI-green on `feat/model-picker` (`afdd508`) and on
+the combined `test/model-picker-home-send` (merge `0fd8f0b`); device passes for
+Rounds 3–5.2 remain unreported. **No version bump this
 cycle** (per instruction); merge to master only on the user's say-so.
 
 ## What changed in Round 6
@@ -116,18 +117,16 @@ relaunch recovery.
 - Round 5.1 combined build: [run 39031187257](https://github.com/dipandhali2021/hermes-android-native/actions/runs/39031187257) — green (`1302a06`) (superseded UI).
 - Round 5.2 feature build: [run 39032241812](https://github.com/dipandhali2021/hermes-android-native/actions/runs/39032241812) — green (`b0e8bb5`).
 - Round 5.2 combined build: [run 39032335261](https://github.com/dipandhali2021/hermes-android-native/actions/runs/39032335261) — green (`37083a0`).
-- Round 6 feature build: **pending** (pushing `6f3a27e` now; run link + SHA
-  to be filled from CI).
-- Round 6 combined build: **pending** (runs after the merge below).
+- Round 6 feature build: [run 39046779434](https://github.com/dipandhali2021/hermes-android-native/actions/runs/39046779434) — green (`afdd508`).
+- Round 6 combined build: [run 39047481179](https://github.com/dipandhali2021/hermes-android-native/actions/runs/39047481179) — green (merge `0fd8f0b`).
 - Local: `./gradlew :app:testDebugUnitTest` green at each task commit (12
   separate task-done runs; new suites: profiles, workspaces, switch rules,
   files client, file tree UI).
 
 ## APK paths
-- **Round 6 combined build:** `/tmp/opencode/mp-r6-combined/hermes-native-debug-apk/app-debug.apk`
-  — staged from CI after the Round 6 combined run goes green; contains the
-  model picker, the home-send fix, Rounds 3–5.2, and all of Round 6. The
-  md5 and combined commit SHA land in the progress ledger's final entry.
+- **Round 6 combined build — use this one:** `/tmp/opencode/mp-r6-combined/hermes-native-debug-apk/app-debug.apk`
+  (md5 `8405e8b2622710424f16c8fd8a603272`, merge commit `0fd8f0b`). Contains the
+  model picker, the home-send fix, Rounds 3–5.2, and all of Round 6.
 
 ## Device checklist
 1. Install the combined APK (upgrade over the previous build is fine).
