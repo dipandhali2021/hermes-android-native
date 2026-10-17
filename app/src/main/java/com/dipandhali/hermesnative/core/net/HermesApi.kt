@@ -19,6 +19,11 @@ import com.dipandhali.hermesnative.core.model.NewSessionResponse
 import com.dipandhali.hermesnative.core.model.ReasoningRequest
 import com.dipandhali.hermesnative.core.model.ReasoningResponse
 import com.dipandhali.hermesnative.core.model.PromptsResponse
+import com.dipandhali.hermesnative.core.model.ProfileActiveResponse
+import com.dipandhali.hermesnative.core.model.ProfileCreateRequest
+import com.dipandhali.hermesnative.core.model.ProfileCreateResponse
+import com.dipandhali.hermesnative.core.model.ProfileSwitchRequest
+import com.dipandhali.hermesnative.core.model.ProfileSwitchResponse
 import com.dipandhali.hermesnative.core.model.SavePromptRequest
 import com.dipandhali.hermesnative.core.model.SavePromptResponse
 import com.dipandhali.hermesnative.core.model.SessionBusyResponse
@@ -247,6 +252,33 @@ class HermesApi(private val client: OkHttpClient) {
 
     suspend fun deletePrompt(baseUrl: String, id: String): Result<Unit> =
         postRaw(baseUrl, "api/prompts", """{"id":${id.jsonString()}}""")
+
+    // ---------- Profiles ----------
+
+    suspend fun profileActive(baseUrl: String): Result<ProfileActiveResponse> =
+        get(baseUrl, "api/profile/active", ProfileActiveResponse.serializer())
+
+    suspend fun switchProfile(baseUrl: String, name: String): Result<ProfileSwitchResponse> =
+        post(
+            baseUrl,
+            "api/profile/switch",
+            json.encodeToString(ProfileSwitchRequest.serializer(), ProfileSwitchRequest(name)),
+            ProfileSwitchResponse.serializer(),
+        )
+
+    suspend fun createProfile(
+        baseUrl: String,
+        request: ProfileCreateRequest,
+    ): Result<ProfileCreateResponse> =
+        post(
+            baseUrl,
+            "api/profile/create",
+            json.encodeToString(ProfileCreateRequest.serializer(), request),
+            ProfileCreateResponse.serializer(),
+        )
+
+    suspend fun deleteProfile(baseUrl: String, name: String): Result<Unit> =
+        postRaw(baseUrl, "api/profile/delete", """{"name":${name.jsonString()}}""")
 
     suspend fun insights(baseUrl: String): Result<InsightsResponse> =
         get(baseUrl, "api/insights", InsightsResponse.serializer())

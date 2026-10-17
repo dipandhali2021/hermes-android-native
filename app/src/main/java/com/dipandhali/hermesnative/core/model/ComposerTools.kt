@@ -44,3 +44,49 @@ data class SavePromptResponse(
     val ok: Boolean = false,
     val prompt: SavedPrompt? = null,
 )
+
+// ---------- Profiles ----------
+
+/** Boot identity: what profile is live even before anything loads. */
+@Serializable
+data class ProfileActiveResponse(
+    val name: String? = null,
+    val path: String? = null,
+    @SerialName("is_default") val isDefault: Boolean? = null,
+    @SerialName("default_workspace") val defaultWorkspace: String? = null,
+)
+
+@Serializable
+data class ProfileSwitchRequest(val name: String)
+
+@Serializable
+data class ProfileSwitchResponse(
+    val profiles: List<ProfileDto> = emptyList(),
+    val active: String? = null,
+    @SerialName("is_default") val isDefault: Boolean? = null,
+    @SerialName("default_model") val defaultModel: String? = null,
+    @SerialName("default_model_provider") val defaultModelProvider: String? = null,
+    @SerialName("default_workspace") val defaultWorkspace: String? = null,
+)
+
+/**
+ * Body of `POST /api/profile/create`. Only [name] is mandatory; unset
+ * extras serialize to **absent keys** — an empty-string api_key, for
+ * example, must never be sent where null was intended.
+ */
+@Serializable
+data class ProfileCreateRequest(
+    val name: String,
+    @SerialName("clone_config") val cloneConfig: Boolean? = false,
+    @SerialName("clone_from") val cloneFrom: String? = null,
+    @SerialName("base_url") val baseUrl: String? = null,
+    @SerialName("api_key") val apiKey: String? = null,
+    @SerialName("default_model") val defaultModel: String? = null,
+    @SerialName("model_provider") val modelProvider: String? = null,
+)
+
+@Serializable
+data class ProfileCreateResponse(
+    val ok: Boolean = false,
+    val profile: ProfileDto? = null,
+)

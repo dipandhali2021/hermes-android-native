@@ -120,19 +120,35 @@ data class ProfileDto(
     val name: String? = null,
     val model: String? = null,
     val provider: String? = null,
+    /** Legacy local flag; the server's per-row marker is `is_active`. */
     val active: Boolean = false,
     @SerialName("skill_count") val skillCount: Int? = null,
     @SerialName("enabled_skill_count") val enabledSkillCount: Int? = null,
     @SerialName("gateway_running") val gatewayRunning: Boolean? = null,
+    // Fields only the profile surfaces fill (GET /api/profiles, api/profiles.py).
+    val path: String? = null,
+    @SerialName("is_default") val isDefault: Boolean? = null,
+    @SerialName("is_active") val isActive: Boolean? = null,
+    @SerialName("has_env") val hasEnv: Boolean? = null,
+    val visible: Boolean? = null,
+    @SerialName("enabled_skills") val enabledSkills: Int? = null,
+    @SerialName("total_skills") val totalSkills: Int? = null,
 ) {
     val label: String get() = name ?: "Profile"
+
+    /** The server marker wins; the legacy flag is a fallback for old servers. */
+    val rowActive: Boolean get() = isActive ?: active
 }
 
 @Serializable
 data class ProfilesResponse(
     val profiles: List<ProfileDto> = emptyList(),
     val active: String? = null,
-)
+    @SerialName("single_profile_mode") val singleProfileMode: Boolean? = null,
+) {
+    val visibleRows: List<ProfileDto>
+        get() = profiles.filter { it.visible != false }
+}
 
 // ---------- Todos ----------
 
