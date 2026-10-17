@@ -445,13 +445,12 @@ private fun HomeComposer(
         }
     }
 
-    Surface(
-        color = MaterialTheme.colorScheme.surfaceContainer,
-        shape = MaterialTheme.shapes.extraLarge,
+    Column(
         modifier = modifier
             .fillMaxWidth()
             // Read presses at the Initial pass and never consume them, so a tap
-            // closes the FAB menu and still lands on the field or the button.
+            // anywhere in the composer or its panel closes the FAB menu and
+            // still lands on the control.
             .pointerInput(Unit) {
                 awaitPointerEventScope {
                     while (true) {
@@ -461,176 +460,182 @@ private fun HomeComposer(
                 }
             },
     ) {
-        Column {
-            if (attachments.isNotEmpty()) {
-                AttachmentTray(
-                    attachments = attachments,
-                    onRemove = { id -> attachments = attachments.filterNot { it.id == id } },
+        Surface(
+            color = MaterialTheme.colorScheme.surfaceContainer,
+            shape = MaterialTheme.shapes.extraLarge,
+            modifier = Modifier.fillMaxWidth(),
+        ) {
+            Column {
+                if (attachments.isNotEmpty()) {
+                    AttachmentTray(
+                        attachments = attachments,
+                        onRemove = { id -> attachments = attachments.filterNot { it.id == id } },
+                    )
+                }
+
+                androidx.compose.material3.TextField(
+                    value = text,
+                    onValueChange = { text = it },
+                    // Disabled, not hidden, while a clip is being captured or
+                    // converted: a half-typed draft stays readable and waiting.
+                    enabled = voicePhase == VoicePhase.Idle,
+                    placeholder = { Text("Ask anything…") },
+                    colors = androidx.compose.material3.TextFieldDefaults.colors(
+                        focusedContainerColor = androidx.compose.ui.graphics.Color.Transparent,
+                        unfocusedContainerColor = androidx.compose.ui.graphics.Color.Transparent,
+                        focusedIndicatorColor = androidx.compose.ui.graphics.Color.Transparent,
+                        unfocusedIndicatorColor = androidx.compose.ui.graphics.Color.Transparent,
+                    ),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .heightIn(min = 56.dp, max = 160.dp)
+                        // Focus, never IME visibility: in the frame the panel
+                        // opens the keyboard is still animating down, and a
+                        // visibility signal would close it right back.
+                        .onFocusChanged { focus ->
+                            if (focus.isFocused && attachOpen) attachOpen = false
+                        },
                 )
-            }
-
-            androidx.compose.material3.TextField(
-                value = text,
-                onValueChange = { text = it },
-                // Disabled, not hidden, while a clip is being captured or
-                // converted: a half-typed draft stays readable and waiting.
-                enabled = voicePhase == VoicePhase.Idle,
-                placeholder = { Text("Ask anything…") },
-                colors = androidx.compose.material3.TextFieldDefaults.colors(
-                    focusedContainerColor = androidx.compose.ui.graphics.Color.Transparent,
-                    unfocusedContainerColor = androidx.compose.ui.graphics.Color.Transparent,
-                    focusedIndicatorColor = androidx.compose.ui.graphics.Color.Transparent,
-                    unfocusedIndicatorColor = androidx.compose.ui.graphics.Color.Transparent,
-                ),
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .heightIn(min = 56.dp, max = 160.dp)
-                    // Focus, never IME visibility: in the frame the panel
-                    // opens the keyboard is still animating down, and a
-                    // visibility signal would close it right back.
-                    .onFocusChanged { focus ->
-                        if (focus.isFocused && attachOpen) attachOpen = false
+                AnimatedContent(
+                    targetState = voicePhase,
+                    transitionSpec = {
+                        (scaleIn(HermesMotion.spatialFast()) + fadeIn()) togetherWith
+                            (scaleOut(HermesMotion.spatialFast()) + fadeOut()) using
+                            SizeTransform(clip = false)
                     },
-            )
-            AnimatedContent(
-                targetState = voicePhase,
-                transitionSpec = {
-                    (scaleIn(HermesMotion.spatialFast()) + fadeIn()) togetherWith
-                        (scaleOut(HermesMotion.spatialFast()) + fadeOut()) using
-                        SizeTransform(clip = false)
-                },
-                label = "home-composer-controls",
-            ) { phase ->
-                if (phase is VoicePhase.Idle) {
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(start = 8.dp, end = 8.dp, bottom = 8.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.End,
-                    ) {
-                        // The toggle signs itself: the plus folds a quarter
-                        // turn into a close mark and takes the accent role
-                        // while the panel is open.
-                        val attachProgress by animateFloatAsState(
-                            targetValue = if (attachOpen) 1f else 0f,
-                            animationSpec = HermesMotion.spatialFast(),
-                            label = "attach-toggle-rotation",
-                        )
-                        val attachTint by animateColorAsState(
-                            targetValue = if (attachOpen) {
-                                MaterialTheme.colorScheme.primary
-                            } else {
-                                MaterialTheme.colorScheme.onSurfaceVariant
-                            },
-                            animationSpec = HermesMotion.effects(),
-                            label = "attach-toggle-tint",
-                        )
-                        IconButton(
-                            onClick = {
-                                focusManager.clearFocus()
-                                attachOpen = !attachOpen
-                            },
-                            enabled = !isStarting,
+                    label = "home-composer-controls",
+                ) { phase ->
+                    if (phase is VoicePhase.Idle) {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(start = 8.dp, end = 8.dp, bottom = 8.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.End,
                         ) {
-                            Icon(
-                                imageVector = Icons.Rounded.Add,
-                                contentDescription = attachToggleDescription(attachOpen),
-                                tint = attachTint,
-                                modifier = Modifier.rotate(ATTACH_ROTATION_DEGREES * attachProgress),
+                            // The toggle signs itself: the plus folds a quarter
+                            // turn into a close mark and takes the accent role
+                            // while the panel is open.
+                            val attachProgress by animateFloatAsState(
+                                targetValue = if (attachOpen) 1f else 0f,
+                                animationSpec = HermesMotion.spatialFast(),
+                                label = "attach-toggle-rotation",
                             )
-                        }
-
-                        leadingAccessory?.invoke()
-
-                        Box(Modifier.weight(1f))
-
-                        IconButton(
-                            onClick = {
-                                // The strip replaces the row; a panel under
-                                // a recording is not a thing.
-                                if (attachOpen) attachOpen = false
-                                onMicTap()
-                            },
-                            enabled = !isStarting,
-                            colors = IconButtonDefaults.iconButtonColors(
-                                contentColor = MaterialTheme.colorScheme.onSurfaceVariant,
-                            ),
-                        ) {
-                            Icon(Icons.Rounded.Mic, contentDescription = "Voice input")
-                        }
-
-                        androidx.compose.material3.FilledIconButton(
-                            onClick = {
-                                val trimmed = text.trim()
-                                if (trimmed.isNotEmpty() || attachments.isNotEmpty()) {
-                                    isStarting = true
-                                    onSend(trimmed, attachments.mapNotNull { it.uriString })
-                                }
-                            },
-                            enabled = (text.isNotBlank() || attachments.isNotEmpty()) && !isStarting,
-                            modifier = Modifier.size(44.dp),
-                        ) {
-                            if (isStarting) {
-                                CircularProgressIndicator(
-                                    modifier = Modifier.size(18.dp),
-                                    strokeWidth = 2.dp,
-                                    color = MaterialTheme.colorScheme.onPrimary,
-                                )
-                            } else {
+                            val attachTint by animateColorAsState(
+                                targetValue = if (attachOpen) {
+                                    MaterialTheme.colorScheme.primary
+                                } else {
+                                    MaterialTheme.colorScheme.onSurfaceVariant
+                                },
+                                animationSpec = HermesMotion.effects(),
+                                label = "attach-toggle-tint",
+                            )
+                            IconButton(
+                                onClick = {
+                                    focusManager.clearFocus()
+                                    attachOpen = !attachOpen
+                                },
+                                enabled = !isStarting,
+                            ) {
                                 Icon(
-                                    imageVector = Icons.AutoMirrored.Rounded.Send,
-                                    contentDescription = "Start a new conversation",
-                                    modifier = Modifier.size(18.dp),
+                                    imageVector = Icons.Rounded.Add,
+                                    contentDescription = attachToggleDescription(attachOpen),
+                                    tint = attachTint,
+                                    modifier = Modifier.rotate(ATTACH_ROTATION_DEGREES * attachProgress),
                                 )
                             }
+
+                            leadingAccessory?.invoke()
+
+                            Box(Modifier.weight(1f))
+
+                            IconButton(
+                                onClick = {
+                                    // The strip replaces the row; a panel under
+                                    // a recording is not a thing.
+                                    if (attachOpen) attachOpen = false
+                                    onMicTap()
+                                },
+                                enabled = !isStarting,
+                                colors = IconButtonDefaults.iconButtonColors(
+                                    contentColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                                ),
+                            ) {
+                                Icon(Icons.Rounded.Mic, contentDescription = "Voice input")
+                            }
+
+                            androidx.compose.material3.FilledIconButton(
+                                onClick = {
+                                    val trimmed = text.trim()
+                                    if (trimmed.isNotEmpty() || attachments.isNotEmpty()) {
+                                        isStarting = true
+                                        onSend(trimmed, attachments.mapNotNull { it.uriString })
+                                    }
+                                },
+                                enabled = (text.isNotBlank() || attachments.isNotEmpty()) && !isStarting,
+                                modifier = Modifier.size(44.dp),
+                            ) {
+                                if (isStarting) {
+                                    CircularProgressIndicator(
+                                        modifier = Modifier.size(18.dp),
+                                        strokeWidth = 2.dp,
+                                        color = MaterialTheme.colorScheme.onPrimary,
+                                    )
+                                } else {
+                                    Icon(
+                                        imageVector = Icons.AutoMirrored.Rounded.Send,
+                                        contentDescription = "Start a new conversation",
+                                        modifier = Modifier.size(18.dp),
+                                    )
+                                }
+                            }
                         }
+                    } else {
+                        VoiceRecordingBar(
+                            phase = phase,
+                            elapsedMsProvider = voiceElapsedMs,
+                            amplitudeProvider = voiceAmplitude,
+                            onCancel = onVoiceCancel,
+                            onStop = { onVoiceStop(text.trim(), attachments.mapNotNull { it.uriString }) },
+                        )
                     }
-                } else {
-                    VoiceRecordingBar(
-                        phase = phase,
-                        elapsedMsProvider = voiceElapsedMs,
-                        amplitudeProvider = voiceAmplitude,
-                        onCancel = onVoiceCancel,
-                        onStop = { onVoiceStop(text.trim(), attachments.mapNotNull { it.uriString }) },
-                    )
                 }
             }
+        }
 
-            AnimatedVisibility(
-                visible = attachOpen && voicePhase == VoicePhase.Idle,
-                enter = expandVertically(
-                    animationSpec = HermesMotion.contentSize,
-                    expandFrom = Alignment.Top,
-                ) + fadeIn(HermesMotion.effects()),
-                exit = shrinkVertically(
-                    animationSpec = HermesMotion.contentSize,
-                    shrinkTowards = Alignment.Top,
-                ) + fadeOut(HermesMotion.effects()),
-                label = "attach-panel",
-            ) {
-                Box(Modifier.heightIn(min = panelMinHeight)) {
-                    AttachPanel(
-                        voiceMode = voiceMode,
-                        onVoiceModeChange = onVoiceModeChange,
-                        onPhotos = {
-                            attachOpen = false
-                            attachPicker.launch(
-                                PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly),
-                            )
-                        },
-                        onCamera = {
-                            attachOpen = false
-                            val uri = newCameraCaptureUri(context)
-                            pendingCameraUri = uri
-                            cameraCapture.launch(uri)
-                        },
-                        onFiles = {
-                            attachOpen = false
-                            filePicker.launch(arrayOf("*/*"))
-                        },
-                    )
-                }
+        AnimatedVisibility(
+            visible = attachOpen && voicePhase == VoicePhase.Idle,
+            enter = expandVertically(
+                animationSpec = HermesMotion.contentSize,
+                expandFrom = Alignment.Top,
+            ) + fadeIn(HermesMotion.effects()),
+            exit = shrinkVertically(
+                animationSpec = HermesMotion.contentSize,
+                shrinkTowards = Alignment.Top,
+            ) + fadeOut(HermesMotion.effects()),
+            label = "attach-panel",
+        ) {
+            Box(Modifier.heightIn(min = panelMinHeight)) {
+                AttachPanel(
+                    voiceMode = voiceMode,
+                    onVoiceModeChange = onVoiceModeChange,
+                    onPhotos = {
+                        attachOpen = false
+                        attachPicker.launch(
+                            PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly),
+                        )
+                    },
+                    onCamera = {
+                        attachOpen = false
+                        val uri = newCameraCaptureUri(context)
+                        pendingCameraUri = uri
+                        cameraCapture.launch(uri)
+                    },
+                    onFiles = {
+                        attachOpen = false
+                        filePicker.launch(arrayOf("*/*"))
+                    },
+                )
             }
         }
     }
