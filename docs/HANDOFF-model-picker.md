@@ -1,34 +1,36 @@
 # Handoff — model picker (branch `feat/model-picker`; combined test build `test/model-picker-home-send`)
 
 ## Status
-Round 1 (Tasks 1–9), Round 2 device-feedback amendments (Tasks 11–12) and
-Round 3 device-feedback amendments (Tasks 14–17) are implemented, CI-green on
-both branches, and awaiting a device pass. No version bump this cycle (per
-instruction). The mic button is intentionally absent this round — the user
-asked for the research first ("find what is this then i will tell you how to
-process") — see Mic research.
+Rounds 1–3 (model picker, home-send fix, chip/lockup/attachments) and Round 4
+(voice: auto-send, both modes) and Round 5 + 5.1 (the `+` attach panel) are
+implemented, CI-green on both branches, and awaiting a device pass. **No
+version bump this cycle** (per instruction); merge to master only on the
+user's say-so.
 
-## What changed in Round 3
-- **The model chip is a label now.** The chevron-down is gone (device
-  feedback). The pill alone reads as the control that opens the picker sheet,
-  and the current model is still exposed to accessibility as
-  `stateDescription`.
-- **Lockup render fix.** `ic_hermes_agent.xml` is flat absolute-path data — no
-  `<group>` transforms — and the home lockup renders at 32dp (was 28dp).
-- **Attachments, both composers.** Composer row is `[attach][chip] … [send]`
-  with the staged tray above the field. Photo Picker (no storage permission),
-  10 files per message, 20 MB cap (the web client's own). Uploads are
-  session-scoped server-side (`POST /api/upload`, web parity):
-  - chat: staged picks upload on send; failures keep them for retry, and a
-    completed upload is remembered so a retried send never re-uploads;
-  - home: create → upload → navigate, with the uploaded refs riding the route
-    so the message and its images send as a single turn.
-- **Fresh-context review follow-ups:** picker headers only offer a toggle
-  where one exists (CONFIGURED and the flat MODELS section are not
-  collapsible); duplicate rows are dropped before they reach `LazyColumn`, and
-  section counts match what renders; the provider icon loader owns its fetches,
-  so a cancelled caller can no longer poison the icon cache (regression-tested);
-  the nav-seeded home message no longer re-sends after process death.
+## What changed in Round 4
+- **The paperclip is a `+` now** (both composers). It rotates 45° into a
+  tinted `×` while the panel is open (`Add` ↔ `Close attachments`).
+- **The attach panel replaces the old bottom sheet everywhere.** A rounded
+  card below the composer — **a separate card, not merged into the composer's
+  surface** (Round 5.1) — with a grab handle, then Photos / Files / Camera as
+  list rows (icon + title + supporting line), then
+- **Voice input, two modes with a pill toggle in the panel:**
+  - **Transcribe** (default): record → `POST /api/transcribe` → the transcript
+    **sends automatically** (no ask, no draft): text + staged images in one turn.
+  - **Voice note**: record → the audio file sends automatically as an
+    attachment (`voice-note.webm`, image-backed turns ride along).
+  - 503 message surfaces verbatim. Mode persists per app run.
+- **Keyboard swap:** opening the panel clears field focus so the keyboard
+  leaves *and the panel takes its exact place* (panel minHeight = tallest
+  remembered keyboard height − gesture bar; 320 dp fallback on first open).
+  The `+`/`×` is boutonnière-deep: composer holds still through the swap.
+
+## Rounds 1–3 (recap)
+Model picker sheet (search, groups, SELECTED, Show more), label-only model
+chip, 32dp lockup, attachments both composers (Photo Picker, 10 files, 20 MB,
+session-scoped `/api/upload`, retry without re-upload), home send fix
+(state-driven spinner + failure snackbar), offline icon monograms with
+relaunch recovery.
 
 ## CI evidence
 - Round 1: [run 38923737811](https://github.com/dipandhali2021/hermes-android-native/actions/runs/38923737811) — green (`9748423`).
@@ -40,40 +42,51 @@ process") — see Mic research.
   the cherry-pick transplant carried fix/home-send-only identifiers into feat.
   Repaired with feat's own semantics before this evidence; see the progress
   ledger.
-- Local: `./gradlew :app:testDebugUnitTest` green at each task commit.
+- Round 5 feature build: [run 39022149054](https://github.com/dipandhali2021/hermes-android-native/actions/runs/39022149054) — green (`f1edc59`).
+- Round 5.1 feature build: [run 39023202460](https://github.com/dipandhali2021/hermes-android-native/actions/runs/39023202460) — green (`2f0fe29`).
+- Local: `./gradlew :app:testDebugUnitTest` green at each task commit (110
+  tests on `feat/model-picker`, 112 on the combined build).
+- Round 5.1 combined build: pending — this file is updated on the combined
+  branch right after its push; check the run list for `test/model-picker-home-send`.
 
 ## APK paths
-- **Combined build — use this one:** `/tmp/opencode/mp-r3-combined/hermes-native-debug-apk/app-debug.apk`
-  (md5 `bdd9bd561b1ef49bd3d7c7eb8f7eafcf`). The same file is also kept at the
-  familiar path `/tmp/opencode/model-picker-home-send-apk/app-debug.apk`.
-  Contains the model picker, the home-send fix, and all of Round 3.
-- Feature-only build: `/tmp/opencode/mp-r3-feat/hermes-native-debug-apk/app-debug.apk`
-  (md5 `03184dcd6af65f038daa88e390fc56dc`). Home send now works there too
-  (message + attachments ride the route), but the fix/home-send UX (spinner
-  reset + failure snackbar) only exists in the combined build.
+- **Combined build — use this one:** `/tmp/opencode/mp-r5-combined/hermes-native-debug-apk/app-debug.apk`
+  (md5 recorded right after the combined run goes green). Contains the model
+  picker, the home-send fix, and all of Rounds 3–5.1. The same file is also
+  kept at the familiar path `/tmp/opencode/model-picker-home-send-apk/app-debug.apk`.
+- Feature-only build: `/tmp/opencode/mp-r5-feat/hermes-native-debug-apk/app-debug.apk`
+  (md5 `70f201e5b0d6b03ca9d51b938312625b`, commit `f1edc59`; the 5.1 feat
+  artifact is the combined build's twin).
 
-## Device checklist (Round 3)
+## Device checklist
 1. Install the combined APK (upgrade over the previous build is fine).
-2. Chip: **no arrow** beside the model name; the pill still opens the sheet,
-   and the sheet flows are unchanged (search, groups, SELECTED, Show more).
-3. Lockup: the top header shows the face + HERMES AGENT lockup cleanly at
-   32dp — not clipped, not stretched. Connect hero unchanged (48dp).
-4. Chat attach: tap the paperclip left of the chip → pick 1–2 photos →
-   thumbnails appear above the field → type text → send → the message shows
-   text + images and the reply streams.
-5. Attach-only send (no text) works.
-6. Limits: a file over 20 MB → the send fails with an error, the picks stay
-   staged, and retry works without re-uploading what already uploaded.
-7. Home: attach photos on the home composer, type a message → send → the chat
-   opens and the message + images send together (this is the fix path).
-8. Busy state: while a reply streams, staged picks keep Send hidden on an
-   empty composer (steer stays text-only); Stop behaves as before.
-9. Offline icons: first open in airplane mode → monograms, no crash; icons
-   that failed while offline come back after an app relaunch (the failed-id
-   set is per process, by design — see the plan checklist).
-10. Regression sanity: a model picked on the home chip still rides into the
-    new chat; stopping the server and sending still resets the spinner and
-    shows the snackbar.
+2. **Two cards, not one:** tap `+` → the composer keeps its rounded card and
+   the panel appears as its **own separate card below it** (grab handle on
+   top), like the Notion reference. Composer stays put through the
+   keyboard↔panel swap — no jump, no reflow.
+3. **Panel contents:** `Photos — Choose from your library` /
+   `Files — Attach a document or archive` / `Camera — Take a photo now` as
+   rows, then the voice section below a divider.
+4. **Toggle:** `+` rotates into a `×` and takes the accent tint; tapping it
+   again (or back, or tapping the text field) closes the panel; tapping the
+   field also raises the keyboard in the same move.
+5. **Tiles→rows work the same:** Photos opens the picker; Camera captures and
+   stages; Files opens the document picker; rows launch *after* the panel
+   closes.
+6. **Mic behavior** (round 4, still binding): mic sits between text field and
+   send; tapping it with the panel open closes the panel first; recording
+   strip replaces the toolbar row; **both voice modes auto-send** —
+   transcribe lands as text and sends by itself, voice note sends the audio
+   file. A 503 shows the server's message verbatim.
+7. **First-open height:** the very first panel open uses the 320 dp fallback
+   (keyboard not yet measured); subsequent opens match the keyboard height.
+8. **Home:** the FAB menu opens over the composer; a tap anywhere on the
+   composer **or its panel card** closes the menu; attach flow on home sends
+   with the route (message + images in one turn).
+9. **Chat mid-stream:** attachments still work while a reply streams (tray
+   above the field, send is the stop button).
+10. Regression sanity: chip label-only (no arrow) opens the picker sheet; home
+    send spinner resets on failure with snackbar; locks express as before.
 
 ## Merge order (important)
 1. `fix/home-send` → master **first** (its own device pass came earlier).
@@ -82,31 +95,18 @@ process") — see Mic research.
    `HomeScreen` (composer send path), `ChatViewModel` (loader line + seed
    guard), `SessionsViewModel`, `HermesRoot`, `ChatScreen`. The resolution is
    already proven on `test/model-picker-home-send`, whose current build
-   (`707ef24`) resolves them as the union: pick rides with `NewSessionRequest`,
+   (`3e153a1`) resolves them as the union: pick rides with `NewSessionRequest`,
    response read nested, state-driven `isStartingChat` + snackbar, and the
-   Round 3 composer/attach plumbing.
+   Round 3–5.1 composer/attach plumbing.
 3. Do **not** merge `test/model-picker-home-send` itself — it exists only as
    the combined test vehicle.
 
-## Mic research (decision pending)
-ChatGPT's app voice input is server-side transcription: the app records audio,
-uploads it, and a Whisper-class model on the server returns text — the app
-does no on-device recognition. The Hermes server already ships this
-architecture and the web UI already uses it:
-
-- `POST /api/transcribe` — multipart `file` (audio blob) → `{"ok": true,
-  "transcript": "…"}`; 503 when STT is unconfigured on that server.
-- `GET /api/transcribe/capability` — cheap probe → `{"ok": true, "available":
-  bool, "provider": "…"}` (faster-whisper / OpenAI / Mistral, whichever the
-  server is configured with).
-- The web mic has two modes: **server STT** (default; recording → transcript
-  lands in the composer, prefix preserved) and **raw audio** (record and send
-  the original file to the agent, Telegram-style voice note).
-
-So a mic is a client-side feature on an existing endpoint — no protocol work.
-Pending from the user: (a) which processing path to use (transcribe-to-text
-before send, raw-audio-as-attachment, or both), and (b) the recorder UX
-(tap-to-start/tap-to-stop vs hold-to-talk) once that is decided.
+## Mic research (decision pending — resolved for the client side)
+The recorder (round 4): both modes implemented; pending only from the user is
+the device pass. Server contract unchanged: `POST /api/transcribe` multipart
+`file` → `{"ok": true, "transcript": "…"}`; `/api/upload` `session_id`-scoped;
+503 message surfaced verbatim.
 
 ## Release
-No version bump in this cycle.
+No version bump in this cycle. Merge to master + release only when the user
+says so.
