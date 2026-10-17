@@ -348,3 +348,62 @@ before). The voice-mode toggle keeps the panel open — it configures the mic.
 
 - No sheet semantics, scrim, drag handle, or partial-height state.
 - No change to the launchers, caps, three-action copy, or the voice modes.
+
+## 8. Amendment — Round 5.1 (device feedback): two cards, the reference's list
+
+Device feedback on §7: with the panel inside the composer surface the two read
+as one card. The reference stacks a composer card and a *separate* panel card.
+§7 holds except where this section overrides it.
+
+### 8.1 Two surfaces
+
+- `Composer`'s root becomes a `Column`: the existing composer `Surface` (tray,
+  field, controls) and, below it, the panel **outside** that surface. The
+  call-site `modifier` (insets + margins) moves to the root, so the stack
+  still rises with the keyboard and both cards share the composer's margins.
+- `AttachPanel` renders its own card — `surfaceContainer`,
+  `shapes.extraLarge` — with the composition gap of `8.dp` above it baked in
+  as top padding, so the §7.2 min-height wrapper stays unchanged and the
+  arithmetic still holds (block = composer + max(keyboard − gesture bar,
+  8 + content)).
+- Home mirrors both: `HomeComposer`'s root `Column` carries the
+  press-listener (a tap anywhere in composer *or panel* closes the FAB menu)
+  and the inset modifier; the panel card sits below the composer's surface.
+
+### 8.2 Panel content — the reference's list
+
+Supersedes the tile grid. A grab handle tops the card (visual marker only —
+the panel is not draggable), then full-width rows of icon + title +
+supporting line:
+
+```
+  ┌───────────────────────────────────────────┐
+  │                  ╭──╮                     │
+  │  🖼   Photos                              │
+  │       Choose from your library            │
+  │  📁   Files                               │
+  │       Attach a document or archive        │
+  │  📷   Camera                              │
+  │       Take a photo now                    │
+  │  ─────────────────────────────────────    │
+  │  Voice input                              │
+  │  [ 🎤 Transcribe │ 📈 Voice note ]        │
+  │  <supporting line for the mode>           │
+  └───────────────────────────────────────────┘
+```
+
+Pinned copy: `Photos` / **`Choose from your library`**, `Files` /
+**`Attach a document or archive`**, `Camera` / **`Take a photo now`**.
+Rows: 24 dp leading icon in `onSurfaceVariant`, title `titleMedium`,
+supporting line `bodyMedium` in `onSurfaceVariant`, 14 dp vertical padding,
+20 dp horizontal insets, ripple across the full row (the tiles' press scale
+goes with the tiles). The voice section is unchanged and keeps its place
+below a divider (`Voice input`, the mode control, the supporting line,
+20 dp bottom padding).
+
+### 8.3 Unchanged
+
+The keyboard swap arithmetic (§7.2), the dismissal set (§7.2), and the
+toggle (§7.3 — the `+`/`×` at 45°, accent tint, `Add`/`Close attachments`).
+The handle is a marker, not a control: no drag behaviour, no dismissal paths
+added or removed.
