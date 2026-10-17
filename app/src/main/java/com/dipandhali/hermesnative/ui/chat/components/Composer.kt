@@ -12,6 +12,9 @@ import androidx.compose.animation.scaleIn
 import androidx.compose.animation.scaleOut
 import androidx.compose.animation.shrinkVertically
 import androidx.compose.animation.togetherWith
+import androidx.compose.foundation.background
+import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -21,6 +24,7 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.Send
@@ -39,12 +43,14 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextField
 import androidx.compose.material3.TextFieldDefaults
+import androidx.compose.material3.ripple
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.focus.onFocusChanged
@@ -92,6 +98,8 @@ fun Composer(
     voiceAmplitude: () -> Int = { 0 },
     attachOpen: Boolean = false,
     attachPanel: (@Composable () -> Unit)? = null,
+    /** Long-press on a ready Send button: save the draft as a prompt. */
+    onSavePrompt: (() -> Unit)? = null,
 ) {
     val focusManager = LocalFocusManager.current
     val panelMinHeight = rememberKeyboardHeight()
@@ -177,6 +185,7 @@ fun Composer(
                             leadingAccessory = leadingAccessory,
                             action = action,
                             onAction = onAction,
+                            onSavePrompt = onSavePrompt,
                         )
                     } else {
                         VoiceRecordingBar(
@@ -226,6 +235,7 @@ private fun ComposerControls(
     leadingAccessory: (@Composable () -> Unit)?,
     action: ComposerAction,
     onAction: () -> Unit,
+    onSavePrompt: (() -> Unit)? = null,
 ) {
     Row(
         modifier = Modifier
@@ -283,7 +293,7 @@ private fun ComposerControls(
             }
         }
 
-        SendButton(action = action, onClick = onAction, enabled = enabled)
+        SendButton(action = action, onClick = onAction, enabled = enabled, onLongPress = onSavePrompt)
     }
 }
 
@@ -293,6 +303,11 @@ private fun ComposerControls(
  * `AnimatedContent` on the action rather than on a boolean, so each transition
  * animates between two *meaningful* states and the label can crossfade with the
  * icon.
+ *
+ * [onLongPress] is a power gesture for the Send state only (stop/steer/queue
+ * have no long-press meaning). It rides [Modifier.combinedClickable] on the
+ * button's own node via the null-onClick overload, so a long press can never
+ * also deliver a tap.
  */
 @Composable
 fun SendButton(
@@ -300,6 +315,7 @@ fun SendButton(
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
     enabled: Boolean = true,
+    onLongPress: (() -> Unit)? = null,
 ) {
     val isDisabled = action is ComposerAction.Disabled || !enabled
 
@@ -321,16 +337,49 @@ fun SendButton(
                 Icon(Icons.Rounded.ArrowUpward, contentDescription = "Send", Modifier.size(20.dp))
             }
 
-            ComposerAction.Send -> FilledIconButton(
-                onClick = onClick,
-                enabled = !isDisabled,
-                modifier = modifier.size(48.dp),
-            ) {
-                Icon(
-                    Icons.AutoMirrored.Rounded.Send,
-                    contentDescription = "Send message",
-                    Modifier.size(20.dp),
-                )
+            ComposerAction.Send -> if (onLongPress != null) {
+                // m3's FilledIconButton cannot carry a long-press (its onClick
+                // is non-null and a stacked gesture would fire the send after
+                // the hold), so the same filled circle is rebuilt under
+                // combinedClickable with the real defaults for its colours.
+                val interactionSource = remember { MutableInteractionSource() }
+                val colors = IconButtonDefaults.filledIconButtonColors()
+                Box(
+                    modifier = modifier
+                        .size(48.dp)
+                        .clip(CircleShape)
+                        .background(
+                            if (!isDisabled) colors.containerColor
+                            else colors.disabledContainerColor,
+                        )
+                        .combinedClickable(
+                            interactionSource = interactionSource,
+                            indication = ripple(),
+                            enabled = !isDisabled,
+                            onClick = onClick,
+                            onLongClick = onLongPress,
+                        ),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Icon(
+                        Icons.AutoMirrored.Rounded.Send,
+                        contentDescription = "Send message · long-press to save as prompt",
+                        Modifier.size(20.dp),
+                        tint = colors.contentColor,
+                    )
+                }
+            } else {
+                FilledIconButton(
+                    onClick = onClick,
+                    enabled = !isDisabled,
+                    modifier = modifier.size(48.dp),
+                ) {
+                    Icon(
+                        Icons.AutoMirrored.Rounded.Send,
+                        contentDescription = "Send message",
+                        Modifier.size(20.dp),
+                    )
+                }
             }
 
             // Stop is the only destructive-in-flight state, so it is filled with the

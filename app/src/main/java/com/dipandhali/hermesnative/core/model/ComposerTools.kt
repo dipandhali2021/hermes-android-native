@@ -23,6 +23,14 @@ data class SavedPrompt(
 ) {
     val labelValue: String get() = label?.takeIf { it.isNotBlank() } ?: "Saved prompt"
     val textValue: String get() = text.orEmpty()
+
+    /**
+     * The server derives a missing label from the text's opening (60 chars),
+     * so unlabeled prompts echo their own text. Rows render such a prompt as
+     * a single block instead of label + copy of it.
+     */
+    val labelEchoesText: Boolean
+        get() = !label.isNullOrBlank() && textValue.startsWith(label)
 }
 
 @Serializable

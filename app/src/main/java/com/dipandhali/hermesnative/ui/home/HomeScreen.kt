@@ -37,6 +37,7 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.only
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawing
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.lazy.LazyColumn
@@ -74,6 +75,9 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
+import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.material3.ripple
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -681,16 +685,37 @@ private fun HomeComposer(
                                 )
                             }
 
-                            androidx.compose.material3.FilledIconButton(
-                                onClick = {
-                                    val trimmed = text.trim()
-                                    if (trimmed.isNotEmpty() || attachments.isNotEmpty()) {
-                                        isStarting = true
-                                        onSend(trimmed, attachments.mapNotNull { it.uriString })
-                                    }
-                                },
-                                enabled = (text.isNotBlank() || attachments.isNotEmpty()) && !isStarting,
-                                modifier = Modifier.size(44.dp),
+                            // m3's FilledIconButton cannot carry a long-press
+                            // (its onClick is non-null, and a stacked gesture
+                            // would fire the send after the hold): the same
+                            // filled circle under combinedClickable, colours
+                            // from the real defaults.
+                            val sendColors = IconButtonDefaults.filledIconButtonColors()
+                            val sendEnabled = (text.isNotBlank() || attachments.isNotEmpty()) && !isStarting
+                            Box(
+                                modifier = Modifier
+                                    .size(44.dp)
+                                    .clip(CircleShape)
+                                    .background(
+                                        if (sendEnabled) sendColors.containerColor
+                                        else sendColors.disabledContainerColor,
+                                    )
+                                    .combinedClickable(
+                                        interactionSource = remember { MutableInteractionSource() },
+                                        indication = ripple(),
+                                        enabled = sendEnabled,
+                                        onLongClick = {
+                                            if (text.isNotBlank()) onSavePrompt(text.trim())
+                                        },
+                                        onClick = {
+                                            val trimmed = text.trim()
+                                            if (trimmed.isNotEmpty() || attachments.isNotEmpty()) {
+                                                isStarting = true
+                                                onSend(trimmed, attachments.mapNotNull { it.uriString })
+                                            }
+                                        },
+                                    ),
+                                contentAlignment = Alignment.Center,
                             ) {
                                 if (isStarting) {
                                     CircularProgressIndicator(
@@ -701,8 +726,13 @@ private fun HomeComposer(
                                 } else {
                                     Icon(
                                         imageVector = Icons.AutoMirrored.Rounded.Send,
-                                        contentDescription = "Start a new conversation",
+                                        contentDescription = "Start a new conversation · long-press to save as prompt",
                                         modifier = Modifier.size(18.dp),
+                                        tint = if (sendEnabled) {
+                                            sendColors.contentColor
+                                        } else {
+                                            sendColors.disabledContentColor
+                                        },
                                     )
                                 }
                             }

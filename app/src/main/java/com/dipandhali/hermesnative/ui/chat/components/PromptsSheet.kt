@@ -17,6 +17,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.Delete
 import androidx.compose.material.icons.rounded.Refresh
 import androidx.compose.material.icons.rounded.Save
@@ -38,6 +39,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.dipandhali.hermesnative.core.model.SavedPrompt
 import com.dipandhali.hermesnative.domain.composer.PromptsUiState
@@ -188,7 +190,7 @@ private fun PromptRow(
     onClick: () -> Unit,
 ) {
     if (onDelete == null) {
-        PromptSurface(prompt, onClick)
+        PromptSurface(prompt, onClick, onDelete = null)
         return
     }
     val dismissState = rememberSwipeToDismissBoxState(
@@ -222,34 +224,67 @@ private fun PromptRow(
             }
         },
     ) {
-        PromptSurface(prompt, onClick)
+        PromptSurface(prompt, onClick, onDelete)
     }
 }
 
 @Composable
-private fun PromptSurface(prompt: SavedPrompt, onClick: () -> Unit) {
+private fun PromptSurface(
+    prompt: SavedPrompt,
+    onClick: () -> Unit,
+    onDelete: (() -> Unit)?,
+) {
     Surface(
         onClick = onClick,
         color = MaterialTheme.colorScheme.surfaceContainerHigh,
         shape = MaterialTheme.shapes.large,
         modifier = Modifier.fillMaxWidth(),
     ) {
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 16.dp, vertical = 12.dp),
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            modifier = Modifier.padding(start = 16.dp, end = 2.dp, top = 10.dp, bottom = 10.dp),
         ) {
-            Text(
-                text = prompt.labelValue,
-                style = MaterialTheme.typography.titleSmall,
-                maxLines = 1,
-            )
-            Text(
-                text = prompt.textValue,
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                maxLines = 2,
-            )
+            Column(
+                modifier = Modifier
+                    .weight(1f)
+                    .padding(end = 8.dp),
+            ) {
+                if (prompt.labelEchoesText) {
+                    // Server-derived label == the text's opening: the text once.
+                    Text(
+                        text = prompt.textValue,
+                        style = MaterialTheme.typography.bodyMedium,
+                        maxLines = 2,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                } else {
+                    Text(
+                        text = prompt.labelValue,
+                        style = MaterialTheme.typography.titleSmall,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                    Text(
+                        text = prompt.textValue,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 2,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
+            }
+            // An explicit delete beside the swipe gesture: discoverable on a
+            // phone where swipe distance and direction are easy to miss.
+            if (onDelete != null) {
+                IconButton(onClick = onDelete) {
+                    Icon(
+                        imageVector = Icons.Rounded.Close,
+                        contentDescription = "Delete saved prompt",
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.size(20.dp),
+                    )
+                }
+            }
         }
     }
 }

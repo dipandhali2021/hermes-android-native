@@ -422,7 +422,7 @@ class HermesApi(private val client: OkHttpClient) {
         )
 
     suspend fun deletePrompt(baseUrl: String, id: String): Result<Unit> =
-        postRaw(baseUrl, "api/prompts", """{"id":${id.jsonString()}}""")
+        deleteRaw(baseUrl, "api/prompts", """{"id":${id.jsonString()}}""")
 
     // ---------- Profiles ----------
 
@@ -531,6 +531,17 @@ class HermesApi(private val client: OkHttpClient) {
     private suspend fun postRaw(baseUrl: String, path: String, body: String): Result<Unit> =
         executeUnit(baseUrl, path) {
             Request.Builder().url(it).post(body.toRequestBody(jsonMedia))
+        }
+
+    /**
+     * HTTP DELETE with a JSON body — rare on this server but real: `DELETE
+     * /api/prompts` carries `{id}`, and a POST to the same path lands in the
+     * *save* handler ("text is required"), which is exactly the bug this
+     * plumbing exists to prevent.
+     */
+    private suspend fun deleteRaw(baseUrl: String, path: String, body: String): Result<Unit> =
+        executeUnit(baseUrl, path) {
+            Request.Builder().url(it).delete(body.toRequestBody(jsonMedia))
         }
 
     private suspend fun <T> execute(
