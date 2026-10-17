@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Paths the FileProvider may hand out. Both entries live in the cache because
+  they are transient: a recording is either uploaded or deleted within the
+  session, and a camera capture is uploaded as soon as it is staged.
+-->
+<paths>
+    <cache-path name="voice" path="voice/" />
+    <cache-path name="camera" path="camera/" />
+</paths>

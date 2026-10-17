@@ -3,6 +3,19 @@
 
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+    <uses-permission android:name="android.permission.RECORD_AUDIO" />
+
+    <!--
+      Camera capture goes through the system camera app, so no CAMERA
+      permission is declared (declaring one would make it a runtime
+      prerequisite). This entry is only for package visibility: without it,
+      Android 11+ would report no camera app before trying to launch one.
+    -->
+    <queries>
+        <intent>
+            <action android:name="android.media.action.IMAGE_CAPTURE" />
+        </intent>
+    </queries>
 
     <application
         android:name=".HermesApp"
@@ -26,5 +39,20 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
+
+        <!--
+          Handing the camera app and the upload pipeline a readable URI for
+          cache files (recordings under voice/, captures under camera/).
+          Not exported; access is granted per-URI.
+        -->
+        <provider
+            android:name="androidx.core.content.FileProvider"
+            android:authorities="${applicationId}.fileprovider"
+            android:exported="false"
+            android:grantUriPermissions="true">
+            <meta-data
+                android:name="android.support.FILE_PROVIDER_PATHS"
+                android:resource="@xml/file_paths" />
+        </provider>
     </application>
 </manifest>
