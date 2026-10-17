@@ -82,6 +82,19 @@ object Routes {
         }
         return if (params.isEmpty()) base else "$base?${params.joinToString("&")}"
     }
+
+    /**
+     * A chat opened as the REPLACEMENT for a mid-chat profile switch: same
+     * chat route with a one-shot banner that shows in the new conversation,
+     * plus a distinct arg so the destination is the composable decision.
+     */
+    fun chatSwitched(sessionId: String, profileName: String): String {
+        val base = "$CHAT/${java.net.URLEncoder.encode(sessionId, "UTF-8")}"
+        return "$base?switched=${java.net.URLEncoder.encode(
+            "Switched to $profileName — new conversation",
+            "UTF-8",
+        )}"
+    }
 }
 
 /**
@@ -180,7 +193,7 @@ private fun HermesNavHost(startDestination: String) {
         }
 
         composable(
-            route = "${Routes.CHAT}/{sessionId}?message={message}&attachments={attachments}",
+            route = "${Routes.CHAT}/{sessionId}?message={message}&attachments={attachments}&switched={switched}",
             arguments = listOf(
                 navArgument("sessionId") { type = NavType.StringType },
                 navArgument("message") {
@@ -189,6 +202,11 @@ private fun HermesNavHost(startDestination: String) {
                     defaultValue = null
                 },
                 navArgument("attachments") {
+                    type = NavType.StringType
+                    nullable = true
+                    defaultValue = null
+                },
+                navArgument("switched") {
                     type = NavType.StringType
                     nullable = true
                     defaultValue = null
@@ -215,6 +233,7 @@ private fun HermesNavHost(startDestination: String) {
                 sessionId = sessionId,
                 initialMessage = message,
                 initialAttachments = attachments,
+                switchedNotice = entry.arguments?.getString("switched"),
                 // The hamburger is gone: this is a home button, and it goes back to
                 // the default screen rather than opening a drawer.
                 onGoHome = {
@@ -225,6 +244,16 @@ private fun HermesNavHost(startDestination: String) {
                     }
                 },
                 onOpenSettings = { navController.navigate(Routes.SETTINGS) },
+                onSwitchSession = { newId, profileName ->
+                    // REPLACE this chat on the stack: back must not reopen a
+                    // conversation the new profile cannot read.
+                    val currentId = navController.currentBackStackEntry?.destination?.id
+                    navController.navigate(Routes.chatSwitched(newId, profileName)) {
+                        if (currentId != null) {
+                            popUpTo(currentId) { inclusive = true }
+                        }
+                    }
+                },
             )
         }
 

@@ -38,12 +38,19 @@ class SessionRepository @Inject constructor(
      * (web parity: `static/sessions.js` sends `model`/`model_provider` in the
      * body), so the chat opens already on the picked model.
      */
-    suspend fun create(model: String? = null, provider: String? = null): Result<String> {
+    suspend fun create(
+        model: String? = null,
+        provider: String? = null,
+        workspace: String? = null,
+        worktree: Boolean? = null,
+        profile: String? = null,
+    ): Result<String> {
         val baseUrl = serverState.currentBaseUrl
             ?: return Result.failure(ApiException(DataError.NotHermes))
-        return api.newSession(baseUrl, NewSessionRequest(model, provider)).mapCatching { response ->
-            response.sessionId ?: throw ApiException(DataError.Malformed("no session_id"))
-        }
+        return api.newSession(baseUrl, NewSessionRequest(model, provider, workspace, worktree, profile))
+            .mapCatching { response ->
+                response.sessionId ?: throw ApiException(DataError.Malformed("no session_id"))
+            }
     }
 
     suspend fun rename(sessionId: String, title: String): Result<Unit> {
@@ -76,5 +83,22 @@ class SessionRepository @Inject constructor(
         val baseUrl = serverState.currentBaseUrl
             ?: return Result.failure(ApiException(DataError.NotHermes))
         return api.updateSession(baseUrl, sessionId, model, provider)
+    }
+
+    /**
+     * Re-points one conversation at another workspace and (already-loaded)
+     * model pair in one settlement. The server refuses while a run is
+     * streaming, but the callsite guards that first; a mixed update is the
+     * server's own transactional unit.
+     */
+    suspend fun updateContext(
+        sessionId: String,
+        workspace: String?,
+        model: String?,
+        provider: String?,
+    ): Result<Unit> {
+        val baseUrl = serverState.currentBaseUrl
+            ?: return Result.failure(ApiException(DataError.NotHermes))
+        return api.updateConversationContext(baseUrl, sessionId, workspace, model, provider)
     }
 }

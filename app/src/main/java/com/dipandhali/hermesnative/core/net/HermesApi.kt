@@ -151,6 +151,27 @@ class HermesApi(private val client: OkHttpClient) {
         ),
     )
 
+    /**
+     * One settlement that re-points a conversation (workspace switch) and, in
+     * the same request, keeps its model pair coherent with the client state.
+     * Absent model keys leave the server's value untouched (wire tolerance
+     * for sessions that never reported a model).
+     */
+    suspend fun updateConversationContext(
+        baseUrl: String,
+        sessionId: String,
+        workspace: String?,
+        model: String?,
+        modelProvider: String?,
+    ): Result<Unit> = postRaw(
+        baseUrl,
+        "api/session/update",
+        json.encodeToString(
+            SessionUpdateRequest.serializer(),
+            SessionUpdateRequest(sessionId, model, modelProvider, workspace),
+        ),
+    )
+
     suspend fun reasoning(baseUrl: String, sessionId: String?): Result<ReasoningResponse> = get(
         baseUrl,
         "api/reasoning" + (sessionId?.let { "?session_id=${it.urlEncoded()}" } ?: ""),

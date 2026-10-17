@@ -9,6 +9,7 @@ import com.dipandhali.hermesnative.core.model.SessionRow
 import com.dipandhali.hermesnative.core.net.ApiException
 import com.dipandhali.hermesnative.data.media.MediaRepository
 import com.dipandhali.hermesnative.data.media.TranscriptionRepository
+import com.dipandhali.hermesnative.data.profiles.ProfileRepository
 import com.dipandhali.hermesnative.data.prompts.PromptsRepository
 import com.dipandhali.hermesnative.data.sessions.SessionRepository
 import com.dipandhali.hermesnative.data.settings.ServerState
@@ -39,6 +40,7 @@ class SessionsViewModel @Inject constructor(
     private val repository: SessionRepository,
     private val media: MediaRepository,
     private val promptsRepository: PromptsRepository,
+    private val profileRepository: ProfileRepository,
     private val settings: SettingsStore,
     private val serverState: ServerState,
     private val voiceRecorder: VoiceRecorder,
@@ -65,6 +67,9 @@ class SessionsViewModel @Inject constructor(
                 _state.update { it.copy(voiceMode = mode) }
             }
         }
+        // Boot identity: who is live on the server. New chats on this screen
+        // inherit that profile's default workspace.
+        loadProfileIdentity()
     }
 
     fun refresh() {
@@ -223,7 +228,13 @@ class SessionsViewModel @Inject constructor(
     fun createSession() {
         viewModelScope.launch {
             val pick = selection()
-            repository.create(model = pick?.model, provider = pick?.provider)
+            repository.create(
+                model = pick?.model,
+                provider = pick?.provider,
+                // Home sends omit `worktree` on purpose (three-value contract):
+                // the profile's config decides isolation, same as a CLI send.
+                workspace = _state.value.tools.profiles.defaultWorkspace,
+            )
                 .onSuccess { sessionId ->
                     // The new session must appear in the list before navigation, or
                     // the tap looks like it did nothing.
@@ -262,7 +273,12 @@ class SessionsViewModel @Inject constructor(
     private fun createAndSend(message: String, attachmentUris: List<String>) {
         viewModelScope.launch {
             val pick = selection()
-            val sessionId = repository.create(model = pick?.model, provider = pick?.provider)
+            val sessionId = repository.create(
+                model = pick?.model,
+                provider = pick?.provider,
+                // As with createSession: profile default, no explicit worktree key.
+                workspace = _state.value.tools.profiles.defaultWorkspace,
+            )
                 .getOrElse { error ->
                     _state.update { it.copy(voicePhase = VoicePhase.Idle) }
                     _effects.trySend(SessionsEffect.Message(error.toMessage()))
@@ -283,6 +299,109 @@ class SessionsViewModel @Inject constructor(
             _state.update { it.copy(voicePhase = VoicePhase.Idle) }
             refresh()
             _effects.trySend(SessionsEffect.OpenSessionAndSend(sessionId, message, attachments))
+        }
+    }
+
+    // ---------- Profile identity & home-side switch ----------
+
+    /**
+     * Boot identity resolution. A 404 from either endpoint means a server
+     * older than profiles — the panel row hides quietly; other failures keep
+     * the row and surface on open.
+     */
+    fun loadProfileIdentity() {
+        _state.update { s ->
+            s.copy(tools = s.tools.copy(profiles = s.tools.profiles.copy(loading = true, error = null)))
+        }
+        viewModelScope.launch {
+            val active = profileRepository.active()
+            val rowsBundle = profileRepository.list()
+
+            val hidden = rowHiddenByMissingApi(active.exceptionOrNull() as? ApiException) ||
+                rowHiddenByMissingApi(rowsBundle.exceptionOrNull() as? ApiException)
+            val activeResult = active.getOrNull()
+            val rows = rowsBundle.getOrNull()
+            _state.update { s ->
+                s.copy(
+                    tools = s.tools.copy(
+                        profiles = s.tools.profiles.copy(
+                            loading = false,
+                            available = !hidden,
+                            activeName = activeResult?.name ?: s.tools.profiles.activeName,
+                            activeIsDefault = activeResult?.isDefault,
+                            defaultWorkspace = activeResult?.defaultWorkspace
+                                ?: s.tools.profiles.defaultWorkspace,
+                            singleMode = rows?.singleProfileMode ?: s.tools.profiles.singleMode,
+                            rows = rows?.profiles?.filter { it.visible != false }
+                                ?: s.tools.profiles.rows,
+                            error = if (hidden) null else {
+                                active.exceptionOrNull()?.toMessage()
+                                    ?: rowsBundle.exceptionOrNull()?.toMessage() ?: s.tools.profiles.error
+                            },
+                        ),
+                    ),
+                )
+            }
+        }
+    }
+
+    /**
+     * Home-side switch: the active profile drives which sessions list follows
+     * and what a NEW chat points at; the composer retargets to that profile's
+     * default workspace. There is no conversation to re-tag here — nothing
+     * exists yet.
+     */
+    fun switchProfile(name: String) {
+        viewModelScope.launch {
+            _state.update { s ->
+                s.copy(
+                    tools = s.tools.copy(
+                        profiles = s.tools.profiles.copy(busySwitching = true, error = null),
+                    ),
+                )
+            }
+            profileRepository.switch(name)
+                .onSuccess { switched ->
+                    _state.update { s ->
+                        s.copy(
+                            tools = s.tools.copy(
+                                profiles = s.tools.profiles.copy(
+                                    busySwitching = false,
+                                    activeName = switched.active ?: name,
+                                    activeIsDefault = switched.isDefault,
+                                    defaultWorkspace = switched.defaultWorkspace
+                                        ?: s.tools.profiles.defaultWorkspace,
+                                    pickerOpen = false,
+                                ),
+                            ),
+                        )
+                    }
+                    _effects.trySend(SessionsEffect.Message("Switched to ${switched.active ?: name}"))
+                    refresh()
+                }
+                .onFailure { err ->
+                    _state.update { s ->
+                        s.copy(
+                            tools = s.tools.copy(
+                                profiles = s.tools.profiles.copy(busySwitching = false),
+                            ),
+                        )
+                    }
+                    _effects.trySend(SessionsEffect.Message(err.toMessage()))
+                }
+        }
+    }
+
+    fun openProfilePicker() {
+        _state.update { s ->
+            s.copy(tools = s.tools.copy(profiles = s.tools.profiles.copy(pickerOpen = true, error = null)))
+        }
+        loadProfileIdentity()
+    }
+
+    fun closeProfilePicker() {
+        _state.update { s ->
+            s.copy(tools = s.tools.copy(profiles = s.tools.profiles.copy(pickerOpen = false)))
         }
     }
 

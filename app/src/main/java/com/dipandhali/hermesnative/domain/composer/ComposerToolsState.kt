@@ -1,6 +1,7 @@
 package com.dipandhali.hermesnative.domain.composer
 
 import com.dipandhali.hermesnative.core.error.DataError
+import com.dipandhali.hermesnative.core.model.ProfileDto
 import com.dipandhali.hermesnative.core.model.SavedPrompt
 import com.dipandhali.hermesnative.core.net.ApiException
 
@@ -21,8 +22,27 @@ data class PromptsUiState(
     val recentlyDeleted: SavedPrompt? = null,
 )
 
+data class ProfilesUiState(
+    /** null until something probes either profile endpoint. */
+    val available: Boolean? = null,
+    val loading: Boolean = false,
+    val error: String? = null,
+    /** Boot identity — who is live, and what a new chat should point at. */
+    val activeName: String? = null,
+    val activeIsDefault: Boolean? = null,
+    val defaultWorkspace: String? = null,
+    /** `single_profile_mode` from GET /api/profiles: the row hides. */
+    val singleMode: Boolean = false,
+    val rows: List<ProfileDto> = emptyList(),
+    val pickerOpen: Boolean = false,
+    val managerOpen: Boolean = false,
+    val createOpen: Boolean = false,
+    val busySwitching: Boolean = false,
+)
+
 data class ComposerToolsState(
     val prompts: PromptsUiState = PromptsUiState(),
+    val profiles: ProfilesUiState = ProfilesUiState(),
 )
 
 /**

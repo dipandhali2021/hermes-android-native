@@ -21,6 +21,9 @@ import com.dipandhali.hermesnative.domain.composer.BusySendMode
 import com.dipandhali.hermesnative.domain.composer.ComposerAction
 import com.dipandhali.hermesnative.domain.composer.ComposerToolsState
 import com.dipandhali.hermesnative.domain.composer.PromptsUiState
+import com.dipandhali.hermesnative.domain.composer.ProfileSwitchMode
+import com.dipandhali.hermesnative.domain.composer.profileSwitchMode
+import com.dipandhali.hermesnative.core.model.ProfileSwitchResponse
 import com.dipandhali.hermesnative.domain.composer.composeWithPrompt
 import com.dipandhali.hermesnative.domain.composer.parseComposerCommand
 import com.dipandhali.hermesnative.domain.composer.resolveComposerAction
@@ -65,6 +68,7 @@ class ChatViewModel @Inject constructor(
     private val chat: ChatRepository,
     private val sessions: SessionRepository,
     private val promptsRepository: com.dipandhali.hermesnative.data.prompts.PromptsRepository,
+    private val profilesRepository: com.dipandhali.hermesnative.data.profiles.ProfileRepository,
     private val media: MediaRepository,
     private val voiceRecorder: VoiceRecorder,
     private val transcription: TranscriptionRepository,
@@ -150,6 +154,8 @@ class ChatViewModel @Inject constructor(
                             items = detail.messages.toTranscript(),
                             isLoading = false,
                             model = detail.model ?: state.model,
+                            modelProvider = detail.modelProvider ?: state.modelProvider,
+                            workspace = detail.workspace ?: state.workspace,
                             isStreaming = detail.isStreaming,
                             activeStreamId = detail.activeStreamId,
                         )
@@ -901,6 +907,79 @@ class ChatViewModel @Inject constructor(
         }
     }
 
+    // ---------- Profile switch ----------
+    //
+    // With content (or a run in flight) the conversation already belongs to
+    // the old profile's world: switch, then create the replacement
+    // immediately and let the host REPLACE this screen on its back stack.
+    // An empty idle conversation just re-tags in place — same id, the new
+    // profile's defaults applied through session/update. 403 bindings and
+    // 409 refusals surface the server's own wording.
+
+    fun switchProfile(name: String) {
+        val snapshot = _uiState.value
+        val mode = profileSwitchMode(
+            hasTranscript = snapshot.items.isNotEmpty(),
+            runInFlight = snapshot.isBusy || snapshot.activeStreamId != null,
+        )
+        viewModelScope.launch {
+            profilesRepository.switch(name)
+                .onSuccess { switched ->
+                    when (mode) {
+                        ProfileSwitchMode.ReplaceChat -> createReplacementChat(switched)
+                        ProfileSwitchMode.ReTagInPlace -> reTagInPlace(snapshot, switched)
+                    }
+                }
+                .onFailure { _effects.trySend(ChatEffect.ShowMessage(it.toMessage())) }
+        }
+    }
+
+    private fun createReplacementChat(switched: ProfileSwitchResponse) {
+        viewModelScope.launch {
+            sessions.create(
+                workspace = switched.defaultWorkspace,
+                worktree = false,
+                profile = switched.active,
+            )
+                .onSuccess { newId ->
+                    _effects.trySend(
+                        ChatEffect.SwitchedSession(
+                            newId,
+                            switched.active ?: "the new profile",
+                        ),
+                    )
+                }
+                .onFailure { _effects.trySend(ChatEffect.ShowMessage(it.toMessage())) }
+        }
+    }
+
+    private suspend fun reTagInPlace(
+        snapshot: ChatUiState,
+        switched: ProfileSwitchResponse,
+    ) {
+        val sessionId = snapshot.sessionId
+        if (sessionId == null) {
+            createReplacementChat(switched)
+            return
+        }
+        sessions.updateContext(
+            sessionId = sessionId,
+            workspace = switched.defaultWorkspace,
+            model = switched.defaultModel ?: snapshot.model,
+            provider = switched.defaultModelProvider ?: snapshot.modelProvider,
+        )
+            .onSuccess {
+                _uiState.update { state ->
+                    state.copy(
+                        workspace = switched.defaultWorkspace ?: state.workspace,
+                        model = switched.defaultModel ?: state.model,
+                        modelProvider = switched.defaultModelProvider ?: state.modelProvider,
+                    )
+                }
+            }
+            .onFailure { _effects.trySend(ChatEffect.ShowMessage(it.toMessage())) }
+    }
+
     private fun Throwable.toMessage(): String =
         (this as? ApiException)?.error?.userMessage() ?: (message ?: "Something went wrong.")
 
@@ -921,6 +1000,13 @@ class ChatViewModel @Inject constructor(
 
 sealed interface ChatEffect {
     data class ShowMessage(val text: String) : ChatEffect
+
+    /**
+     * A mid-chat profile switch landed: navigate to the replacement
+     * conversation, REPLACING the back-stack entry — back must never reopen
+     * a chat the (new) profile cannot read.
+     */
+    data class SwitchedSession(val sessionId: String, val profileName: String) : ChatEffect
 }
 
 /**
@@ -954,6 +1040,7 @@ data class ChatUiState(
     val items: List<TranscriptItem> = emptyList(),
     val model: String? = null,
     val modelProvider: String? = null,
+    val workspace: String? = null,
     val queued: List<String> = emptyList(),
     val reasoningEffort: String? = null,
     val pendingAttachments: List<PendingAttachment> = emptyList(),

@@ -102,7 +102,11 @@ fun ChatScreen(
     onGoHome: () -> Unit,
     initialMessage: String? = null,
     initialAttachments: List<AttachmentDto> = emptyList(),
+    /** Set when this screen was opened by a mid-chat profile switch. */
+    switchedNotice: String? = null,
     onOpenSettings: () -> Unit,
+    /** Navigate to the replacement chat, REPLACING this entry on the stack. */
+    onSwitchSession: (String, String) -> Unit = { _, _ -> },
     viewModel: ChatViewModel = hiltViewModel(),
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
@@ -182,10 +186,15 @@ fun ChatScreen(
         sessionId?.let { viewModel.openSession(it, initialMessage, initialAttachments) }
     }
 
+    LaunchedEffect(sessionId, switchedNotice) {
+        switchedNotice?.let { text -> snackbar.showSnackbar(text) }
+    }
+
     LaunchedEffect(Unit) {
         viewModel.effects.collect { effect ->
             when (effect) {
                 is ChatEffect.ShowMessage -> snackbar.showSnackbar(effect.text)
+                is ChatEffect.SwitchedSession -> onSwitchSession(effect.sessionId, effect.profileName)
             }
         }
     }
