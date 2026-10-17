@@ -46,12 +46,11 @@ relaunch recovery.
 - Round 5.1 feature build: [run 39023202460](https://github.com/dipandhali2021/hermes-android-native/actions/runs/39023202460) — green (`2f0fe29`).
 - Local: `./gradlew :app:testDebugUnitTest` green at each task commit (110
   tests on `feat/model-picker`, 112 on the combined build).
-- Round 5.1 combined build: pending — this file is updated on the combined
-  branch right after its push; check the run list for `test/model-picker-home-send`.
+- Round 5.1 combined build: [run 39031187257](https://github.com/dipandhali2021/hermes-android-native/actions/runs/39031187257) — green (`1302a06`).
 
 ## APK paths
 - **Combined build — use this one:** `/tmp/opencode/mp-r5-combined/hermes-native-debug-apk/app-debug.apk`
-  (md5 recorded right after the combined run goes green). Contains the model
+  (md5 `e055c2f0b31b26ebc949fa4f01ab968b`, commit `1302a06`). Contains the model
   picker, the home-send fix, and all of Rounds 3–5.1. The same file is also
   kept at the familiar path `/tmp/opencode/model-picker-home-send-apk/app-debug.apk`.
 - Feature-only build: `/tmp/opencode/mp-r5-feat/hermes-native-debug-apk/app-debug.apk`
