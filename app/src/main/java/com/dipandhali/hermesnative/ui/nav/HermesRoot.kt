@@ -28,6 +28,8 @@ import com.dipandhali.hermesnative.core.model.AttachmentDto
 import com.dipandhali.hermesnative.ui.chat.ChatScreen
 import com.dipandhali.hermesnative.ui.components.FabMenuAction
 import com.dipandhali.hermesnative.ui.connect.ConnectScreen
+import com.dipandhali.hermesnative.ui.files.FilePreviewScreen
+import com.dipandhali.hermesnative.ui.files.FilesScreen
 import com.dipandhali.hermesnative.ui.panels.PanelKind
 import com.dipandhali.hermesnative.ui.panels.PanelScreen
 import com.dipandhali.hermesnative.ui.home.HomeScreen
@@ -95,6 +97,19 @@ object Routes {
             "UTF-8",
         )}"
     }
+
+    /**
+     * The workspace Files panel for one session. The path arg is
+     * URL-encoded because a workspace path is full of `/`.
+     */
+    const val FILES = "files"
+    fun files(sessionId: String): String =
+        "$FILES/${java.net.URLEncoder.encode(sessionId, "UTF-8")}"
+
+    const val FILE_PREVIEW = "file_preview"
+    fun filePreview(sessionId: String, path: String): String =
+        "$FILE_PREVIEW/${java.net.URLEncoder.encode(sessionId, "UTF-8")}" +
+            "?path=${java.net.URLEncoder.encode(path, "UTF-8")}"
 }
 
 /**
@@ -259,6 +274,7 @@ private fun HermesNavHost(startDestination: String) {
                     // returns to the chat it was started from.
                     navController.navigate(Routes.chat(newId))
                 },
+                onOpenFiles = { navController.navigate(Routes.files(sessionId.orEmpty())) },
             )
         }
 
@@ -270,6 +286,40 @@ private fun HermesNavHost(startDestination: String) {
                 ?.let { runCatching { PanelKind.valueOf(it) }.getOrNull() }
                 ?: PanelKind.SKILLS
             PanelScreen(kind = kind, onBack = { navController.popBackStack() })
+        }
+
+        composable(
+            route = "${Routes.FILES}/{sessionId}",
+            arguments = listOf(navArgument("sessionId") { type = NavType.StringType }),
+        ) { entry ->
+            val sessionId = entry.arguments?.getString("sessionId").orEmpty()
+            FilesScreen(
+                sessionId = sessionId,
+                onBack = { navController.popBackStack() },
+                onOpenPreview = { id, path -> navController.navigate(Routes.filePreview(id, path)) },
+            )
+        }
+
+        composable(
+            route = "${Routes.FILE_PREVIEW}/{sessionId}?path={path}",
+            arguments = listOf(
+                navArgument("sessionId") { type = NavType.StringType },
+                navArgument("path") { type = NavType.StringType },
+            ),
+        ) { entry ->
+            val sessionId = java.net.URLDecoder.decode(
+                entry.arguments?.getString("sessionId").orEmpty(),
+                "UTF-8",
+            )
+            val path = java.net.URLDecoder.decode(
+                entry.arguments?.getString("path").orEmpty(),
+                "UTF-8",
+            )
+            FilePreviewScreen(
+                sessionId = sessionId,
+                path = path,
+                onBack = { navController.popBackStack() },
+            )
         }
 
         composable(Routes.SETTINGS) {

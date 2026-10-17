@@ -12,6 +12,7 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.scaleIn
 import androidx.compose.animation.scaleOut
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -118,6 +119,8 @@ fun ChatScreen(
     onSwitchSession: (String, String) -> Unit = { _, _ -> },
     /** Push another conversation (worktree chats) — back returns here. */
     onOpenNewSession: (String) -> Unit = {},
+    /** The session's workspace Files panel. */
+    onOpenFiles: () -> Unit = {},
     viewModel: ChatViewModel = hiltViewModel(),
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
@@ -273,11 +276,18 @@ fun ChatScreen(
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 maxLines = 1,
                                 overflow = TextOverflow.Ellipsis,
+                                modifier = Modifier
+                                    .clickable { viewModel.openWorkspacePicker() },
                             )
                         }
                     }
                 },
                 actions = {
+                    // One tap from a chat to its workspace's files: the session
+                    // exists by construction on this route.
+                    IconButton(onClick = onOpenFiles) {
+                        Icon(Icons.Rounded.FolderOpen, contentDescription = "Browse workspace files")
+                    }
                     IconButton(onClick = onOpenSettings) {
                         Icon(Icons.Rounded.Tune, contentDescription = "Settings")
                     }
@@ -554,9 +564,7 @@ fun ChatScreen(
                     viewModel.closeWorkspacePicker()
                     viewModel.openWorkspaceManage()
                 },
-                // The Files screen lands in task 11; until then the row stays
-                // hidden rather than pointing at a half-built route.
-                onBrowseFiles = null,
+                onBrowseFiles = onOpenFiles,
                 onRetry = viewModel::retryWorkspaces,
                 onDismiss = viewModel::closeWorkspacePicker,
             )
