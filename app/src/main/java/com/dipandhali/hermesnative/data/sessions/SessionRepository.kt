@@ -42,7 +42,8 @@ class SessionRepository @Inject constructor(
         val baseUrl = serverState.currentBaseUrl
             ?: return Result.failure(ApiException(DataError.NotHermes))
         return api.newSession(baseUrl, NewSessionRequest(model, provider)).mapCatching { response ->
-            response.sessionId ?: throw ApiException(DataError.Malformed("no session_id"))
+            // The id lives inside the nested session: {"session": {"session_id": ...}}.
+            response.session?.sessionId ?: throw ApiException(DataError.Malformed("no session_id"))
         }
     }
 

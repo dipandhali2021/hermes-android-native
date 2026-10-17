@@ -81,16 +81,28 @@ class SessionsViewModel @Inject constructor(
      * create-then-open, and the first message travels with the navigation rather
      * than being sent from the home screen. Sending it here would leave the user
      * on a screen showing a run they cannot see.
+     *
+     * [SessionsUiState.isStartingChat] drives the composer's spinner, so both
+     * outcomes end it — a failure that leaves the button spinning is
+     * indistinguishable from a frozen app.
      */
     fun startChatWith(message: String) {
+        if (_state.value.isStartingChat) return
+        _state.update { it.copy(isStartingChat = true) }
         viewModelScope.launch {
             val pick = selection()
             repository.create(model = pick?.model, provider = pick?.provider)
                 .onSuccess { sessionId ->
+                    // The chat screen owns the turn from here, so the spinner must
+                    // not survive on a screen the user can return to.
+                    _state.update { it.copy(isStartingChat = false) }
                     refresh()
                     _effects.trySend(SessionsEffect.OpenSessionAndSend(sessionId, message))
                 }
-                .onFailure { _effects.trySend(SessionsEffect.Message(it.toMessage())) }
+                .onFailure { error ->
+                    _state.update { it.copy(isStartingChat = false) }
+                    _effects.trySend(SessionsEffect.Message(error.toMessage()))
+                }
         }
     }
 
@@ -222,6 +234,8 @@ data class SessionsUiState(
     val sessions: List<SessionRow> = emptyList(),
     val query: String = "",
     val isLoading: Boolean = false,
+    /** True while the home composer is creating a session before navigating. */
+    val isStartingChat: Boolean = false,
     val error: String? = null,
     /** The remembered pick the home chip shows and new sessions ride on. */
     val model: String? = null,

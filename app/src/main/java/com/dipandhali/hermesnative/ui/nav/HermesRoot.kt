@@ -147,6 +147,9 @@ private fun HermesNavHost(startDestination: String) {
         composable(Routes.HOME) {
             HomeScreen(
                 onOpenSession = { sessionId -> navController.navigate(Routes.chat(sessionId)) },
+                onOpenSessionAndSend = { sessionId, message ->
+                    navController.navigate(Routes.chat(sessionId, message))
+                },
                 onSeeAllSessions = { navController.navigate(Routes.SESSIONS) },
                 onOpenSettings = { navController.navigate(Routes.SETTINGS) },
                 fabActions = panelActions { route -> navController.navigate(route) },

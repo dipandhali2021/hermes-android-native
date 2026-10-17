@@ -47,7 +47,7 @@ class SessionRepositoryCreateModelTest {
     @Test
     fun `create posts the picked model and provider`() = runTest {
         server.enqueue(
-            MockResponse.Builder().code(200).body("""{"session_id":"sess-1"}""").build(),
+            MockResponse.Builder().code(200).body("""{"session":{"session_id":"sess-1"}}""").build(),
         )
         val result = repository().create("@nous:solar-mini4:free", "nous")
         assertTrue(result.isSuccess)
@@ -59,7 +59,7 @@ class SessionRepositoryCreateModelTest {
     @Test
     fun `create without a pick posts an empty body`() = runTest {
         server.enqueue(
-            MockResponse.Builder().code(200).body("""{"session_id":"sess-1"}""").build(),
+            MockResponse.Builder().code(200).body("""{"session":{"session_id":"sess-1"}}""").build(),
         )
         val result = repository().create()
         assertTrue(result.isSuccess)

@@ -35,6 +35,8 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
@@ -93,6 +95,7 @@ private const val RECENT_LIMIT = 5
 @Composable
 fun HomeScreen(
     onOpenSession: (String) -> Unit,
+    onOpenSessionAndSend: (String, String) -> Unit,
     onSeeAllSessions: () -> Unit,
     onOpenSettings: () -> Unit,
     fabActions: List<FabMenuAction>,
@@ -103,6 +106,7 @@ fun HomeScreen(
         state.model?.let { ModelSelection(it, state.modelProvider) },
         state.picker.catalog,
     )
+    val snackbar = remember { SnackbarHostState() }
     var menuOpen by remember { mutableStateOf(false) }
 
     BackHandler(enabled = menuOpen) { menuOpen = false }
@@ -114,16 +118,20 @@ fun HomeScreen(
         viewModel.effects.collect { effect ->
             when (effect) {
                 is SessionsEffect.OpenSession -> onOpenSession(effect.sessionId)
-                // Sent from the home composer, which already navigates once the
-                // session exists; the message rides in the chat route.
-                is SessionsEffect.OpenSessionAndSend -> onOpenSession(effect.sessionId)
-                is SessionsEffect.Message -> Unit
+                // Sent from the home composer: the message has to travel with the
+                // navigation, or the chat screen never learns what to send.
+                is SessionsEffect.OpenSessionAndSend ->
+                    onOpenSessionAndSend(effect.sessionId, effect.message)
+                // A failure that is not shown is indistinguishable from a freeze —
+                // this screen has no transcript to render it into.
+                is SessionsEffect.Message -> snackbar.showSnackbar(effect.text)
             }
         }
     }
 
     Scaffold(
         contentWindowInsets = WindowInsets.safeDrawing,
+        snackbarHost = { SnackbarHost(snackbar) },
         topBar = {
             TopAppBar(
                 colors = TopAppBarDefaults.topAppBarColors(
@@ -161,6 +169,7 @@ fun HomeScreen(
                         onClick = viewModel::openPicker,
                     )
                 },
+                isStarting = state.isStartingChat,
                 // The composer is the only element that insets itself against the
                 // keyboard and the gesture bar. `inner` below is only a padding
                 // value — it is not consumed — so a second imePadding anywhere in
@@ -285,16 +294,19 @@ fun HomeScreen(
  *
  * [leadingAccessory] is the model chip — the same control the chat composer
  * shows, so the picker is reachable before a conversation exists.
+ *
+ * [isStarting] comes from the ViewModel rather than local state so a failed
+ * start resets the button even if this composable leaves and re-enters.
  */
 @Composable
 private fun HomeComposer(
     onSend: (String) -> Unit,
     onPress: () -> Unit,
+    isStarting: Boolean,
     modifier: Modifier = Modifier,
     leadingAccessory: (@Composable () -> Unit)? = null,
 ) {
     var text by remember { mutableStateOf("") }
-    var isStarting by remember { mutableStateOf(false) }
     val currentOnPress by rememberUpdatedState(onPress)
 
     Surface(
@@ -342,10 +354,7 @@ private fun HomeComposer(
                 androidx.compose.material3.FilledIconButton(
                     onClick = {
                         val trimmed = text.trim()
-                        if (trimmed.isNotEmpty()) {
-                            isStarting = true
-                            onSend(trimmed)
-                        }
+                        if (trimmed.isNotEmpty()) onSend(trimmed)
                     },
                     enabled = text.isNotBlank() && !isStarting,
                     modifier = Modifier.size(44.dp),
