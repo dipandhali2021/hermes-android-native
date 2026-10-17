@@ -88,7 +88,7 @@ object SseEventParser {
             "cancel" -> ChatEvent.Cancelled
             "done" -> ChatEvent.Done(parseUsage(payload))
             "stream_end" -> ChatEvent.StreamEnd
-            "metering" -> ChatEvent.Metering
+            "metering" -> ChatEvent.Metering(parseUsage(payload))
             "context_status" -> ChatEvent.ContextStatus
             "goal", "goal_continue" -> ChatEvent.Goal
             "pending_steer_leftover" -> ChatEvent.PendingSteerLeftover(str("text") ?: "")

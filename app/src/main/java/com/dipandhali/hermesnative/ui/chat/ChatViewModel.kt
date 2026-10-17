@@ -5,10 +5,12 @@ import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.dipandhali.hermesnative.core.chat.ChatEvent
+import com.dipandhali.hermesnative.core.chat.TokenUsage
 import com.dipandhali.hermesnative.core.chat.isClose
 import com.dipandhali.hermesnative.core.error.userMessage
 import com.dipandhali.hermesnative.core.model.AttachmentDto
 import com.dipandhali.hermesnative.core.model.SavedPrompt
+import com.dipandhali.hermesnative.core.model.SessionDetail
 import com.dipandhali.hermesnative.core.net.ApiException
 import com.dipandhali.hermesnative.data.chat.ChatRepository
 import com.dipandhali.hermesnative.data.media.MediaRepository
@@ -137,7 +139,7 @@ class ChatViewModel @Inject constructor(
         // must not overwrite the transcript of the one they are looking at.
         loadJob?.cancel()
         serverState.setActiveSession(sessionId)
-        _uiState.update { it.copy(sessionId = sessionId, isLoading = true, error = null) }
+        _uiState.update { it.copy(sessionId = sessionId, isLoading = true, error = null, usage = null) }
 
         // Staged before the load so the composer shows the picks while the
         // transcript arrives, ready for the seed send below.
@@ -169,6 +171,7 @@ class ChatViewModel @Inject constructor(
                             workspace = detail.workspace ?: state.workspace,
                             isStreaming = detail.isStreaming,
                             activeStreamId = detail.activeStreamId,
+                            usage = detail.toContextUsage() ?: state.usage,
                         )
                     }
                     // A pick made while the transcript was still loading wins;
@@ -191,6 +194,24 @@ class ChatViewModel @Inject constructor(
             }
         }
     }
+
+    /**
+     * Seeds the context ring from the persisted session state, so reopening a
+     * session shows the same picture the web client renders after a reload
+     * (GET /api/session exposes these counters via `compact()`). Null when the
+     * response carries nothing (older server) — the control stays hidden.
+     */
+    private fun SessionDetail.toContextUsage(): TokenUsage? = TokenUsage(
+        inputTokens = inputTokens,
+        outputTokens = outputTokens,
+        cacheReadTokens = cacheReadTokens,
+        cacheWriteTokens = cacheWriteTokens,
+        estimatedCost = estimatedCost,
+        contextLength = contextLength,
+        thresholdTokens = thresholdTokens,
+        lastPromptTokens = lastPromptTokens,
+        postCompressionEstimate = postCompressionEstimate,
+    ).takeIf { it != TokenUsage() }
 
     /**
      * The model this conversation should start from, once its transcript is
@@ -655,6 +676,12 @@ class ChatViewModel @Inject constructor(
                             _uiState.update { it.copy(queued = it.queued + event.text) }
                         }
 
+                    is ChatEvent.Metering -> event.usage?.let { usage ->
+                        // A bare tick (older server) leaves the last snapshot;
+                        // same-value ticks are dropped by StateFlow equality.
+                        _uiState.update { state -> state.copy(usage = usage) }
+                    }
+
                     is ChatEvent.Done -> {
                         // Not a close event: the title and stream_end still follow.
                         flushPending()
@@ -662,6 +689,7 @@ class ChatViewModel @Inject constructor(
                             _uiState.update { state ->
                                 state.copy(
                                     items = state.items.attachUsage(usage.summary()),
+                                    usage = usage,
                                 )
                             }
                         }
@@ -681,7 +709,7 @@ class ChatViewModel @Inject constructor(
                     is ChatEvent.Cancelled -> flushPending()
 
                     ChatEvent.ApprovalRequested, ChatEvent.ClarificationRequested,
-                    ChatEvent.Metering, ChatEvent.ContextStatus, ChatEvent.Goal,
+                    ChatEvent.ContextStatus, ChatEvent.Goal,
                     ChatEvent.StateSaved, ChatEvent.Heartbeat,
                     is ChatEvent.TitleStatus,
                     -> Unit
@@ -1423,6 +1451,8 @@ data class ChatUiState(
     val queued: List<String> = emptyList(),
     val reasoningEffort: String? = null,
     val pendingAttachments: List<PendingAttachment> = emptyList(),
+    /** Latest context-window/usage snapshot: metering tick, done, or load seed. */
+    val usage: TokenUsage? = null,
 
     // 4. Transient UI-only
     val isLoading: Boolean = false,

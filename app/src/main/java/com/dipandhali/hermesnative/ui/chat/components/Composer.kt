@@ -59,8 +59,10 @@ import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.unit.dp
+import com.dipandhali.hermesnative.core.chat.TokenUsage
 import com.dipandhali.hermesnative.domain.composer.ATTACH_ROTATION_DEGREES
 import com.dipandhali.hermesnative.domain.composer.ComposerAction
+import com.dipandhali.hermesnative.domain.composer.ContextMeter
 import com.dipandhali.hermesnative.domain.composer.attachToggleDescription
 import com.dipandhali.hermesnative.domain.voice.VoiceInputMode
 import com.dipandhali.hermesnative.domain.voice.VoicePhase
@@ -100,6 +102,8 @@ fun Composer(
     attachPanel: (@Composable () -> Unit)? = null,
     /** Long-press on a ready Send button: save the draft as a prompt. */
     onSavePrompt: (() -> Unit)? = null,
+    /** Latest context-window snapshot; the ring control appears with data. */
+    contextUsage: TokenUsage? = null,
 ) {
     val focusManager = LocalFocusManager.current
     val panelMinHeight = rememberKeyboardHeight()
@@ -186,6 +190,7 @@ fun Composer(
                             action = action,
                             onAction = onAction,
                             onSavePrompt = onSavePrompt,
+                            contextUsage = contextUsage,
                         )
                     } else {
                         VoiceRecordingBar(
@@ -236,6 +241,7 @@ private fun ComposerControls(
     action: ComposerAction,
     onAction: () -> Unit,
     onSavePrompt: (() -> Unit)? = null,
+    contextUsage: TokenUsage? = null,
 ) {
     Row(
         modifier = Modifier
@@ -291,6 +297,13 @@ private fun ComposerControls(
             ) {
                 Icon(voiceModeIcon(voiceMode), contentDescription = "Voice input")
             }
+        }
+
+        // The context meter sits beside the mic, before send — the web's
+        // own composer-right order. It renders only once a usage snapshot
+        // exists, so the row does not carry a dead gauge.
+        ContextMeter.from(contextUsage)?.let { meter ->
+            ContextIndicator(meter)
         }
 
         SendButton(action = action, onClick = onAction, enabled = enabled, onLongPress = onSavePrompt)
