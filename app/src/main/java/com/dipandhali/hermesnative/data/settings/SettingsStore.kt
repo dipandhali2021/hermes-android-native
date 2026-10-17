@@ -7,6 +7,7 @@ import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
 import com.dipandhali.hermesnative.core.net.PersistentCookieJar
 import com.dipandhali.hermesnative.core.net.StoredCookie
+import com.dipandhali.hermesnative.domain.voice.VoiceInputMode
 import com.dipandhali.hermesnative.ui.theme.ThemeMode
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.first
@@ -39,6 +40,7 @@ class SettingsStore @Inject constructor(
         val model = stringPreferencesKey("model")
         val modelProvider = stringPreferencesKey("model_provider")
         val reasoningEffort = stringPreferencesKey("reasoning_effort")
+        val voiceInputMode = stringPreferencesKey("voice_input_mode")
     }
 
     val serverUrl: Flow<String?> = context.dataStore.data.map { it[Keys.serverUrl] }
@@ -53,6 +55,11 @@ class SettingsStore @Inject constructor(
     val lastSessionId: Flow<String?> = context.dataStore.data.map { it[Keys.lastSessionId] }
 
     val reasoningEffort: Flow<String?> = context.dataStore.data.map { it[Keys.reasoningEffort] }
+
+    /** Transcribe vs voice note; unknown values decode to the transcribe default. */
+    val voiceInputMode: Flow<VoiceInputMode> = context.dataStore.data.map { prefs ->
+        VoiceInputMode.fromPref(prefs[Keys.voiceInputMode])
+    }
 
     val model: Flow<Pair<String?, String?>> = context.dataStore.data.map {
         it[Keys.model] to it[Keys.modelProvider]
@@ -78,6 +85,9 @@ class SettingsStore @Inject constructor(
     suspend fun setReasoningEffort(effort: String?) = context.dataStore.edit { prefs ->
         if (effort == null) prefs.remove(Keys.reasoningEffort) else prefs[Keys.reasoningEffort] = effort
     }
+
+    suspend fun setVoiceInputMode(mode: VoiceInputMode) =
+        context.dataStore.edit { it[Keys.voiceInputMode] = mode.prefValue }
 
     /**
      * Persists the cookie jar.
