@@ -56,7 +56,7 @@ Failure modes a reasonable user hits; each gets its pin in the owning task.
 - `fun assembleDictation(typed: String, transcript: String): String` — both trimmed; empty pieces drop out; joined with one space.
 - `fun displayAttachmentNames(names: List<String>): String` — each `voice-*` name → `Voice message`, joined `", "`.
 
-- [ ] **Step 1: Write the failing test** — `VoiceInputLogicTest.kt` (plain JUnit4, no Robolectric):
+- [x] **Step 1: Write the failing test** — `VoiceInputLogicTest.kt` (plain JUnit4, no Robolectric):
 
 ```kotlin
 package com.dipandhali.hermesnative.voice
@@ -112,9 +112,9 @@ class VoiceInputLogicTest {
 }
 ```
 
-- [ ] **Step 2: Run it and watch it fail** — `./gradlew :app:testDebugUnitTest --tests com.dipandhali.hermesnative.voice.VoiceInputLogicTest`. Expected: compilation failure (types do not exist). Record the failure in the ledger line.
-- [ ] **Step 3: Implement `VoiceInput.kt`** to satisfy the tests exactly (KDoc explains the sqrt curve: speech amplitude is perceptually logarithmic; a linear bar spends most of its time near zero).
-- [ ] **Step 4: Rerun the test; green.** Commit: `feat(voice): pure voice-input logic (modes, elapsed, amplitude, dictation)`.
+- [x] **Step 2: Run it and watch it fail** — `./gradlew :app:testDebugUnitTest --tests com.dipandhali.hermesnative.voice.VoiceInputLogicTest`. Expected: compilation failure (types do not exist). Record the failure in the ledger line.
+- [x] **Step 3: Implement `VoiceInput.kt`** to satisfy the tests exactly (KDoc explains the sqrt curve: speech amplitude is perceptually logarithmic; a linear bar spends most of its time near zero).
+- [x] **Step 4: Rerun the test; green.** Commit: `feat(voice): pure voice-input logic (modes, elapsed, amplitude, dictation)`.
 
 ### Task 3: Persist the voice mode
 
@@ -125,8 +125,8 @@ class VoiceInputLogicTest {
 - `val voiceInputMode: Flow<VoiceInputMode>` (key `voice_input_mode`, decode via `VoiceInputMode.fromPref`, `runCatching` like `themeMode`).
 - `suspend fun setVoiceInputMode(mode: VoiceInputMode)`.
 
-- [ ] **Step 1:** Add key + flow + setter, mirroring `themeMode`'s shape exactly.
-- [ ] **Step 2:** `./gradlew :app:compileDebugKotlin` (compile gate; decoding is already covered by Task 2's `fromPref` tests). Commit: `feat(voice): persist voice input mode`.
+- [x] **Step 1:** Add key + flow + setter, mirroring `themeMode`'s shape exactly.
+- [x] **Step 2:** `./gradlew :app:compileDebugKotlin` (compile gate; decoding is already covered by Task 2's `fromPref` tests). Commit: `feat(voice): persist voice input mode`.
 
 ### Task 4: Transcribe endpoint + payload extraction + repository — tests first
 
@@ -144,7 +144,7 @@ class VoiceInputLogicTest {
 - `UriPayload(name: String, mime: String?, size: Long?, bytes: ByteArray)` + `internal fun readUriPayload(resolver: ContentResolver, uri: Uri): Result<UriPayload>` + moved `MAX_UPLOAD_BYTES` (20 MB) — MediaRepository keeps identical behavior and messages.
 - `TranscriptionRepository.transcribe(uri: Uri): Result<String>` — `NotHermes` when no base URL; failure when `!ok || transcript.isNullOrBlank()` carrying `resp.error` (via `ApiException(DataError.Unknown(...))`).
 
-- [ ] **Step 1: Write the failing test** — `TranscribeApiTest.kt`, mirroring `UploadApiTest.kt` (MockWebServer):
+- [x] **Step 1: Write the failing test** — `TranscribeApiTest.kt`, mirroring `UploadApiTest.kt` (MockWebServer):
 
 ```kotlin
 @Test fun `transcribe posts a single file part and maps the transcript`() = runTest {
@@ -169,9 +169,9 @@ class VoiceInputLogicTest {
 }
 ```
 
-- [ ] **Step 2: Run and watch it fail** (types/functions absent), record.
-- [ ] **Step 3: Implement**: `TranscribeResponse`, `HermesApi.transcribe`, `UriPayload.kt`, MediaRepository refactor, `TranscriptionRepository` (delete the clip file is the caller's job — the VM owns lifecycle).
-- [ ] **Step 4: Green** — run `TranscribeApiTest` **and** `UploadApiTest` (guards the extraction). Commit: `feat(voice): transcribe endpoint, URI payload extraction, transcription repository`.
+- [x] **Step 2: Run and watch it fail** (types/functions absent), record.
+- [x] **Step 3: Implement**: `TranscribeResponse`, `HermesApi.transcribe`, `UriPayload.kt`, MediaRepository refactor, `TranscriptionRepository` (delete the clip file is the caller's job — the VM owns lifecycle).
+- [x] **Step 4: Green** — run `TranscribeApiTest` **and** `UploadApiTest` (guards the extraction). Commit: `feat(voice): transcribe endpoint, URI payload extraction, transcription repository`.
 
 ### Task 5: VoiceRecorder shell, camera URI helper, manifest
 
@@ -187,8 +187,8 @@ class VoiceInputLogicTest {
 - Manifest: `RECORD_AUDIO`; FileProvider `<provider>` with `${applicationId}.fileprovider`, `@xml/file_paths`, `exported=false`, `grantUriPermissions=true`; `<queries>` with `android.media.action.IMAGE_CAPTURE`.
 - `file_paths.xml`: `<cache-path name="voice" path="voice/" />` and `<cache-path name="camera" path="camera/" />`.
 
-- [ ] **Step 1:** Write manifest + `file_paths.xml` + `CameraCapture.kt` + `VoiceRecorder.kt`.
-- [ ] **Step 2:** Compile gate: `./gradlew :app:compileDebugKotlin` (platform shell has no JVM test; the pinned short-stop message is asserted indirectly by Task 2's string being a shared constant if practical — otherwise it lives here verbatim). Commit: `feat(voice): recorder shell, file provider, camera capture uri`.
+- [x] **Step 1:** Write manifest + `file_paths.xml` + `CameraCapture.kt` + `VoiceRecorder.kt`.
+- [x] **Step 2:** Compile gate: `./gradlew :app:compileDebugKotlin` (platform shell has no JVM test; the pinned short-stop message is asserted indirectly by Task 2's string being a shared constant if practical — otherwise it lives here verbatim). Commit: `feat(voice): recorder shell, file provider, camera capture uri`.
 
 ### Task 6: Composer row — `+`, mic, recording strip
 
@@ -201,8 +201,8 @@ class VoiceInputLogicTest {
 - `VoiceRecordingBar(phase, elapsedMsProvider: () -> Long, amplitudeProvider: () -> Int, onCancel, onStop, modifier)` — while `Recording`, polls every 100 ms into local state only (24 rolling bars, `animateDpAsState` with `HermesMotion.spatialFast()`), timer via `formatElapsed`, cancel = `IconButton(Icons.Rounded.Close)`, stop = `FilledIconButton` with error container (same semantics as the existing Stop). While `Finishing`, spinner + label, no buttons.
 - `Composer` new params: `onMic: (() -> Unit)? = null`, `micEnabled: Boolean = true`, `voicePhase: VoicePhase = VoicePhase.Idle`, `onVoiceStop: () -> Unit = {}`, `onVoiceCancel: () -> Unit = {}`, `voiceElapsedMs: () -> Long = { 0L }`, `voiceAmplitude: () -> Int = { 0 }`. Attach icon becomes `Icons.Rounded.Add` (`contentDescription = "Add"`); mic (`Icons.Rounded.Mic`, `"Voice input"`) renders between the spacer and `SendButton` when `onMic != null` and is `enabled = enabled && micEnabled && voicePhase == Idle`; the toolbar row swaps to `VoiceRecordingBar` while `voicePhase !is Idle` behind `AnimatedContent` + `SizeTransform(clip = false)` with `HermesMotion.spatialFast()`.
 
-- [ ] **Step 1:** Implement the bar + composer changes (text field stays, disabled during recording).
-- [ ] **Step 2:** Compile gate + rerun `ComposerActionTest` (five-state machine untouched). Commit: `feat(voice): composer plus-button, mic, recording strip`.
+- [x] **Step 1:** Implement the bar + composer changes (text field stays, disabled during recording).
+- [x] **Step 2:** Compile gate + rerun `ComposerActionTest` (five-state machine untouched). Commit: `feat(voice): composer plus-button, mic, recording strip`.
 
 ### Task 7: AttachSheet
 
@@ -212,8 +212,8 @@ class VoiceInputLogicTest {
 **Interfaces:**
 - `AttachSheet(voiceMode: VoiceInputMode, onVoiceModeChange: (VoiceInputMode) -> Unit, onPhotos, onCamera, onFiles, onDismiss)` — `ModalBottomSheet` + `rememberModalBottomSheetState(skipPartiallyExpanded = true)` (ModelPickerSheet idiom). Tiles: `PhotoLibrary`/`PhotoCamera`/`FolderOpen` in equal-weight `Surface`s (`shapes.large`, `surfaceContainerHigh`), label under icon; press scale via `graphicsLayer` + `animateFloatAsState(HermesMotion.spatialFast())`. Voice section below a `HorizontalDivider`: `Voice input` label, `SingleChoiceSegmentedButtonRow` (`SegmentedButton`, Mic/GraphicEq icons), supporting line per mode. Bottom padding respects `WindowInsets.navigationBars`.
 
-- [ ] **Step 1:** Implement the sheet with the pinned strings/descriptions.
-- [ ] **Step 2:** Compile gate. Commit: `feat(voice): attach sheet with photos, camera, files, voice mode`.
+- [x] **Step 1:** Implement the sheet with the pinned strings/descriptions.
+- [x] **Step 2:** Compile gate. Commit: `feat(voice): attach sheet with photos, camera, files, voice mode`.
 
 ### Task 8: Chat wiring (ViewModel + screen)
 
@@ -227,7 +227,7 @@ class VoiceInputLogicTest {
 - Methods: `setVoiceMode(mode)` (state + persist), `startVoiceRecording()` (no-op while busy; maps failure to a `ShowMessage` effect), `stopVoiceRecording()` (transcribe → `Finishing("Transcribing…")` → `send(assembleDictation(input, transcript))`; failure → effect with `error.toMessage()`; voice note → `addAttachments(listOf(uri))` + `send()`), `cancelVoiceRecording()` (delete clip, idle), `voiceElapsedMs()`, `voiceAmplitude()`. `onCleared()` → `recorder.release()`.
 - `ChatScreen`: `RequestPermission` launcher (grant → `startVoiceRecording()`, deny → snackbar `Microphone permission is needed for voice input.`), camera (`TakePicture`) + files (`OpenMultipleDocuments`, `["*/*"]`) launchers, `attachSheetOpen` state, sheet hosting with the mode from state, `Composer` receives mic/phase/callbacks, `DisposableEffect` cancels an in-flight recording on dispose. Mic `enabled` gated by `!state.isBusy`.
 
-- [ ] **Step 1:** VM changes. **Step 2:** Screen changes. **Step 3:** Compile gate + full `:app:testDebugUnitTest`. Commit: `feat(voice): chat composer voice input with auto-send`.
+- [x] **Step 1:** VM changes. **Step 2:** Screen changes. **Step 3:** Compile gate + full `:app:testDebugUnitTest`. Commit: `feat(voice): chat composer voice input with auto-send`.
 
 ### Task 9: Home wiring (ViewModel + composer + snackbar)
 
@@ -240,7 +240,7 @@ class VoiceInputLogicTest {
 - `setVoiceMode`, `startVoiceRecording()`, `cancelVoiceRecording()`, `stopVoiceRecording(dictationText: String, stagedUriStrings: List<String>)` — transcribe → `startChatWith(assembleDictation(dictationText, transcript), stagedUriStrings)`; voice note → `startChatWith(dictationText, stagedUriStrings + uri.toString())`; `onCleared()` releases.
 - `HomeScreen`: `SnackbarHost` added; `SessionsEffect.Message` becomes `snackbar.showSnackbar(...)` (was dropped); permission + camera + files launchers; sheet hosted from `HomeComposer`; `HomeComposer` gains mic + strip + sheet; send button behavior unchanged.
 
-- [ ] **Step 1:** VM. **Step 2:** Screen/composer. **Step 3:** Compile gate + full suite. Commit: `feat(voice): home composer voice input and attach sheet`.
+- [x] **Step 1:** VM. **Step 2:** Screen/composer. **Step 3:** Compile gate + full suite. Commit: `feat(voice): home composer voice input and attach sheet`.
 
 ### Task 10: Evidence, docs, CI, combined branch, APK
 
