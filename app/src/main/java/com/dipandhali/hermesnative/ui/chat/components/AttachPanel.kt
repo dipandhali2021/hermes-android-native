@@ -1,9 +1,9 @@
 package com.dipandhali.hermesnative.ui.chat.components
 
-import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -14,7 +14,6 @@ import androidx.compose.foundation.layout.ime
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.FolderOpen
 import androidx.compose.material.icons.rounded.GraphicEq
@@ -36,23 +35,35 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.dipandhali.hermesnative.domain.composer.attachPanelMinHeightPx
 import com.dipandhali.hermesnative.domain.voice.VoiceInputMode
+import com.dipandhali.hermesnative.ui.theme.HermesMotion
 
 /**
- * The composer's attach panel: a card of its own below the composer, from the
- * reference — a grab handle, then Photos / Files / Camera as icon + title +
- * supporting-line rows, then the voice-input modes.
+ * The voice-mode marks, shared: the mic toolbar button wears the selected
+ * mode's icon (and follows a change live while the panel is open), and the
+ * panel's mode control shows the same pairing.
+ */
+fun voiceModeIcon(mode: VoiceInputMode): ImageVector = when (mode) {
+    VoiceInputMode.TRANSCRIBE -> Icons.Rounded.Mic
+    VoiceInputMode.VOICE_NOTE -> Icons.Rounded.GraphicEq
+}
+
+/**
+ * The composer's attach panel: the round-5 tile card — Photos / Camera /
+ * Files as tonal tiles with a small press scale, then the voice-input mode
+ * picker — in a card of its own below the composer.
  *
- * Deliberately not a sheet: no scrim, no drag behaviour — the handle is a
- * marker, not a control — and no dismissal of its own. The host owns
- * open/close (the `+`/`×` toggle, back, field focus, the mic). The 8 dp gap
- * above the card is part of the panel, so the min-height wrapper that holds
- * the keyboard's place is the same in both hosts.
+ * Deliberately not a sheet: no scrim, no handle, no dismissal of its own —
+ * the composer stays visible above it and the host owns open/close (the
+ * `+`/`×` toggle, back, field focus, the mic). The mode control is the one
+ * thing that persists on tap and it keeps the panel open: it configures the
+ * mic, it does not dismiss anything.
  */
 @Composable
 fun AttachPanel(
@@ -70,53 +81,45 @@ fun AttachPanel(
             .fillMaxWidth()
             .padding(top = 8.dp),
     ) {
-        Column {
-            Box(
-                Modifier
-                    .align(Alignment.CenterHorizontally)
-                    .padding(top = 12.dp)
-                    .size(width = 32.dp, height = 4.dp)
-                    .background(
-                        color = MaterialTheme.colorScheme.outlineVariant,
-                        shape = CircleShape,
-                    ),
-            )
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(start = 20.dp, end = 20.dp, top = 16.dp),
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
+            ) {
+                AttachTile(
+                    icon = Icons.Rounded.PhotoLibrary,
+                    label = "Photos",
+                    onClick = onPhotos,
+                    modifier = Modifier.weight(1f),
+                )
+                AttachTile(
+                    icon = Icons.Rounded.PhotoCamera,
+                    label = "Camera",
+                    onClick = onCamera,
+                    modifier = Modifier.weight(1f),
+                )
+                AttachTile(
+                    icon = Icons.Rounded.FolderOpen,
+                    label = "Files",
+                    onClick = onFiles,
+                    modifier = Modifier.weight(1f),
+                )
+            }
 
-            Spacer(Modifier.height(4.dp))
-
-            AttachRow(
-                icon = Icons.Rounded.PhotoLibrary,
-                title = "Photos",
-                subtitle = "Choose from your library",
-                onClick = onPhotos,
-            )
-            AttachRow(
-                icon = Icons.Rounded.FolderOpen,
-                title = "Files",
-                subtitle = "Attach a document or archive",
-                onClick = onFiles,
-            )
-            AttachRow(
-                icon = Icons.Rounded.PhotoCamera,
-                title = "Camera",
-                subtitle = "Take a photo now",
-                onClick = onCamera,
-            )
-
-            Spacer(Modifier.height(8.dp))
+            Spacer(Modifier.height(20.dp))
             HorizontalDivider()
             Text(
                 text = "Voice input",
                 style = MaterialTheme.typography.labelLarge,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.padding(start = 20.dp, end = 20.dp, top = 16.dp, bottom = 8.dp),
+                modifier = Modifier.padding(top = 16.dp, bottom = 8.dp),
             )
 
-            SingleChoiceSegmentedButtonRow(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 20.dp),
-            ) {
+            SingleChoiceSegmentedButtonRow(modifier = Modifier.fillMaxWidth()) {
                 VoiceInputMode.entries.forEachIndexed { index, mode ->
                     SegmentedButton(
                         selected = voiceMode == mode,
@@ -127,10 +130,7 @@ fun AttachPanel(
                         ),
                         icon = {
                             Icon(
-                                imageVector = when (mode) {
-                                    VoiceInputMode.TRANSCRIBE -> Icons.Rounded.Mic
-                                    VoiceInputMode.VOICE_NOTE -> Icons.Rounded.GraphicEq
-                                },
+                                imageVector = voiceModeIcon(mode),
                                 contentDescription = null,
                                 modifier = Modifier.size(18.dp),
                             )
@@ -144,45 +144,53 @@ fun AttachPanel(
                 text = voiceModeSupportingLine(voiceMode),
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.padding(start = 20.dp, end = 20.dp, top = 10.dp, bottom = 20.dp),
+                modifier = Modifier.padding(top = 10.dp, bottom = 20.dp),
             )
         }
     }
 }
 
 /**
- * One panel row: leading icon, title, supporting line, ripple across the
- * full width — the reference's list shape (the tile grid is retired).
+ * One action tile: icon over label in a tonal container, with a small press
+ * scale so the tap reads back before the picker takes the screen.
  */
 @Composable
-private fun AttachRow(
+private fun AttachTile(
     icon: ImageVector,
-    title: String,
-    subtitle: String,
+    label: String,
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    Row(
-        modifier = modifier
-            .fillMaxWidth()
-            .clickable(onClick = onClick)
-            .padding(horizontal = 20.dp, vertical = 14.dp),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(16.dp),
+    val interaction = remember { MutableInteractionSource() }
+    val pressed by interaction.collectIsPressedAsState()
+    val scale by animateFloatAsState(
+        targetValue = if (pressed) 0.96f else 1f,
+        animationSpec = HermesMotion.spatialFast(),
+        label = "attach-tile-scale",
+    )
+
+    Surface(
+        onClick = onClick,
+        interactionSource = interaction,
+        color = MaterialTheme.colorScheme.surfaceContainerHigh,
+        shape = MaterialTheme.shapes.large,
+        modifier = modifier.graphicsLayer {
+            scaleX = scale
+            scaleY = scale
+        },
     ) {
-        Icon(
-            imageVector = icon,
-            contentDescription = null,
-            tint = MaterialTheme.colorScheme.onSurfaceVariant,
-            modifier = Modifier.size(24.dp),
-        )
-        Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
-            Text(text = title, style = MaterialTheme.typography.titleMedium)
-            Text(
-                text = subtitle,
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
+        Column(
+            modifier = Modifier.padding(vertical = 18.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(10.dp),
+        ) {
+            Icon(
+                imageVector = icon,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.primary,
+                modifier = Modifier.size(26.dp),
             )
+            Text(text = label, style = MaterialTheme.typography.labelLarge)
         }
     }
 }
