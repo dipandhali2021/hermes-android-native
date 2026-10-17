@@ -8,11 +8,16 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.SizeTransform
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.scaleIn
 import androidx.compose.animation.scaleOut
+import androidx.compose.animation.shrinkVertically
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.clickable
@@ -69,11 +74,14 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.rotate
+import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.ColorFilter
 import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.input.pointer.changedToDown
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
@@ -85,17 +93,20 @@ import com.dipandhali.hermesnative.R
 import com.dipandhali.hermesnative.core.model.AttachmentDto
 import com.dipandhali.hermesnative.core.model.SessionRow
 import com.dipandhali.hermesnative.data.media.newCameraCaptureUri
+import com.dipandhali.hermesnative.domain.composer.ATTACH_ROTATION_DEGREES
+import com.dipandhali.hermesnative.domain.composer.attachToggleDescription
 import com.dipandhali.hermesnative.domain.modelpicker.ModelSelection
 import com.dipandhali.hermesnative.domain.modelpicker.displaySelection
 import com.dipandhali.hermesnative.domain.voice.VoiceInputMode
 import com.dipandhali.hermesnative.domain.voice.VoicePhase
-import com.dipandhali.hermesnative.ui.chat.components.AttachSheet
+import com.dipandhali.hermesnative.ui.chat.components.AttachPanel
 import com.dipandhali.hermesnative.ui.chat.components.AttachmentTray
 import com.dipandhali.hermesnative.ui.chat.components.ComposerAttachment
 import com.dipandhali.hermesnative.ui.chat.components.MAX_ATTACHMENTS
 import com.dipandhali.hermesnative.ui.chat.components.ModelChip
 import com.dipandhali.hermesnative.ui.chat.components.ModelPickerSheet
 import com.dipandhali.hermesnative.ui.chat.components.VoiceRecordingBar
+import com.dipandhali.hermesnative.ui.chat.components.rememberKeyboardHeight
 import com.dipandhali.hermesnative.ui.chat.components.stageAttachments
 import com.dipandhali.hermesnative.ui.components.FabMenu
 import com.dipandhali.hermesnative.ui.components.FabMenuAction
@@ -397,9 +408,16 @@ private fun HomeComposer(
     // of leaving the spinner as the only way out.
     LaunchedEffect(resetSignal) { isStarting = false }
 
-    var attachSheetOpen by remember { mutableStateOf(false) }
+    var attachOpen by remember { mutableStateOf(false) }
     var pendingCameraUri by remember { mutableStateOf<Uri?>(null) }
     val context = LocalContext.current
+    val focusManager = LocalFocusManager.current
+    val panelMinHeight = rememberKeyboardHeight()
+
+    // The panel is not modal, so it owns the back press while it is open.
+    // Composed inside the bottom bar, after the screen's FAB-menu handler:
+    // the last enabled handler wins.
+    BackHandler(enabled = attachOpen) { attachOpen = false }
 
     val attachPicker = rememberLauncherForActivityResult(
         ActivityResultContracts.PickMultipleVisualMedia(MAX_ATTACHMENTS),
@@ -466,7 +484,13 @@ private fun HomeComposer(
                 ),
                 modifier = Modifier
                     .fillMaxWidth()
-                    .heightIn(min = 56.dp, max = 160.dp),
+                    .heightIn(min = 56.dp, max = 160.dp)
+                    // Focus, never IME visibility: in the frame the panel
+                    // opens the keyboard is still animating down, and a
+                    // visibility signal would close it right back.
+                    .onFocusChanged { focus ->
+                        if (focus.isFocused && attachOpen) attachOpen = false
+                    },
             )
             AnimatedContent(
                 targetState = voicePhase,
@@ -485,14 +509,35 @@ private fun HomeComposer(
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.End,
                     ) {
+                        // The toggle signs itself: the plus folds a quarter
+                        // turn into a close mark and takes the accent role
+                        // while the panel is open.
+                        val attachProgress by animateFloatAsState(
+                            targetValue = if (attachOpen) 1f else 0f,
+                            animationSpec = HermesMotion.spatialFast(),
+                            label = "attach-toggle-rotation",
+                        )
+                        val attachTint by animateColorAsState(
+                            targetValue = if (attachOpen) {
+                                MaterialTheme.colorScheme.primary
+                            } else {
+                                MaterialTheme.colorScheme.onSurfaceVariant
+                            },
+                            animationSpec = HermesMotion.effects(),
+                            label = "attach-toggle-tint",
+                        )
                         IconButton(
-                            onClick = { attachSheetOpen = true },
+                            onClick = {
+                                focusManager.clearFocus()
+                                attachOpen = !attachOpen
+                            },
                             enabled = !isStarting,
                         ) {
                             Icon(
                                 imageVector = Icons.Rounded.Add,
-                                contentDescription = "Add",
-                                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                contentDescription = attachToggleDescription(attachOpen),
+                                tint = attachTint,
+                                modifier = Modifier.rotate(ATTACH_ROTATION_DEGREES * attachProgress),
                             )
                         }
 
@@ -501,7 +546,12 @@ private fun HomeComposer(
                         Box(Modifier.weight(1f))
 
                         IconButton(
-                            onClick = onMicTap,
+                            onClick = {
+                                // The strip replaces the row; a panel under
+                                // a recording is not a thing.
+                                if (attachOpen) attachOpen = false
+                                onMicTap()
+                            },
                             enabled = !isStarting,
                             colors = IconButtonDefaults.iconButtonColors(
                                 contentColor = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -546,33 +596,43 @@ private fun HomeComposer(
                     )
                 }
             }
-        }
-    }
 
-    // A sibling of the composer's Surface, like the chat screen's sheet: the
-    // sheet owns its own window and nothing here waits on the composer layout.
-    if (attachSheetOpen) {
-        AttachSheet(
-            voiceMode = voiceMode,
-            onVoiceModeChange = onVoiceModeChange,
-            onPhotos = {
-                attachSheetOpen = false
-                attachPicker.launch(
-                    PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly),
-                )
-            },
-            onCamera = {
-                attachSheetOpen = false
-                val uri = newCameraCaptureUri(context)
-                pendingCameraUri = uri
-                cameraCapture.launch(uri)
-            },
-            onFiles = {
-                attachSheetOpen = false
-                filePicker.launch(arrayOf("*/*"))
-            },
-            onDismiss = { attachSheetOpen = false },
-        )
+            AnimatedVisibility(
+                visible = attachOpen && voicePhase == VoicePhase.Idle,
+                enter = expandVertically(
+                    animationSpec = HermesMotion.contentSize,
+                    expandFrom = Alignment.Top,
+                ) + fadeIn(HermesMotion.effects()),
+                exit = shrinkVertically(
+                    animationSpec = HermesMotion.contentSize,
+                    shrinkTowards = Alignment.Top,
+                ) + fadeOut(HermesMotion.effects()),
+                label = "attach-panel",
+            ) {
+                Box(Modifier.heightIn(min = panelMinHeight)) {
+                    AttachPanel(
+                        voiceMode = voiceMode,
+                        onVoiceModeChange = onVoiceModeChange,
+                        onPhotos = {
+                            attachOpen = false
+                            attachPicker.launch(
+                                PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly),
+                            )
+                        },
+                        onCamera = {
+                            attachOpen = false
+                            val uri = newCameraCaptureUri(context)
+                            pendingCameraUri = uri
+                            cameraCapture.launch(uri)
+                        },
+                        onFiles = {
+                            attachOpen = false
+                            filePicker.launch(arrayOf("*/*"))
+                        },
+                    )
+                }
+            }
+        }
     }
 }
 
