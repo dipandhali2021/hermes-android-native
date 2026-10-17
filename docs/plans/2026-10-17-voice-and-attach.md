@@ -248,8 +248,8 @@ class VoiceInputLogicTest {
 - Modify: `android-native/docs/plans/2026-10-17-voice-and-attach.md` (this file, tick boxes), `.superpowers/sdd/2026-10-17-voice-and-attach/progress.md` (ledger), `android-native/docs/HANDOFF-model-picker.md` (refresh, untracked)
 - No CHANGELOG edits.
 
-- [ ] **Step 1:** Full local run: `./gradlew :app:testDebugUnitTest` — record output. If no local SDK, push and use CI as the record.
-- [ ] **Step 2:** Push `feat/model-picker` with `--force-with-lease`; watch CI (unit tests + debug APK); fetch the `hermes-native-debug-apk` artifact; record run URL + md5.
-- [ ] **Step 3:** Rebuild `test/model-picker-home-send` (`707ef24` + merge new feat head; resolve conflicts as the proven union; force-push with lease; CI green; fetch APK; md5).
-- [ ] **Step 4:** Device checklist (into the handoff): transcribe auto-send; voice-note auto-send (empty text); cancel; too-short clip; 503 server message; permission denial; + sheet Photos/Camera/Files; mode persists across restart; home voice flows; mic disabled mid-run; older-device pass (minSdk 26 path for `MediaRecorder`).
-- [ ] **Step 5:** Update ledger + handoff. No merge/release until the user says so.
+- [x] **Step 1:** Full local run: `./gradlew :app:testDebugUnitTest` — record output. If no local SDK, push and use CI as the record.
+- [x] **Step 2:** Push `feat/model-picker` with `--force-with-lease`; watch CI (unit tests + debug APK); fetch the `hermes-native-debug-apk` artifact; record run URL + md5.
+- [x] **Step 3:** Rebuild `test/model-picker-home-send` (`707ef24` + merge new feat head; resolve conflicts as the proven union; force-push with lease; CI green; fetch APK; md5).
+- [x] **Step 4:** Device checklist (into the handoff): transcribe auto-send; voice-note auto-send (empty text); cancel; too-short clip; 503 server message; permission denial; + sheet Photos/Camera/Files; mode persists across restart; home voice flows; mic disabled mid-run; older-device pass (minSdk 26 path for `MediaRecorder`).
+- [x] **Step 5:** Update ledger + handoff. No merge/release until the user says so.
