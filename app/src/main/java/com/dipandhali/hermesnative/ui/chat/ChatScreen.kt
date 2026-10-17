@@ -33,6 +33,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.ArrowBack
 import androidx.compose.material.icons.rounded.ArrowDownward
 import androidx.compose.material.icons.rounded.Bookmarks
+import androidx.compose.material.icons.rounded.FolderOpen
 import androidx.compose.material.icons.rounded.ManageAccounts
 import androidx.compose.material.icons.rounded.MoreVert
 import androidx.compose.material.icons.rounded.Tune
@@ -71,6 +72,7 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.dipandhali.hermesnative.core.model.AttachmentDto
 import com.dipandhali.hermesnative.data.media.newCameraCaptureUri
+import com.dipandhali.hermesnative.domain.composer.workspaceLabel
 import com.dipandhali.hermesnative.domain.modelpicker.ModelSelection
 import com.dipandhali.hermesnative.domain.modelpicker.displaySelection
 import com.dipandhali.hermesnative.ui.chat.components.AssistantTurn
@@ -82,11 +84,14 @@ import com.dipandhali.hermesnative.ui.chat.components.MAX_ATTACHMENTS
 import com.dipandhali.hermesnative.ui.chat.components.ModelChip
 import com.dipandhali.hermesnative.ui.chat.components.ChatToolsRow
 import com.dipandhali.hermesnative.ui.chat.components.ChatToolsSection
-import com.dipandhali.hermesnative.ui.chat.components.ModelPickerSheet
 import com.dipandhali.hermesnative.ui.chat.components.ProfilePickerSheet
 import com.dipandhali.hermesnative.ui.chat.components.PromptsSheet
+import com.dipandhali.hermesnative.ui.chat.components.WorkspacePickerSheet
+import com.dipandhali.hermesnative.ui.chat.components.ModelPickerSheet
 import com.dipandhali.hermesnative.ui.profile.ProfileCreateSheet
 import com.dipandhali.hermesnative.ui.profile.ProfileManagerSheet
+import com.dipandhali.hermesnative.ui.workspace.WorkspaceManageSheet
+import com.dipandhali.hermesnative.ui.workspace.WorkspacePathDialog
 import com.dipandhali.hermesnative.ui.chat.components.NoticeRow
 import com.dipandhali.hermesnative.ui.chat.components.UserMessage
 import com.dipandhali.hermesnative.ui.theme.HermesMotion
@@ -119,6 +124,11 @@ fun ChatScreen(
     val modelSelection = displaySelection(
         state.model?.let { ModelSelection(it, state.modelProvider) },
         state.picker.catalog,
+    )
+    val workspaceLabelText = workspaceLabel(
+        sessionWorkspace = state.workspace,
+        saved = state.tools.workspaces.workspaces,
+        fallback = "Default",
     )
     val listState = rememberLazyListState()
     val snackbar = remember { SnackbarHostState() }
@@ -256,6 +266,15 @@ fun ChatScreen(
                                 overflow = TextOverflow.Ellipsis,
                             )
                         }
+                        if (state.workspace != null) {
+                            Text(
+                                text = workspaceLabelText,
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                            )
+                        }
                     }
                 },
                 actions = {
@@ -340,6 +359,19 @@ fun ChatScreen(
                                             onClick = {
                                                 attachOpen = false
                                                 viewModel.openProfilePicker()
+                                            },
+                                        ),
+                                    )
+                                }
+                                if (state.tools.workspaces.available != false) {
+                                    add(
+                                        ChatToolsRow(
+                                            icon = Icons.Rounded.FolderOpen,
+                                            title = "Workspace",
+                                            trailing = workspaceLabelText,
+                                            onClick = {
+                                                attachOpen = false
+                                                viewModel.openWorkspacePicker()
                                             },
                                         ),
                                     )
@@ -507,6 +539,42 @@ fun ChatScreen(
                     viewModel.openProfileManager()
                 },
                 onDismiss = viewModel::closeProfileCreate,
+            )
+        }
+
+        val workspaces = state.tools.workspaces
+        if (workspaces.pickerOpen) {
+            WorkspacePickerSheet(
+                state = workspaces,
+                highlightPath = state.workspace,
+                onPick = viewModel::switchWorkspace,
+                onWorktree = viewModel::startWorktreeChat,
+                onPathAdd = viewModel::openWorkspacePathDialog,
+                onManage = {
+                    viewModel.closeWorkspacePicker()
+                    viewModel.openWorkspaceManage()
+                },
+                // The Files screen lands in task 11; until then the row stays
+                // hidden rather than pointing at a half-built route.
+                onBrowseFiles = null,
+                onRetry = viewModel::retryWorkspaces,
+                onDismiss = viewModel::closeWorkspacePicker,
+            )
+        }
+        if (workspaces.listEditorOpen) {
+            WorkspaceManageSheet(
+                state = workspaces,
+                onRename = viewModel::renameWorkspace,
+                onRemove = viewModel::removeWorkspace,
+                onDismiss = viewModel::closeWorkspaceManage,
+            )
+        }
+        if (workspaces.pathDialogOpen) {
+            WorkspacePathDialog(
+                state = workspaces,
+                onInput = viewModel::workspacePathQuery,
+                onSubmit = viewModel::submitWorkspacePath,
+                onDismiss = viewModel::closeWorkspacePathDialog,
             )
         }
     }

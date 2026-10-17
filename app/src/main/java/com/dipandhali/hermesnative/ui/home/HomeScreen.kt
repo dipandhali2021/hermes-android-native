@@ -48,6 +48,7 @@ import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.rounded.Mic
 import androidx.compose.material.icons.rounded.MoreHoriz
 import androidx.compose.material.icons.rounded.Bookmarks
+import androidx.compose.material.icons.rounded.FolderOpen
 import androidx.compose.material.icons.rounded.ManageAccounts
 import androidx.compose.material.icons.rounded.Settings
 import androidx.compose.material3.CircularProgressIndicator
@@ -98,19 +99,26 @@ import com.dipandhali.hermesnative.data.media.newCameraCaptureUri
 import com.dipandhali.hermesnative.domain.composer.ATTACH_ROTATION_DEGREES
 import com.dipandhali.hermesnative.domain.composer.PromptsUiState
 import com.dipandhali.hermesnative.domain.composer.ProfilesUiState
+import com.dipandhali.hermesnative.domain.composer.WorkspacesUiState
 import com.dipandhali.hermesnative.domain.composer.attachToggleDescription
 import com.dipandhali.hermesnative.domain.composer.composeWithPrompt
+import com.dipandhali.hermesnative.domain.composer.homeSendWorkspace
+import com.dipandhali.hermesnative.domain.composer.workspaceLabel
 import com.dipandhali.hermesnative.domain.modelpicker.ModelSelection
 import com.dipandhali.hermesnative.domain.modelpicker.displaySelection
 import com.dipandhali.hermesnative.domain.voice.VoiceInputMode
 import com.dipandhali.hermesnative.domain.voice.VoicePhase
+import com.dipandhali.hermesnative.domain.composer.workspaceLabel
 import com.dipandhali.hermesnative.ui.chat.components.AttachPanel
 import com.dipandhali.hermesnative.ui.chat.components.ChatToolsRow
 import com.dipandhali.hermesnative.ui.chat.components.ChatToolsSection
-import com.dipandhali.hermesnative.ui.chat.components.ProfilePickerSheet
 import com.dipandhali.hermesnative.ui.chat.components.PromptsSheet
+import com.dipandhali.hermesnative.ui.chat.components.ProfilePickerSheet
+import com.dipandhali.hermesnative.ui.chat.components.WorkspacePickerSheet
 import com.dipandhali.hermesnative.ui.profile.ProfileCreateSheet
 import com.dipandhali.hermesnative.ui.profile.ProfileManagerSheet
+import com.dipandhali.hermesnative.ui.workspace.WorkspaceManageSheet
+import com.dipandhali.hermesnative.ui.workspace.WorkspacePathDialog
 import com.dipandhali.hermesnative.ui.chat.components.AttachmentTray
 import com.dipandhali.hermesnative.ui.chat.components.ComposerAttachment
 import com.dipandhali.hermesnative.ui.chat.components.MAX_ATTACHMENTS
@@ -271,6 +279,7 @@ fun HomeScreen(
                 resetSignal = composerReset,
                 prompts = state.tools.prompts,
                 profiles = state.tools.profiles,
+                workspaces = state.tools.workspaces,
                 onOpenPrompts = viewModel::openPrompts,
                 onClosePrompts = viewModel::closePrompts,
                 onSavePrompt = viewModel::savePrompt,
@@ -278,6 +287,7 @@ fun HomeScreen(
                 onUndoPromptDelete = viewModel::undoPromptDelete,
                 onRetryPrompts = viewModel::retryPrompts,
                 onOpenProfilePicker = viewModel::openProfilePicker,
+                onOpenWorkspacePicker = viewModel::openWorkspacePicker,
                 // The composer is the only element that insets itself against the
                 // keyboard and the gesture bar. `inner` below is only a padding
                 // value — it is not consumed — so a second imePadding anywhere in
@@ -424,6 +434,40 @@ fun HomeScreen(
                 onDismiss = viewModel::closeProfileCreate,
             )
         }
+
+        val workspaces = state.tools.workspaces
+        if (workspaces.pickerOpen) {
+            WorkspacePickerSheet(
+                state = workspaces,
+                highlightPath = workspaces.pendingPath,
+                onPick = viewModel::pickWorkspace,
+                onWorktree = viewModel::startWorktreeChat,
+                onPathAdd = viewModel::openWorkspacePathDialog,
+                onManage = {
+                    viewModel.closeWorkspacePicker()
+                    viewModel.openWorkspaceManage()
+                },
+                onBrowseFiles = null,
+                onRetry = viewModel::retryWorkspaces,
+                onDismiss = viewModel::closeWorkspacePicker,
+            )
+        }
+        if (workspaces.listEditorOpen) {
+            WorkspaceManageSheet(
+                state = workspaces,
+                onRename = viewModel::renameWorkspace,
+                onRemove = viewModel::removeWorkspace,
+                onDismiss = viewModel::closeWorkspaceManage,
+            )
+        }
+        if (workspaces.pathDialogOpen) {
+            WorkspacePathDialog(
+                state = workspaces,
+                onInput = viewModel::workspacePathQuery,
+                onSubmit = viewModel::submitWorkspacePath,
+                onDismiss = viewModel::closeWorkspacePathDialog,
+            )
+        }
     }
 }
 
@@ -458,6 +502,7 @@ private fun HomeComposer(
     resetSignal: Int,
     prompts: PromptsUiState,
     profiles: ProfilesUiState,
+    workspaces: WorkspacesUiState,
     onOpenPrompts: () -> Unit,
     onClosePrompts: () -> Unit,
     onSavePrompt: (String) -> Unit,
@@ -465,6 +510,7 @@ private fun HomeComposer(
     onUndoPromptDelete: () -> Unit,
     onRetryPrompts: () -> Unit,
     onOpenProfilePicker: () -> Unit,
+    onOpenWorkspacePicker: () -> Unit,
 ) {
     var text by remember { mutableStateOf("") }
     var attachments by remember { mutableStateOf(listOf<ComposerAttachment>()) }
@@ -729,6 +775,26 @@ private fun HomeComposer(
                                         onClick = {
                                             attachOpen = false
                                             onOpenProfilePicker()
+                                        },
+                                    ),
+                                )
+                            }
+                            if (workspaces.available != false) {
+                                add(
+                                    ChatToolsRow(
+                                        icon = Icons.Rounded.FolderOpen,
+                                        title = "Workspace",
+                                        trailing = workspaceLabel(
+                                            sessionWorkspace = homeSendWorkspace(
+                                                workspaces.pendingPath,
+                                                profiles.defaultWorkspace,
+                                            ),
+                                            saved = workspaces.workspaces,
+                                            fallback = "Default",
+                                        ),
+                                        onClick = {
+                                            attachOpen = false
+                                            onOpenWorkspacePicker()
                                         },
                                     ),
                                 )

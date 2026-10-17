@@ -22,7 +22,10 @@ import com.dipandhali.hermesnative.core.model.ProfileCreateRequest
 import com.dipandhali.hermesnative.domain.modelpicker.PickerCatalogBuilder
 import com.dipandhali.hermesnative.domain.composer.ComposerToolsState
 import com.dipandhali.hermesnative.domain.composer.rowHiddenByMissingApi
+import com.dipandhali.hermesnative.domain.composer.WORKSPACE_SUGGEST_DEBOUNCE_MS
 import com.dipandhali.hermesnative.domain.composer.homeSendWorkspace
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
 import com.dipandhali.hermesnative.domain.modelpicker.displaySelection
 import com.dipandhali.hermesnative.domain.voice.VoiceInputMode
 import com.dipandhali.hermesnative.domain.voice.VoicePhase
@@ -497,6 +500,190 @@ class SessionsViewModel @Inject constructor(
     fun clearPendingWorkspace() {
         _state.update { s ->
             s.copy(tools = s.tools.copy(workspaces = s.tools.workspaces.copy(pendingPath = null)))
+        }
+    }
+
+    /**
+     * A NEW conversation isolated in a worktree of the pending target (else
+     * the profile default). Pushed like any fresh chat; the composer resets.
+     */
+    fun startWorktreeChat() {
+        viewModelScope.launch {
+            val pick = selection()
+            repository.create(
+                model = pick?.model,
+                provider = pick?.provider,
+                workspace = homeSendWorkspace(
+                    pendingWorkspace = _state.value.tools.workspaces.pendingPath,
+                    identityDefault = _state.value.tools.profiles.defaultWorkspace,
+                ),
+                worktree = true,
+            )
+                .onSuccess { sessionId ->
+                    refresh()
+                    _effects.trySend(SessionsEffect.OpenSession(sessionId))
+                }
+                .onFailure { _effects.trySend(SessionsEffect.Message(it.toMessage())) }
+        }
+    }
+
+    // ---------- Workspace management (picker helper sheets) ----------
+
+    private var workspaceSuggestJob: Job? = null
+
+    fun openWorkspaceManage() {
+        _state.update { s ->
+            s.copy(
+                tools = s.tools.copy(
+                    workspaces = s.tools.workspaces.copy(listEditorOpen = true),
+                ),
+            )
+        }
+        loadWorkspaces()
+    }
+
+    fun closeWorkspaceManage() {
+        _state.update { s ->
+            s.copy(
+                tools = s.tools.copy(
+                    workspaces = s.tools.workspaces.copy(listEditorOpen = false),
+                ),
+            )
+        }
+        closeWorkspacePathDialog()
+    }
+
+    fun openWorkspacePathDialog() {
+        _state.update { s ->
+            s.copy(
+                tools = s.tools.copy(
+                    workspaces = s.tools.workspaces.copy(pathDialogOpen = true, suggestions = emptyList()),
+                ),
+            )
+        }
+    }
+
+    fun closeWorkspacePathDialog() {
+        _state.update { s ->
+            s.copy(
+                tools = s.tools.copy(
+                    workspaces = s.tools.workspaces.copy(
+                        pathDialogOpen = false,
+                        suggestions = emptyList(),
+                        busy = false,
+                    ),
+                ),
+            )
+        }
+    }
+
+    /** Typeahead against the trusted-roots suggest endpoint, debounced. */
+    fun workspacePathQuery(prefix: String) {
+        workspaceSuggestJob?.cancel()
+        if (prefix.isBlank()) return
+        workspaceSuggestJob = viewModelScope.launch {
+            delay(WORKSPACE_SUGGEST_DEBOUNCE_MS)
+            workspaceRepository.suggest(prefix)
+                .onSuccess { rows ->
+                    _state.update { s ->
+                        s.copy(tools = s.tools.copy(workspaces = s.tools.workspaces.copy(suggestions = rows)))
+                    }
+                }
+                .onFailure {
+                    _state.update { s ->
+                        s.copy(tools = s.tools.copy(workspaces = s.tools.workspaces.copy(suggestions = emptyList())))
+                    }
+                }
+        }
+    }
+
+    /**
+     * Registers a typed path and retargets the next chat to it. Server
+     * wording for a bad or already-saved path surfaces verbatim.
+     */
+    fun submitWorkspacePath(path: String) {
+        val trimmed = path.trim()
+        if (trimmed.isEmpty()) return
+        _state.update { s ->
+            s.copy(tools = s.tools.copy(workspaces = s.tools.workspaces.copy(busy = true)))
+        }
+        viewModelScope.launch {
+            workspaceRepository.add(trimmed)
+                .onSuccess { bundle ->
+                    _state.update { s ->
+                        s.copy(
+                            tools = s.tools.copy(
+                                workspaces = s.tools.workspaces.copy(
+                                    busy = false,
+                                    pathDialogOpen = false,
+                                    suggestions = emptyList(),
+                                    available = true,
+                                    workspaces = bundle.workspaces,
+                                    pendingPath = trimmed,
+                                ),
+                            ),
+                        )
+                    }
+                }
+                .onFailure { err ->
+                    _state.update { s ->
+                        s.copy(tools = s.tools.copy(workspaces = s.tools.workspaces.copy(busy = false)))
+                    }
+                    _effects.trySend(SessionsEffect.Message(err.toMessage()))
+                }
+        }
+    }
+
+    fun renameWorkspace(path: String, name: String) {
+        val trimmed = name.trim()
+        if (trimmed.isEmpty()) return
+        viewModelScope.launch {
+            workspaceRepository.rename(path, trimmed)
+                .onSuccess { bundle ->
+                    _state.update { s ->
+                        s.copy(
+                            tools = s.tools.copy(
+                                workspaces = s.tools.workspaces.copy(
+                                    available = true,
+                                    workspaces = bundle.workspaces,
+                                ),
+                            ),
+                        )
+                    }
+                }
+                .onFailure { _effects.trySend(SessionsEffect.Message(it.toMessage())) }
+        }
+    }
+
+    /** Optimistic remove: the row leaves the list at once; the server's list wins back. */
+    fun removeWorkspace(path: String) {
+        _state.update { s ->
+            s.copy(
+                tools = s.tools.copy(
+                    workspaces = s.tools.workspaces.copy(
+                        workspaces = s.tools.workspaces.workspaces.filterNot { it.path == path },
+                    ),
+                ),
+            )
+        }
+        viewModelScope.launch {
+            workspaceRepository.remove(path)
+                .onSuccess { bundle ->
+                    _state.update { s ->
+                        s.copy(
+                            tools = s.tools.copy(
+                                workspaces = s.tools.workspaces.copy(
+                                    available = true,
+                                    workspaces = bundle.workspaces,
+                                ),
+                            ),
+                        )
+                    }
+                }
+                .onFailure { err ->
+                    _effects.trySend(SessionsEffect.Message(err.toMessage()))
+                    loadWorkspaces()
+                }
         }
     }
 

@@ -23,7 +23,9 @@ import com.dipandhali.hermesnative.domain.composer.ComposerToolsState
 import com.dipandhali.hermesnative.domain.composer.PromptsUiState
 import com.dipandhali.hermesnative.domain.composer.ProfileSwitchMode
 import com.dipandhali.hermesnative.domain.composer.profileSwitchMode
+import com.dipandhali.hermesnative.domain.composer.workspaceLabel
 import com.dipandhali.hermesnative.domain.composer.WORKSPACE_SWITCH_BLOCKED_COPY
+import com.dipandhali.hermesnative.domain.composer.WORKSPACE_SUGGEST_DEBOUNCE_MS
 import com.dipandhali.hermesnative.domain.composer.WorkspaceSwitchCheck
 import com.dipandhali.hermesnative.domain.composer.workspaceSwitchAllowed
 import com.dipandhali.hermesnative.core.model.ProfileCreateRequest
@@ -1155,6 +1157,167 @@ class ChatViewModel @Inject constructor(
             )
                 .onSuccess { newId -> _effects.trySend(ChatEffect.OpenSession(newId)) }
                 .onFailure { _effects.trySend(ChatEffect.ShowMessage(it.toMessage())) }
+        }
+    }
+
+    // ---------- Workspace management (picker helper sheets) ----------
+
+    private var workspaceSuggestJob: Job? = null
+
+    fun openWorkspaceManage() {
+        _uiState.update { s ->
+            s.copy(
+                tools = s.tools.copy(
+                    workspaces = s.tools.workspaces.copy(listEditorOpen = true),
+                ),
+            )
+        }
+        loadWorkspaces()
+    }
+
+    fun closeWorkspaceManage() {
+        _uiState.update { s ->
+            s.copy(
+                tools = s.tools.copy(
+                    workspaces = s.tools.workspaces.copy(listEditorOpen = false),
+                ),
+            )
+        }
+        closeWorkspacePathDialog()
+    }
+
+    fun openWorkspacePathDialog() {
+        _uiState.update { s ->
+            s.copy(
+                tools = s.tools.copy(
+                    workspaces = s.tools.workspaces.copy(pathDialogOpen = true, suggestions = emptyList()),
+                ),
+            )
+        }
+    }
+
+    fun closeWorkspacePathDialog() {
+        _uiState.update { s ->
+            s.copy(
+                tools = s.tools.copy(
+                    workspaces = s.tools.workspaces.copy(
+                        pathDialogOpen = false,
+                        suggestions = emptyList(),
+                        busy = false,
+                    ),
+                ),
+            )
+        }
+    }
+
+    /** Typeahead against the trusted-roots suggest endpoint, debounced. */
+    fun workspacePathQuery(prefix: String) {
+        workspaceSuggestJob?.cancel()
+        if (prefix.isBlank()) return
+        workspaceSuggestJob = viewModelScope.launch {
+            delay(WORKSPACE_SUGGEST_DEBOUNCE_MS)
+            workspacesRepository.suggest(prefix)
+                .onSuccess { rows ->
+                    _uiState.update { s ->
+                        s.copy(tools = s.tools.copy(workspaces = s.tools.workspaces.copy(suggestions = rows)))
+                    }
+                }
+                .onFailure {
+                    _uiState.update { s ->
+                        s.copy(tools = s.tools.copy(workspaces = s.tools.workspaces.copy(suggestions = emptyList())))
+                    }
+                }
+        }
+    }
+
+    /**
+     * Registers a typed path, then lands on it — switching for the live
+     * session, or nothing to switch to yet. Server wording for a bad or
+     * already-saved path surfaces verbatim.
+     */
+    fun submitWorkspacePath(path: String) {
+        val trimmed = path.trim()
+        if (trimmed.isEmpty()) return
+        _uiState.update { s ->
+            s.copy(tools = s.tools.copy(workspaces = s.tools.workspaces.copy(busy = true)))
+        }
+        viewModelScope.launch {
+            workspacesRepository.add(trimmed)
+                .onSuccess { bundle ->
+                    _uiState.update { s ->
+                        s.copy(
+                            tools = s.tools.copy(
+                                workspaces = s.tools.workspaces.copy(
+                                    busy = false,
+                                    pathDialogOpen = false,
+                                    suggestions = emptyList(),
+                                    available = true,
+                                    workspaces = bundle.workspaces,
+                                ),
+                            ),
+                        )
+                    }
+                    switchWorkspace(trimmed)
+                }
+                .onFailure { err ->
+                    _uiState.update { s ->
+                        s.copy(tools = s.tools.copy(workspaces = s.tools.workspaces.copy(busy = false)))
+                    }
+                    _effects.trySend(ChatEffect.ShowMessage(err.toMessage()))
+                }
+        }
+    }
+
+    fun renameWorkspace(path: String, name: String) {
+        val trimmed = name.trim()
+        if (trimmed.isEmpty()) return
+        viewModelScope.launch {
+            workspacesRepository.rename(path, trimmed)
+                .onSuccess { bundle ->
+                    _uiState.update { s ->
+                        s.copy(
+                            tools = s.tools.copy(
+                                workspaces = s.tools.workspaces.copy(
+                                    available = true,
+                                    workspaces = bundle.workspaces,
+                                ),
+                            ),
+                        )
+                    }
+                }
+                .onFailure { _effects.trySend(ChatEffect.ShowMessage(it.toMessage())) }
+        }
+    }
+
+    /** Optimistic remove: the row leaves the list at once; the server's list wins back. */
+    fun removeWorkspace(path: String) {
+        _uiState.update { s ->
+            s.copy(
+                tools = s.tools.copy(
+                    workspaces = s.tools.workspaces.copy(
+                        workspaces = s.tools.workspaces.workspaces.filterNot { it.path == path },
+                    ),
+                ),
+            )
+        }
+        viewModelScope.launch {
+            workspacesRepository.remove(path)
+                .onSuccess { bundle ->
+                    _uiState.update { s ->
+                        s.copy(
+                            tools = s.tools.copy(
+                                workspaces = s.tools.workspaces.copy(
+                                    available = true,
+                                    workspaces = bundle.workspaces,
+                                ),
+                            ),
+                        )
+                    }
+                }
+                .onFailure { err ->
+                    _effects.trySend(ChatEffect.ShowMessage(err.toMessage()))
+                    loadWorkspaces()
+                }
         }
     }
 

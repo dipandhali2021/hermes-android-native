@@ -28,3 +28,6 @@ fun homeSendWorkspace(
     pendingWorkspace: String?,
     identityDefault: String?,
 ): String? = pendingWorkspace ?: identityDefault
+
+/** The suggest typeahead cadence — fast enough to be eager, slow enough to be one hit per pause. */
+const val WORKSPACE_SUGGEST_DEBOUNCE_MS = 250L
