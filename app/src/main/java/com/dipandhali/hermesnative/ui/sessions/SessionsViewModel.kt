@@ -17,6 +17,7 @@ import com.dipandhali.hermesnative.data.settings.SettingsStore
 import com.dipandhali.hermesnative.data.voice.VoiceRecorder
 import com.dipandhali.hermesnative.domain.modelpicker.ModelPickerUiState
 import com.dipandhali.hermesnative.domain.modelpicker.ModelSelection
+import com.dipandhali.hermesnative.core.model.ProfileCreateRequest
 import com.dipandhali.hermesnative.domain.modelpicker.PickerCatalogBuilder
 import com.dipandhali.hermesnative.domain.composer.ComposerToolsState
 import com.dipandhali.hermesnative.domain.composer.rowHiddenByMissingApi
@@ -402,6 +403,57 @@ class SessionsViewModel @Inject constructor(
     fun closeProfilePicker() {
         _state.update { s ->
             s.copy(tools = s.tools.copy(profiles = s.tools.profiles.copy(pickerOpen = false)))
+        }
+    }
+
+    fun openProfileManager() {
+        _state.update { s ->
+            s.copy(tools = s.tools.copy(profiles = s.tools.profiles.copy(managerOpen = true)))
+        }
+        loadProfileIdentity()
+    }
+
+    fun closeProfileManager() {
+        _state.update { s ->
+            s.copy(tools = s.tools.copy(profiles = s.tools.profiles.copy(managerOpen = false)))
+        }
+    }
+
+    fun openProfileCreate() {
+        _state.update { s ->
+            s.copy(tools = s.tools.copy(profiles = s.tools.profiles.copy(createOpen = true)))
+        }
+        // The form's optional model dropdown rides the picker catalog.
+        if (_state.value.picker.catalog == null) loadModels()
+    }
+
+    fun closeProfileCreate() {
+        _state.update { s ->
+            s.copy(tools = s.tools.copy(profiles = s.tools.profiles.copy(createOpen = false)))
+        }
+    }
+
+    /** Creation runs while the form stays open; failure keeps its fields. */
+    fun createProfile(request: ProfileCreateRequest) {
+        viewModelScope.launch {
+            profileRepository.create(request)
+                .onSuccess {
+                    _effects.trySend(SessionsEffect.Message("Profile \"${request.name}\" created"))
+                    closeProfileCreate()
+                    loadProfileIdentity()
+                }
+                .onFailure { _effects.trySend(SessionsEffect.Message(it.toMessage())) }
+        }
+    }
+
+    fun deleteProfile(name: String) {
+        viewModelScope.launch {
+            profileRepository.delete(name)
+                .onSuccess {
+                    _effects.trySend(SessionsEffect.Message("Profile \"$name\" deleted"))
+                    loadProfileIdentity()
+                }
+                .onFailure { _effects.trySend(SessionsEffect.Message(it.toMessage())) }
         }
     }
 

@@ -23,6 +23,7 @@ import com.dipandhali.hermesnative.domain.composer.ComposerToolsState
 import com.dipandhali.hermesnative.domain.composer.PromptsUiState
 import com.dipandhali.hermesnative.domain.composer.ProfileSwitchMode
 import com.dipandhali.hermesnative.domain.composer.profileSwitchMode
+import com.dipandhali.hermesnative.core.model.ProfileCreateRequest
 import com.dipandhali.hermesnative.core.model.ProfileSwitchResponse
 import com.dipandhali.hermesnative.domain.composer.composeWithPrompt
 import com.dipandhali.hermesnative.domain.composer.parseComposerCommand
@@ -978,6 +979,103 @@ class ChatViewModel @Inject constructor(
                 }
             }
             .onFailure { _effects.trySend(ChatEffect.ShowMessage(it.toMessage())) }
+    }
+
+    // ---------- Profile sheets (picker / manager / create) ----------
+
+    fun openProfilePicker() {
+        _uiState.update { s ->
+            s.copy(tools = s.tools.copy(profiles = s.tools.profiles.copy(pickerOpen = true, error = null)))
+        }
+        loadProfileIdentity()
+    }
+
+    fun closeProfilePicker() {
+        _uiState.update { s ->
+            s.copy(tools = s.tools.copy(profiles = s.tools.profiles.copy(pickerOpen = false)))
+        }
+    }
+
+    fun openProfileManager() {
+        _uiState.update { s ->
+            s.copy(tools = s.tools.copy(profiles = s.tools.profiles.copy(managerOpen = true)))
+        }
+        loadProfileIdentity()
+    }
+
+    fun closeProfileManager() {
+        _uiState.update { s ->
+            s.copy(tools = s.tools.copy(profiles = s.tools.profiles.copy(managerOpen = false)))
+        }
+    }
+
+    fun openProfileCreate() {
+        _uiState.update { s ->
+            s.copy(tools = s.tools.copy(profiles = s.tools.profiles.copy(createOpen = true)))
+        }
+        // The form's optional model dropdown rides the picker catalog.
+        if (_uiState.value.picker.catalog == null) loadModels()
+    }
+
+    fun closeProfileCreate() {
+        _uiState.update { s ->
+            s.copy(tools = s.tools.copy(profiles = s.tools.profiles.copy(createOpen = false)))
+        }
+    }
+
+    /** Creation runs while the form stays open; failure keeps its fields. */
+    fun createProfile(request: ProfileCreateRequest) {
+        viewModelScope.launch {
+            profilesRepository.create(request)
+                .onSuccess {
+                    _effects.trySend(ChatEffect.ShowMessage("Profile \"${request.name}\" created"))
+                    closeProfileCreate()
+                    loadProfileIdentity()
+                }
+                .onFailure { _effects.trySend(ChatEffect.ShowMessage(it.toMessage())) }
+        }
+    }
+
+    fun deleteProfile(name: String) {
+        viewModelScope.launch {
+            profilesRepository.delete(name)
+                .onSuccess {
+                    _effects.trySend(ChatEffect.ShowMessage("Profile \"$name\" deleted"))
+                    loadProfileIdentity()
+                }
+                .onFailure { _effects.trySend(ChatEffect.ShowMessage(it.toMessage())) }
+        }
+    }
+
+    /**
+     * Boot identity for the chat host: the panel row's label and single-mode
+     * hiding come from this. 404 hides quietly; newer failures stay visible.
+     */
+    fun loadProfileIdentity() {
+        viewModelScope.launch {
+            val active = profilesRepository.active()
+            val rowsBundle = profilesRepository.list()
+            val hidden = rowHiddenByMissingApi(active.exceptionOrNull() as? ApiException) ||
+                rowHiddenByMissingApi(rowsBundle.exceptionOrNull() as? ApiException)
+            val activeResult = active.getOrNull()
+            val rows = rowsBundle.getOrNull()
+            _uiState.update { s ->
+                s.copy(
+                    tools = s.tools.copy(
+                        profiles = s.tools.profiles.copy(
+                            available = if (hidden) false else true,
+                            activeName = activeResult?.name ?: s.tools.profiles.activeName,
+                            activeIsDefault = activeResult?.isDefault,
+                            defaultWorkspace = activeResult?.defaultWorkspace
+                                ?: s.tools.profiles.defaultWorkspace,
+                            singleMode = rows?.singleProfileMode ?: s.tools.profiles.singleMode,
+                            rows = rows?.profiles?.filter { it.visible != false }
+                                ?: s.tools.profiles.rows,
+                        ),
+                    ),
+                )
+            }
+        }
     }
 
     private fun Throwable.toMessage(): String =

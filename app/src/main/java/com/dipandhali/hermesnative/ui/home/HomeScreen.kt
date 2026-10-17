@@ -48,6 +48,7 @@ import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.rounded.Mic
 import androidx.compose.material.icons.rounded.MoreHoriz
 import androidx.compose.material.icons.rounded.Bookmarks
+import androidx.compose.material.icons.rounded.ManageAccounts
 import androidx.compose.material.icons.rounded.Settings
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -96,6 +97,7 @@ import com.dipandhali.hermesnative.core.model.SessionRow
 import com.dipandhali.hermesnative.data.media.newCameraCaptureUri
 import com.dipandhali.hermesnative.domain.composer.ATTACH_ROTATION_DEGREES
 import com.dipandhali.hermesnative.domain.composer.PromptsUiState
+import com.dipandhali.hermesnative.domain.composer.ProfilesUiState
 import com.dipandhali.hermesnative.domain.composer.attachToggleDescription
 import com.dipandhali.hermesnative.domain.composer.composeWithPrompt
 import com.dipandhali.hermesnative.domain.modelpicker.ModelSelection
@@ -105,7 +107,10 @@ import com.dipandhali.hermesnative.domain.voice.VoicePhase
 import com.dipandhali.hermesnative.ui.chat.components.AttachPanel
 import com.dipandhali.hermesnative.ui.chat.components.ChatToolsRow
 import com.dipandhali.hermesnative.ui.chat.components.ChatToolsSection
+import com.dipandhali.hermesnative.ui.chat.components.ProfilePickerSheet
 import com.dipandhali.hermesnative.ui.chat.components.PromptsSheet
+import com.dipandhali.hermesnative.ui.profile.ProfileCreateSheet
+import com.dipandhali.hermesnative.ui.profile.ProfileManagerSheet
 import com.dipandhali.hermesnative.ui.chat.components.AttachmentTray
 import com.dipandhali.hermesnative.ui.chat.components.ComposerAttachment
 import com.dipandhali.hermesnative.ui.chat.components.MAX_ATTACHMENTS
@@ -265,12 +270,14 @@ fun HomeScreen(
                 voiceAmplitude = viewModel::voiceAmplitude,
                 resetSignal = composerReset,
                 prompts = state.tools.prompts,
+                profiles = state.tools.profiles,
                 onOpenPrompts = viewModel::openPrompts,
                 onClosePrompts = viewModel::closePrompts,
                 onSavePrompt = viewModel::savePrompt,
                 onDeletePrompt = viewModel::deletePrompt,
                 onUndoPromptDelete = viewModel::undoPromptDelete,
                 onRetryPrompts = viewModel::retryPrompts,
+                onOpenProfilePicker = viewModel::openProfilePicker,
                 // The composer is the only element that insets itself against the
                 // keyboard and the gesture bar. `inner` below is only a padding
                 // value — it is not consumed — so a second imePadding anywhere in
@@ -380,6 +387,44 @@ fun HomeScreen(
             scopeNote = "Applies to new conversations.",
         )
     }
+
+    state.tools.profiles.let { profiles ->
+        if (profiles.pickerOpen) {
+            ProfilePickerSheet(
+                state = profiles,
+                onSwitch = viewModel::switchProfile,
+                onManage = {
+                    viewModel.closeProfilePicker()
+                    viewModel.openProfileManager()
+                },
+                onDismiss = viewModel::closeProfilePicker,
+            )
+        }
+        if (profiles.managerOpen) {
+            ProfileManagerSheet(
+                state = profiles,
+                onCreate = {
+                    viewModel.closeProfileManager()
+                    viewModel.openProfileCreate()
+                },
+                onActivate = viewModel::switchProfile,
+                onDelete = viewModel::deleteProfile,
+                onDismiss = viewModel::closeProfileManager,
+            )
+        }
+        if (profiles.createOpen) {
+            ProfileCreateSheet(
+                state = profiles,
+                catalog = state.picker.catalog,
+                onSubmit = viewModel::createProfile,
+                onBack = {
+                    viewModel.closeProfileCreate()
+                    viewModel.openProfileManager()
+                },
+                onDismiss = viewModel::closeProfileCreate,
+            )
+        }
+    }
 }
 
 /**
@@ -412,12 +457,14 @@ private fun HomeComposer(
     voiceAmplitude: () -> Int,
     resetSignal: Int,
     prompts: PromptsUiState,
+    profiles: ProfilesUiState,
     onOpenPrompts: () -> Unit,
     onClosePrompts: () -> Unit,
     onSavePrompt: (String) -> Unit,
     onDeletePrompt: (String) -> Unit,
     onUndoPromptDelete: () -> Unit,
     onRetryPrompts: () -> Unit,
+    onOpenProfilePicker: () -> Unit,
 ) {
     var text by remember { mutableStateOf("") }
     var attachments by remember { mutableStateOf(listOf<ComposerAttachment>()) }
@@ -660,9 +707,9 @@ private fun HomeComposer(
                         filePicker.launch(arrayOf("*/*"))
                     },
                     chatTools = {
-                        if (prompts.available != false) {
-                            ChatToolsSection(
-                                rows = listOf(
+                        buildList {
+                            if (prompts.available != false) {
+                                add(
                                     ChatToolsRow(
                                         icon = Icons.Rounded.Bookmarks,
                                         title = "Saved prompts",
@@ -671,9 +718,22 @@ private fun HomeComposer(
                                             onOpenPrompts()
                                         },
                                     ),
-                                ),
-                            )
-                        }
+                                )
+                            }
+                            if (profiles.available != false && !profiles.singleMode) {
+                                add(
+                                    ChatToolsRow(
+                                        icon = Icons.Rounded.ManageAccounts,
+                                        title = "Profile",
+                                        trailing = profiles.activeName,
+                                        onClick = {
+                                            attachOpen = false
+                                            onOpenProfilePicker()
+                                        },
+                                    ),
+                                )
+                            }
+                        }.takeIf { it.isNotEmpty() }?.let { ChatToolsSection(rows = it) }
                     },
                 )
             }

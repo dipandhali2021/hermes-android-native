@@ -33,6 +33,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.ArrowBack
 import androidx.compose.material.icons.rounded.ArrowDownward
 import androidx.compose.material.icons.rounded.Bookmarks
+import androidx.compose.material.icons.rounded.ManageAccounts
 import androidx.compose.material.icons.rounded.MoreVert
 import androidx.compose.material.icons.rounded.Tune
 import androidx.compose.material3.CircularProgressIndicator
@@ -82,7 +83,10 @@ import com.dipandhali.hermesnative.ui.chat.components.ModelChip
 import com.dipandhali.hermesnative.ui.chat.components.ChatToolsRow
 import com.dipandhali.hermesnative.ui.chat.components.ChatToolsSection
 import com.dipandhali.hermesnative.ui.chat.components.ModelPickerSheet
+import com.dipandhali.hermesnative.ui.chat.components.ProfilePickerSheet
 import com.dipandhali.hermesnative.ui.chat.components.PromptsSheet
+import com.dipandhali.hermesnative.ui.profile.ProfileCreateSheet
+import com.dipandhali.hermesnative.ui.profile.ProfileManagerSheet
 import com.dipandhali.hermesnative.ui.chat.components.NoticeRow
 import com.dipandhali.hermesnative.ui.chat.components.UserMessage
 import com.dipandhali.hermesnative.ui.theme.HermesMotion
@@ -309,9 +313,9 @@ fun ChatScreen(
                             filePicker.launch(arrayOf("*/*"))
                         },
                         chatTools = {
-                            if (state.tools.prompts.available != false) {
-                                ChatToolsSection(
-                                    rows = listOf(
+                            buildList {
+                                if (state.tools.prompts.available != false) {
+                                    add(
                                         ChatToolsRow(
                                             icon = Icons.Rounded.Bookmarks,
                                             title = "Saved prompts",
@@ -320,9 +324,24 @@ fun ChatScreen(
                                                 viewModel.openPrompts()
                                             },
                                         ),
-                                    ),
-                                )
-                            }
+                                    )
+                                }
+                                if (state.tools.profiles.available != false &&
+                                    !state.tools.profiles.singleMode
+                                ) {
+                                    add(
+                                        ChatToolsRow(
+                                            icon = Icons.Rounded.ManageAccounts,
+                                            title = "Profile",
+                                            trailing = state.tools.profiles.activeName,
+                                            onClick = {
+                                                attachOpen = false
+                                                viewModel.openProfilePicker()
+                                            },
+                                        ),
+                                    )
+                                }
+                            }.takeIf { it.isNotEmpty() }?.let { ChatToolsSection(rows = it) }
                         },
                     )
                 },
@@ -449,6 +468,44 @@ fun ChatScreen(
             onRetry = viewModel::retryPrompts,
             onDismiss = viewModel::closePrompts,
         )
+    }
+
+    state.tools.profiles.let { profiles ->
+        if (profiles.pickerOpen) {
+            ProfilePickerSheet(
+                state = profiles,
+                onSwitch = viewModel::switchProfile,
+                onManage = {
+                    viewModel.closeProfilePicker()
+                    viewModel.openProfileManager()
+                },
+                onDismiss = viewModel::closeProfilePicker,
+            )
+        }
+        if (profiles.managerOpen) {
+            ProfileManagerSheet(
+                state = profiles,
+                onCreate = {
+                    viewModel.closeProfileManager()
+                    viewModel.openProfileCreate()
+                },
+                onActivate = viewModel::switchProfile,
+                onDelete = viewModel::deleteProfile,
+                onDismiss = viewModel::closeProfileManager,
+            )
+        }
+        if (profiles.createOpen) {
+            ProfileCreateSheet(
+                state = profiles,
+                catalog = state.picker.catalog,
+                onSubmit = viewModel::createProfile,
+                onBack = {
+                    viewModel.closeProfileCreate()
+                    viewModel.openProfileManager()
+                },
+                onDismiss = viewModel::closeProfileCreate,
+            )
+        }
     }
 }
 
