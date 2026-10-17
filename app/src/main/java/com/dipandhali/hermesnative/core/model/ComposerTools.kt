@@ -117,3 +117,102 @@ data class WorkspaceMutationResponse(
     val ok: Boolean = false,
     val workspaces: List<WorkspaceDto> = emptyList(),
 )
+
+// ---------- Workspace files (chat-only panel) ----------
+
+/**
+ * One row of `/api/list`. `path` is the RELATIVE display path the server
+ * emits (`rel/name`) — the panel navigates with it directly. `is_dir` binds
+ * to symlink rows only; [entryIsDir] folds both spellings.
+ */
+@Serializable
+data class FileEntry(
+    val name: String? = null,
+    val path: String? = null,
+    /** `dir`, `file` or `symlink` in the server's vocabulary. */
+    val type: String? = null,
+    val size: Long? = null,
+    @SerialName("mtime_ns") val mtimeNs: Long? = null,
+    @SerialName("is_dir") val isDir: Boolean? = null,
+    /** Symlink rows: true when the resolved target escapes the workspace. */
+    @SerialName("target_outside_workspace") val targetOutsideWorkspace: Boolean? = null,
+) {
+    val entryIsDir: Boolean
+        get() = type == "dir" || isDir == true
+}
+
+@Serializable
+data class ListDirResponse(
+    val entries: List<FileEntry> = emptyList(),
+    /** Server-side change signature for cheap re-polling. */
+    val signature: String? = null,
+    val path: String? = null,
+    val workspace: String? = null,
+    @SerialName("workspace_recovered") val workspaceRecovered: Boolean? = null,
+)
+
+@Serializable
+data class FileReadResponse(
+    val path: String? = null,
+    /** Replacement-decoded text; the server reads at most 400 KB. */
+    val content: String = "",
+    val size: Long? = null,
+    val lines: Long? = null,
+)
+
+@Serializable
+data class GitStatus(
+    val branch: String? = null,
+    val dirty: Int? = null,
+    val modified: Int? = null,
+    val untracked: Int? = null,
+    val ahead: Int? = null,
+    val behind: Int? = null,
+)
+
+/** `/api/git-info` — `git` is null outside a repository. */
+@Serializable
+data class GitInfoResponse(val git: GitStatus? = null)
+
+@Serializable
+data class FileOpOk(val ok: Boolean = false, val path: String? = null)
+
+@Serializable
+data class FileRenameResponse(
+    val ok: Boolean = false,
+    val oldPath: String? = null,
+    val newPath: String? = null,
+)
+
+/** One uploaded file, as `/api/workspace/upload` answers for a single part. */
+@Serializable
+data class WorkspaceUploadEntry(
+    val filename: String? = null,
+    val path: String? = null,
+    val size: Long? = null,
+    val mime: String? = null,
+    @SerialName("is_image") val isImage: Boolean? = null,
+)
+
+@Serializable
+data class FileCreateRequest(
+    @SerialName("session_id") val sessionId: String,
+    val path: String,
+    /** Present always; empty for a blank file — the server default either way. */
+    val content: String = "",
+)
+
+@Serializable
+data class FileRenameRequest(
+    @SerialName("session_id") val sessionId: String,
+    val path: String,
+    @SerialName("new_name") val newName: String,
+)
+
+/** `recursive` rides only for directories; the server refuses symlinked entries. */
+@Serializable
+data class FileDeleteRequest(
+    @SerialName("session_id") val sessionId: String,
+    val path: String,
+    val recursive: Boolean? = null,
+)

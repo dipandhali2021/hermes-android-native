@@ -26,10 +26,19 @@ import com.dipandhali.hermesnative.core.model.ProfileSwitchRequest
 import com.dipandhali.hermesnative.core.model.ProfileSwitchResponse
 import com.dipandhali.hermesnative.core.model.SavePromptRequest
 import com.dipandhali.hermesnative.core.model.SavePromptResponse
+import com.dipandhali.hermesnative.core.model.FileCreateRequest
+import com.dipandhali.hermesnative.core.model.FileDeleteRequest
+import com.dipandhali.hermesnative.core.model.FileOpOk
+import com.dipandhali.hermesnative.core.model.FileReadResponse
+import com.dipandhali.hermesnative.core.model.FileRenameRequest
+import com.dipandhali.hermesnative.core.model.FileRenameResponse
+import com.dipandhali.hermesnative.core.model.GitInfoResponse
+import com.dipandhali.hermesnative.core.model.ListDirResponse
 import com.dipandhali.hermesnative.core.model.WorkspaceAddRequest
 import com.dipandhali.hermesnative.core.model.WorkspaceMutationResponse
 import com.dipandhali.hermesnative.core.model.WorkspaceNameRequest
 import com.dipandhali.hermesnative.core.model.WorkspaceSuggestionsResponse
+import com.dipandhali.hermesnative.core.model.WorkspaceUploadEntry
 import com.dipandhali.hermesnative.core.model.SessionBusyResponse
 import com.dipandhali.hermesnative.core.model.SessionDetailResponse
 import com.dipandhali.hermesnative.core.model.SessionListResponse
@@ -302,6 +311,98 @@ class HermesApi(private val client: OkHttpClient) {
             WorkspaceMutationResponse.serializer(),
         )
 
+    // ---- workspace files (chat-only panel) ----
+
+    suspend fun listFiles(baseUrl: String, sessionId: String, path: String = "."): Result<ListDirResponse> =
+        get(
+            baseUrl,
+            "api/list?session_id=${sessionId.urlEncoded()}&path=${path.urlEncoded()}",
+            ListDirResponse.serializer(),
+        )
+
+    suspend fun readFile(baseUrl: String, sessionId: String, path: String): Result<FileReadResponse> =
+        get(
+            baseUrl,
+            "api/file?session_id=${sessionId.urlEncoded()}&path=${path.urlEncoded()}",
+            FileReadResponse.serializer(),
+        )
+
+    suspend fun downloadFile(baseUrl: String, sessionId: String, path: String): Result<ByteArray> =
+        executeBytes(baseUrl, "api/file/raw?session_id=${sessionId.urlEncoded()}&path=${path.urlEncoded()}") {
+            Request.Builder().url(it).get()
+        }
+
+    suspend fun gitInfo(baseUrl: String, sessionId: String): Result<GitInfoResponse> =
+        get(baseUrl, "api/git-info?session_id=${sessionId.urlEncoded()}", GitInfoResponse.serializer())
+
+    suspend fun createFile(baseUrl: String, sessionId: String, path: String, content: String): Result<FileOpOk> =
+        post(
+            baseUrl,
+            "api/file/create",
+            json.encodeToString(
+                FileCreateRequest.serializer(),
+                FileCreateRequest(sessionId, path, content),
+            ),
+            FileOpOk.serializer(),
+        )
+
+    suspend fun createDir(baseUrl: String, sessionId: String, path: String): Result<FileOpOk> =
+        post(
+            baseUrl,
+            "api/file/create-dir",
+            """{"session_id":${sessionId.jsonString()},"path":${path.jsonString()}}""",
+            FileOpOk.serializer(),
+        )
+
+    suspend fun renameFile(baseUrl: String, sessionId: String, path: String, newName: String): Result<FileRenameResponse> =
+        post(
+            baseUrl,
+            "api/file/rename",
+            json.encodeToString(
+                FileRenameRequest.serializer(),
+                FileRenameRequest(sessionId, path, newName),
+            ),
+            FileRenameResponse.serializer(),
+        )
+
+    suspend fun deleteEntry(
+        baseUrl: String,
+        sessionId: String,
+        path: String,
+        recursive: Boolean = false,
+    ): Result<FileOpOk> = post(
+        baseUrl,
+        "api/file/delete",
+        json.encodeToString(
+            FileDeleteRequest.serializer(),
+            FileDeleteRequest(sessionId, path, if (recursive) true else null),
+        ),
+        FileOpOk.serializer(),
+    )
+
+    /**
+     * Push a file into the session's workspace. Form fields `session_id` and
+     * `path` (the target subdirectory, '' for the root) plus a single `file`
+     * part — the shape `handle_workspace_upload` parses.
+     */
+    suspend fun uploadWorkspaceFile(
+        baseUrl: String,
+        sessionId: String,
+        subPath: String,
+        fileName: String,
+        mimeType: String?,
+        bytes: ByteArray,
+    ): Result<WorkspaceUploadEntry> = execute(baseUrl, "api/workspace/upload", WorkspaceUploadEntry.serializer()) { url ->
+        val builder = MultipartBody.Builder()
+            .setType(MultipartBody.FORM)
+            .addFormDataPart("session_id", sessionId)
+        if (subPath.isNotEmpty()) {
+            builder.addFormDataPart("path", subPath)
+        }
+        builder.addFormDataPart("file", fileName, bytes.toRequestBody(mimeType?.toMediaTypeOrNull()))
+        Request.Builder().url(url).post(builder.build())
+    }
+
     suspend fun profiles(baseUrl: String): Result<ProfilesResponse> =
         get(baseUrl, "api/profiles", ProfilesResponse.serializer())
 
@@ -379,6 +480,39 @@ class HermesApi(private val client: OkHttpClient) {
         deserializer: DeserializationStrategy<T>,
     ): Result<T> = execute<T>(baseUrl, path, deserializer) {
         Request.Builder().url(it).get()
+    }
+
+    /**
+     * The raw-byte sibling of [execute]: same URL/error mapping, but success
+     * hands back the body bytes (image and other opaque previews ride this).
+     */
+    private suspend fun executeBytes(
+        baseUrl: String,
+        path: String,
+        build: (String) -> Request.Builder,
+    ): Result<ByteArray> = withContext(Dispatchers.IO) {
+        val url = joinUrl(baseUrl, path)
+            ?: return@withContext Result.failure(ApiException(DataError.NotHermes))
+
+        val request = try {
+            build(url).build()
+        } catch (e: IllegalArgumentException) {
+            return@withContext Result.failure(ApiException(DataError.NotHermes))
+        }
+
+        try {
+            client.newCall(request).execute().use { response ->
+                if (!response.isSuccessful) {
+                    val text = response.body?.string().orEmpty()
+                    return@use Result.failure(ApiException(mapStatus(response.code, text)))
+                }
+                val bytes = response.body?.bytes()
+                    ?: return@use Result.failure(ApiException(DataError.Malformed("empty file body")))
+                Result.success(bytes)
+            }
+        } catch (e: Exception) {
+            Result.failure(ApiException(e.toDataError()))
+        }
     }
 
     private suspend fun getUnit(baseUrl: String, path: String): Result<Unit> =
