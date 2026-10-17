@@ -136,6 +136,10 @@ class SessionsViewModel @Inject constructor(
                 }
                 attachments += attachment
             }
+            // The chat screen owns the turn from here, so a voice-started run
+            // must not leave its strip behind on a screen the user can return
+            // to.
+            _state.update { it.copy(voicePhase = VoicePhase.Idle) }
             refresh()
             _effects.trySend(SessionsEffect.OpenSessionAndSend(sessionId, message, attachments))
         }
