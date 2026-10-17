@@ -18,6 +18,9 @@ import com.dipandhali.hermesnative.core.model.NewSessionRequest
 import com.dipandhali.hermesnative.core.model.NewSessionResponse
 import com.dipandhali.hermesnative.core.model.ReasoningRequest
 import com.dipandhali.hermesnative.core.model.ReasoningResponse
+import com.dipandhali.hermesnative.core.model.PromptsResponse
+import com.dipandhali.hermesnative.core.model.SavePromptRequest
+import com.dipandhali.hermesnative.core.model.SavePromptResponse
 import com.dipandhali.hermesnative.core.model.SessionBusyResponse
 import com.dipandhali.hermesnative.core.model.SessionDetailResponse
 import com.dipandhali.hermesnative.core.model.SessionListResponse
@@ -226,6 +229,24 @@ class HermesApi(private val client: OkHttpClient) {
 
     suspend fun profiles(baseUrl: String): Result<ProfilesResponse> =
         get(baseUrl, "api/profiles", ProfilesResponse.serializer())
+
+    suspend fun prompts(baseUrl: String): Result<PromptsResponse> =
+        get(baseUrl, "api/prompts", PromptsResponse.serializer())
+
+    /**
+     * Saves a prompt. The label key is genuinely absent when unset — the undo
+     * path re-saves with the *original* label to restore the same row.
+     */
+    suspend fun savePrompt(baseUrl: String, text: String, label: String?): Result<SavePromptResponse> =
+        post(
+            baseUrl,
+            "api/prompts",
+            json.encodeToString(SavePromptRequest.serializer(), SavePromptRequest(text, label)),
+            SavePromptResponse.serializer(),
+        )
+
+    suspend fun deletePrompt(baseUrl: String, id: String): Result<Unit> =
+        postRaw(baseUrl, "api/prompts", """{"id":${id.jsonString()}}""")
 
     suspend fun insights(baseUrl: String): Result<InsightsResponse> =
         get(baseUrl, "api/insights", InsightsResponse.serializer())
