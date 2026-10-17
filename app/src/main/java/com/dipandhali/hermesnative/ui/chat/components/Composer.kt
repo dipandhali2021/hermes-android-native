@@ -56,6 +56,7 @@ import androidx.compose.ui.unit.dp
 import com.dipandhali.hermesnative.domain.composer.ATTACH_ROTATION_DEGREES
 import com.dipandhali.hermesnative.domain.composer.ComposerAction
 import com.dipandhali.hermesnative.domain.composer.attachToggleDescription
+import com.dipandhali.hermesnative.domain.voice.VoiceInputMode
 import com.dipandhali.hermesnative.domain.voice.VoicePhase
 import com.dipandhali.hermesnative.ui.theme.HermesMotion
 
@@ -83,6 +84,7 @@ fun Composer(
     enabled: Boolean = true,
     onMic: (() -> Unit)? = null,
     micEnabled: Boolean = true,
+    voiceMode: VoiceInputMode = VoiceInputMode.TRANSCRIBE,
     voicePhase: VoicePhase = VoicePhase.Idle,
     onVoiceStop: () -> Unit = {},
     onVoiceCancel: () -> Unit = {},
@@ -171,6 +173,7 @@ fun Composer(
                                 }
                             },
                             micEnabled = micEnabled,
+                            voiceMode = voiceMode,
                             leadingAccessory = leadingAccessory,
                             action = action,
                             onAction = onAction,
@@ -219,6 +222,7 @@ private fun ComposerControls(
     attachOpen: Boolean,
     onMic: (() -> Unit)?,
     micEnabled: Boolean,
+    voiceMode: VoiceInputMode,
     leadingAccessory: (@Composable () -> Unit)?,
     action: ComposerAction,
     onAction: () -> Unit,
@@ -265,6 +269,8 @@ private fun ComposerControls(
 
         // The mic sits between the field area and send — the standing
         // placement: voice is another way to fill a message, send is the send.
+        // Its icon wears the selected voice mode, so the composer always
+        // answers "what will the mic do?" without opening the panel.
         if (onMic != null) {
             IconButton(
                 onClick = onMic,
@@ -273,7 +279,7 @@ private fun ComposerControls(
                     contentColor = MaterialTheme.colorScheme.onSurfaceVariant,
                 ),
             ) {
-                Icon(Icons.Rounded.Mic, contentDescription = "Voice input")
+                Icon(voiceModeIcon(voiceMode), contentDescription = "Voice input")
             }
         }
 

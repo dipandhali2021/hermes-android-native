@@ -303,6 +303,7 @@ fun ChatScreen(
                 onRemoveAttachment = viewModel::removeAttachment,
                 onMic = onMicTap,
                 micEnabled = !state.isBusy,
+                voiceMode = state.voiceMode,
                 voicePhase = state.voicePhase,
                 onVoiceStop = viewModel::stopVoiceRecording,
                 onVoiceCancel = viewModel::cancelVoiceRecording,
