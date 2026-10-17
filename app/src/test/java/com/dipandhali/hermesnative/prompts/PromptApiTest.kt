@@ -92,13 +92,16 @@ class PromptApiTest {
     }
 
     @Test
-    fun `delete posts the id`() = runTest {
+    fun `delete sends the DELETE verb with the id`() = runTest {
         server.enqueue(MockResponse.Builder().code(200).body("""{"ok":true}""").build())
 
         api().deletePrompt(server.url("/").toString(), "x")
 
         val recorded = server.takeRequest()
         assertEquals("/api/prompts", recorded.target)
+        // The server deletes prompts in its HTTP-DELETE handler; a POST here
+        // lands in the save handler and answers "text is required".
+        assertEquals("DELETE", recorded.method)
         assertEquals("""{"id":"x"}""", recorded.body?.utf8())
     }
 

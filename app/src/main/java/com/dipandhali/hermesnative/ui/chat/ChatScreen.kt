@@ -322,6 +322,9 @@ fun ChatScreen(
                 onValueChange = viewModel::onInputChange,
                 action = state.composerAction,
                 onAction = viewModel::onPrimaryAction,
+                // Long-press send: hold the send button to keep the draft for
+                // reuse — the sheet's "Save current input", one gesture away.
+                onSavePrompt = { viewModel.saveDraftAsPrompt() },
                 onAttach = { attachOpen = !attachOpen },
                 attachOpen = attachOpen,
                 attachPanel = {
