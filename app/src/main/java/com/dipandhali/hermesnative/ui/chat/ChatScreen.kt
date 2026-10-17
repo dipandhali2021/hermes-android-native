@@ -3,6 +3,7 @@ package com.dipandhali.hermesnative.ui.chat
 import android.Manifest
 import android.content.pm.PackageManager
 import android.net.Uri
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
@@ -71,7 +72,7 @@ import com.dipandhali.hermesnative.data.media.newCameraCaptureUri
 import com.dipandhali.hermesnative.domain.modelpicker.ModelSelection
 import com.dipandhali.hermesnative.domain.modelpicker.displaySelection
 import com.dipandhali.hermesnative.ui.chat.components.AssistantTurn
-import com.dipandhali.hermesnative.ui.chat.components.AttachSheet
+import com.dipandhali.hermesnative.ui.chat.components.AttachPanel
 import com.dipandhali.hermesnative.ui.chat.components.Composer
 import com.dipandhali.hermesnative.ui.chat.components.ComposerAttachment
 import com.dipandhali.hermesnative.ui.chat.components.ErrorRow
@@ -116,7 +117,7 @@ fun ChatScreen(
         if (uris.isNotEmpty()) viewModel.addAttachments(uris.map { it.toString() })
     }
 
-    var attachSheetOpen by remember { mutableStateOf(false) }
+    var attachOpen by remember { mutableStateOf(false) }
     var pendingCameraUri by remember { mutableStateOf<Uri?>(null) }
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
@@ -166,6 +167,9 @@ fun ChatScreen(
     DisposableEffect(Unit) {
         onDispose { viewModel.cancelVoiceRecording() }
     }
+
+    // The panel is not modal, so it owns the back press while it is open.
+    BackHandler(enabled = attachOpen) { attachOpen = false }
 
     // Open, then send: the seed arrives from the home composer, which had to
     // create the session before it could hand the text over. The send waits for
@@ -269,7 +273,30 @@ fun ChatScreen(
                 onValueChange = viewModel::onInputChange,
                 action = state.composerAction,
                 onAction = viewModel::onPrimaryAction,
-                onAttach = { attachSheetOpen = true },
+                onAttach = { attachOpen = !attachOpen },
+                attachOpen = attachOpen,
+                attachPanel = {
+                    AttachPanel(
+                        voiceMode = state.voiceMode,
+                        onVoiceModeChange = viewModel::setVoiceMode,
+                        onPhotos = {
+                            attachOpen = false
+                            attachPicker.launch(
+                                PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly),
+                            )
+                        },
+                        onCamera = {
+                            attachOpen = false
+                            val uri = newCameraCaptureUri(context)
+                            pendingCameraUri = uri
+                            cameraCapture.launch(uri)
+                        },
+                        onFiles = {
+                            attachOpen = false
+                            filePicker.launch(arrayOf("*/*"))
+                        },
+                    )
+                },
                 attachments = state.pendingAttachments.map {
                     ComposerAttachment(id = it.id, name = it.name, uriString = it.uriString)
                 },
@@ -381,29 +408,6 @@ fun ChatScreen(
         )
     }
 
-    if (attachSheetOpen) {
-        AttachSheet(
-            voiceMode = state.voiceMode,
-            onVoiceModeChange = viewModel::setVoiceMode,
-            onPhotos = {
-                attachSheetOpen = false
-                attachPicker.launch(
-                    PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly),
-                )
-            },
-            onCamera = {
-                attachSheetOpen = false
-                val uri = newCameraCaptureUri(context)
-                pendingCameraUri = uri
-                cameraCapture.launch(uri)
-            },
-            onFiles = {
-                attachSheetOpen = false
-                filePicker.launch(arrayOf("*/*"))
-            },
-            onDismiss = { attachSheetOpen = false },
-        )
-    }
 }
 
 @Composable
