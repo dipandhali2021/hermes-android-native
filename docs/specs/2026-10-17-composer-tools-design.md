@@ -55,6 +55,22 @@ All defaults were taken except where noted. Binding facts:
 | 25 | Build order: **prompts → profiles → workspace switcher → file panel**; file panel last
   but inside this round. |
 
+### 2.1 Builder-check addenda (settled as binding calls, all web parity)
+
+The fresh-builder check on this document verified the wire claims against the server and
+left three guesses — each settles from parity, recorded here so you can veto while reading:
+
+1. **File panel is chat-only.** The server anchors every file endpoint to a `session_id`,
+   and the web disables its panel with no session too — so no Files entry on the home
+   screen this round, and no invisible throwaway sessions for browsing.
+2. **Home sends omit the `worktree` key** (web's own sends omit it, so a profile's
+   config-level worktree default still applies from the phone); explicit `worktree` rides
+   only the two web-parity spots: `true` for the worktree row, `false` for
+   auto-bind/switch-replacement sessions.
+3. **After a mid-chat profile switch** you land in the brand-new empty conversation
+   immediately (created at switch time, web's replacement-session body), and the back stack
+   is replaced so back never reopens the foreign-profile chat.
+
 ## 3. Chat-tools rows (shared, both composers)
 
 `AttachPanel` gains a `ChatTools` section between the tiles and the voice section — rows styled
@@ -108,9 +124,12 @@ open.
 **Switch semantics (web parity, Q10/Q11).**
 - Current chat has messages **or** a live stream → `POST /api/profile/switch {name}` (the
   server sets the signed `hermes_profile` cookie; the app's cookie jar persists it) then
-  **start a new conversation** under the new profile (the usual home-send path, so the new
-  chat inherits the new profile's default model/workspace); the old chat stays in history.
-  Snackbar: `Switched to <name> — new conversation`.
+  **immediately create the new conversation** — `POST /api/session/new {workspace: <new
+  profile default workspace>, profile: <active>, worktree: false}` (the web's
+  replacement-session body) — and **land in it**, *replacing* the chat entry in the back
+  stack so back never reopens the now foreign-profile chat (that chat still exists in
+  history for the web). Snackbar: `Switched to <name> — new conversation`, shown in the
+  new chat.
 - Current chat is empty (no messages, no stream) → switch, then **re-tag in place**:
   `POST /api/session/update {session_id, workspace: <new profile's default workspace>,
   model: <new profile default model>, model_provider: …}` — same session id, silently.
@@ -163,8 +182,12 @@ Chip title/tooltip = full path (my call, parity with web).
 model, model_provider}` — send all three (web parity: the model keys ride along so the
 server's route-state re-derivation sees a consistent triple), preserving the session's
 current model fields. Blocked while a stream runs (toast `Finish or stop the reply before
-switching workspace` — web's `workspace_busy_switch`). Without a session (home send path):
-create the chat with `{workspace, worktree: false}` (Q21).
+switching workspace` — web's `workspace_busy_switch`). Without a session (home path): a
+picker tap only **retargets the composer**; the chat is created at send time with
+`{workspace}` and **no `worktree` key** — web's user-initiated sends omit the key, so the
+profile's config-level worktree default applies (an explicit `false` would silently disable
+configured isolation). The app sends `worktree` explicitly only in the two web-parity spots:
+`true` for the worktree row, `false` for auto-bind/profile-switch replacement sessions (Q21).
 
 **Manager sheet (Q20).** Rows as above but actionable: **Rename** (text dialog → `POST
 /api/workspaces/rename {path, name}`), **Remove** (swipe → `POST /api/workspaces/remove
@@ -176,10 +199,15 @@ miss: last path segment). No worktree-removal UI this round.
 
 ## 7. Workspace file panel (this round, view-first)
 
-**Entry.** Two, both cheap: (a) a small **folder icon on the chat top bar** next to the
-workspace label; (b) from the workspace picker sheet, a `Browse files` row. It is a
-**full-screen route**, not a drawer — the phone wants the space; "show/hide" on web becomes
-"enter/leave" here.
+**Entry — chat-only (builder-check call, web parity).** The web itself disables its file
+panel with no session, and every file endpoint is session-anchored (`/api/list` etc. 400
+without `session_id`), so the panel exists **only inside a chat**: the folder icon in the
+chat top bar and the picker sheet's `Browse files` row (which shows only with a session).
+On the home screen there is no Files entry this round, and no throwaway sessions are minted
+for browsing — they would pollute the profile's session list. Two entries: (a) the small
+**folder icon in the chat top bar** next to the workspace label; (b) from the workspace
+picker sheet, a `Browse files` row. The panel is a **full-screen route**, not a drawer — the
+phone wants the space; "show/hide" on web becomes "enter/leave" here.
 
 **Screen.** Top bar: workspace name + the git line (`GET /api/git-info?session_id=` → branch ·
 ahead/behind, hidden when absent), refresh action. Body: natural-path breadcrumb (tap a crumb
