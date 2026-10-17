@@ -23,6 +23,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.dipandhali.hermesnative.ui.theme.HermesMotion
@@ -120,9 +121,11 @@ private fun ToolTile(
                 text = row.title,
                 style = MaterialTheme.typography.labelLarge,
                 // Two lines by design: "Saved prompts" wraps where one line
-                // would ellipsize the whole point of the tile.
+                // would ellipsize the whole point of the tile — and each line
+                // is centred, or the shorter line reads as left-aligned.
                 maxLines = 2,
                 overflow = TextOverflow.Ellipsis,
+                textAlign = TextAlign.Center,
             )
             row.trailing?.let {
                 Text(
