@@ -94,108 +94,114 @@ fun Composer(
     val focusManager = LocalFocusManager.current
     val panelMinHeight = rememberKeyboardHeight()
 
-    Surface(
-        color = MaterialTheme.colorScheme.surfaceContainer,
-        shape = MaterialTheme.shapes.extraLarge,
-        modifier = modifier.fillMaxWidth(),
-    ) {
-        Column {
-            if (attachments.isNotEmpty()) {
-                AttachmentTray(attachments = attachments, onRemove = onRemoveAttachment)
-            }
+    // Two cards, not one: the composer keeps its own surface and the panel
+    // is a surface of its own below it, the way the reference stacks them.
+    // The call-site modifier wraps the whole stack, so the inset and the
+    // margins apply to both cards alike.
+    Column(modifier = modifier.fillMaxWidth()) {
+        Surface(
+            color = MaterialTheme.colorScheme.surfaceContainer,
+            shape = MaterialTheme.shapes.extraLarge,
+            modifier = Modifier.fillMaxWidth(),
+        ) {
+            Column {
+                if (attachments.isNotEmpty()) {
+                    AttachmentTray(attachments = attachments, onRemove = onRemoveAttachment)
+                }
 
-            TextField(
-                value = value,
-                onValueChange = onValueChange,
-                // Disabled, not hidden, while a clip is being captured or
-                // converted: a half-typed draft stays readable and waiting.
-                enabled = enabled && voicePhase == VoicePhase.Idle,
-                placeholder = { Text("Send a message…") },
-                keyboardOptions = KeyboardOptions(
-                    // Enter inserts a newline on mobile and the button sends; the
-                    // web UI makes the same choice for touch devices.
-                    imeAction = ImeAction.Default,
-                    capitalization = KeyboardCapitalization.Sentences,
-                ),
-                colors = TextFieldDefaults.colors(
-                    focusedContainerColor = Color.Transparent,
-                    unfocusedContainerColor = Color.Transparent,
-                    disabledContainerColor = Color.Transparent,
-                    focusedIndicatorColor = Color.Transparent,
-                    unfocusedIndicatorColor = Color.Transparent,
-                    disabledIndicatorColor = Color.Transparent,
-                ),
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .heightIn(min = 56.dp, max = 180.dp)
-                    // Focus, never IME visibility: in the frame the panel
-                    // opens the keyboard is still animating down, and a
-                    // visibility signal would close it right back.
-                    .onFocusChanged { focus ->
-                        if (focus.isFocused && attachOpen) onAttach?.invoke()
+                TextField(
+                    value = value,
+                    onValueChange = onValueChange,
+                    // Disabled, not hidden, while a clip is being captured or
+                    // converted: a half-typed draft stays readable and waiting.
+                    enabled = enabled && voicePhase == VoicePhase.Idle,
+                    placeholder = { Text("Send a message…") },
+                    keyboardOptions = KeyboardOptions(
+                        // Enter inserts a newline on mobile and the button sends; the
+                        // web UI makes the same choice for touch devices.
+                        imeAction = ImeAction.Default,
+                        capitalization = KeyboardCapitalization.Sentences,
+                    ),
+                    colors = TextFieldDefaults.colors(
+                        focusedContainerColor = Color.Transparent,
+                        unfocusedContainerColor = Color.Transparent,
+                        disabledContainerColor = Color.Transparent,
+                        focusedIndicatorColor = Color.Transparent,
+                        unfocusedIndicatorColor = Color.Transparent,
+                        disabledIndicatorColor = Color.Transparent,
+                    ),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .heightIn(min = 56.dp, max = 180.dp)
+                        // Focus, never IME visibility: in the frame the panel
+                        // opens the keyboard is still animating down, and a
+                        // visibility signal would close it right back.
+                        .onFocusChanged { focus ->
+                            if (focus.isFocused && attachOpen) onAttach?.invoke()
+                        },
+                )
+
+                // The idle toolbar and the recording strip are one slot with two
+                // occupants, crossfaded with the same spring idiom the primary
+                // button uses, so stop/start of a capture never jumps.
+                AnimatedContent(
+                    targetState = voicePhase,
+                    transitionSpec = {
+                        (scaleIn(HermesMotion.spatialFast()) + fadeIn()) togetherWith
+                            (scaleOut(HermesMotion.spatialFast()) + fadeOut()) using
+                            SizeTransform(clip = false)
                     },
-            )
-
-            // The idle toolbar and the recording strip are one slot with two
-            // occupants, crossfaded with the same spring idiom the primary
-            // button uses, so stop/start of a capture never jumps.
-            AnimatedContent(
-                targetState = voicePhase,
-                transitionSpec = {
-                    (scaleIn(HermesMotion.spatialFast()) + fadeIn()) togetherWith
-                        (scaleOut(HermesMotion.spatialFast()) + fadeOut()) using
-                        SizeTransform(clip = false)
-                },
-                label = "composer-controls",
-            ) { phase ->
-                if (phase is VoicePhase.Idle) {
-                    ComposerControls(
-                        enabled = enabled,
-                        onAttach = onAttach?.let { tap ->
-                            // The field gives up focus so the keyboard
-                            // leaves and the panel takes its place.
-                            { focusManager.clearFocus(); tap() }
-                        },
-                        attachOpen = attachOpen,
-                        onMic = onMic?.let { tap ->
-                            {
-                                // The strip replaces the row; a panel under
-                                // a recording is not a thing.
-                                if (attachOpen) onAttach?.invoke()
-                                tap()
-                            }
-                        },
-                        micEnabled = micEnabled,
-                        leadingAccessory = leadingAccessory,
-                        action = action,
-                        onAction = onAction,
-                    )
-                } else {
-                    VoiceRecordingBar(
-                        phase = phase,
-                        elapsedMsProvider = voiceElapsedMs,
-                        amplitudeProvider = voiceAmplitude,
-                        onCancel = onVoiceCancel,
-                        onStop = onVoiceStop,
-                    )
+                    label = "composer-controls",
+                ) { phase ->
+                    if (phase is VoicePhase.Idle) {
+                        ComposerControls(
+                            enabled = enabled,
+                            onAttach = onAttach?.let { tap ->
+                                // The field gives up focus so the keyboard
+                                // leaves and the panel takes its place.
+                                { focusManager.clearFocus(); tap() }
+                            },
+                            attachOpen = attachOpen,
+                            onMic = onMic?.let { tap ->
+                                {
+                                    // The strip replaces the row; a panel under
+                                    // a recording is not a thing.
+                                    if (attachOpen) onAttach?.invoke()
+                                    tap()
+                                }
+                            },
+                            micEnabled = micEnabled,
+                            leadingAccessory = leadingAccessory,
+                            action = action,
+                            onAction = onAction,
+                        )
+                    } else {
+                        VoiceRecordingBar(
+                            phase = phase,
+                            elapsedMsProvider = voiceElapsedMs,
+                            amplitudeProvider = voiceAmplitude,
+                            onCancel = onVoiceCancel,
+                            onStop = onVoiceStop,
+                        )
+                    }
                 }
             }
+        }
 
-            if (attachPanel != null) {
-                AnimatedVisibility(
-                    visible = attachOpen && voicePhase == VoicePhase.Idle,
-                    enter = expandVertically(
-                        animationSpec = HermesMotion.contentSize,
-                        expandFrom = Alignment.Top,
-                    ) + fadeIn(HermesMotion.effects()),
-                    exit = shrinkVertically(
-                        animationSpec = HermesMotion.contentSize,
-                        shrinkTowards = Alignment.Top,
-                    ) + fadeOut(HermesMotion.effects()),
-                    label = "attach-panel",
-                ) {
-                    Box(Modifier.heightIn(min = panelMinHeight)) { attachPanel() }
-                }
+        if (attachPanel != null) {
+            AnimatedVisibility(
+                visible = attachOpen && voicePhase == VoicePhase.Idle,
+                enter = expandVertically(
+                    animationSpec = HermesMotion.contentSize,
+                    expandFrom = Alignment.Top,
+                ) + fadeIn(HermesMotion.effects()),
+                exit = shrinkVertically(
+                    animationSpec = HermesMotion.contentSize,
+                    shrinkTowards = Alignment.Top,
+                ) + fadeOut(HermesMotion.effects()),
+                label = "attach-panel",
+            ) {
+                Box(Modifier.heightIn(min = panelMinHeight)) { attachPanel() }
             }
         }
     }
