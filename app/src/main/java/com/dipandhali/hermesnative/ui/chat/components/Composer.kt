@@ -19,7 +19,7 @@ import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.Send
-import androidx.compose.material.icons.rounded.Add
+import androidx.compose.material.icons.rounded.AttachFile
 import androidx.compose.material.icons.rounded.ArrowUpward
 import androidx.compose.material.icons.rounded.QueuePlayNext
 import androidx.compose.material.icons.rounded.Stop
@@ -66,6 +66,8 @@ fun Composer(
     modifier: Modifier = Modifier,
     onAttach: (() -> Unit)? = null,
     leadingAccessory: (@Composable () -> Unit)? = null,
+    attachments: List<ComposerAttachment> = emptyList(),
+    onRemoveAttachment: (String) -> Unit = {},
     enabled: Boolean = true,
 ) {
     Surface(
@@ -74,6 +76,10 @@ fun Composer(
         modifier = modifier.fillMaxWidth(),
     ) {
         Column {
+            if (attachments.isNotEmpty()) {
+                AttachmentTray(attachments = attachments, onRemove = onRemoveAttachment)
+            }
+
             TextField(
                 value = value,
                 onValueChange = onValueChange,
@@ -105,17 +111,20 @@ fun Composer(
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(6.dp),
             ) {
-                leadingAccessory?.invoke()
-
+                // Attachment first, then the model chip: the row reads
+                // left-to-right as "what it goes with, then what it runs on".
                 if (onAttach != null) {
                     IconButton(onClick = onAttach, enabled = enabled) {
                         Icon(
-                            imageVector = Icons.Rounded.Add,
-                            contentDescription = "Attach a file",
+                            imageVector = Icons.Rounded.AttachFile,
+                            contentDescription = "Attach photos",
                             tint = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
                     }
                 }
+
+                leadingAccessory?.invoke()
+
                 Box(Modifier.weight(1f))
 
                 SendButton(action = action, onClick = onAction, enabled = enabled)

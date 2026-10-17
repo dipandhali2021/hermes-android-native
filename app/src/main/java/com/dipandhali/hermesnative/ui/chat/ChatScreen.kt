@@ -1,5 +1,8 @@
 package com.dipandhali.hermesnative.ui.chat
 
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.PickVisualMediaRequest
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -56,11 +59,14 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.dipandhali.hermesnative.core.model.AttachmentDto
 import com.dipandhali.hermesnative.domain.modelpicker.ModelSelection
 import com.dipandhali.hermesnative.domain.modelpicker.displaySelection
 import com.dipandhali.hermesnative.ui.chat.components.AssistantTurn
 import com.dipandhali.hermesnative.ui.chat.components.Composer
+import com.dipandhali.hermesnative.ui.chat.components.ComposerAttachment
 import com.dipandhali.hermesnative.ui.chat.components.ErrorRow
+import com.dipandhali.hermesnative.ui.chat.components.MAX_ATTACHMENTS
 import com.dipandhali.hermesnative.ui.chat.components.ModelChip
 import com.dipandhali.hermesnative.ui.chat.components.ModelPickerSheet
 import com.dipandhali.hermesnative.ui.chat.components.NoticeRow
@@ -80,6 +86,7 @@ fun ChatScreen(
     sessionId: String?,
     onGoHome: () -> Unit,
     initialMessage: String? = null,
+    initialAttachments: List<AttachmentDto> = emptyList(),
     onOpenSettings: () -> Unit,
     viewModel: ChatViewModel = hiltViewModel(),
 ) {
@@ -93,13 +100,17 @@ fun ChatScreen(
     val clipboard = LocalClipboardManager.current
     var menuOpen by remember { mutableStateOf(false) }
 
-    // Open first, then send: the seed arrives from the home composer, which had to
-    // create the session before it could hand the text over.
-    LaunchedEffect(sessionId, initialMessage) {
-        sessionId?.let(viewModel::openSession)
-        if (!initialMessage.isNullOrBlank()) {
-            viewModel.sendInitialMessage(initialMessage)
-        }
+    val attachPicker = rememberLauncherForActivityResult(
+        ActivityResultContracts.PickMultipleVisualMedia(MAX_ATTACHMENTS),
+    ) { uris ->
+        if (uris.isNotEmpty()) viewModel.addAttachments(uris.map { it.toString() })
+    }
+
+    // Open, then send: the seed arrives from the home composer, which had to
+    // create the session before it could hand the text over. The send waits for
+    // the transcript load inside openSession so it cannot be erased by it.
+    LaunchedEffect(sessionId, initialMessage, initialAttachments) {
+        sessionId?.let { viewModel.openSession(it, initialMessage, initialAttachments) }
     }
 
     LaunchedEffect(Unit) {
@@ -197,6 +208,15 @@ fun ChatScreen(
                 onValueChange = viewModel::onInputChange,
                 action = state.composerAction,
                 onAction = viewModel::onPrimaryAction,
+                onAttach = {
+                    attachPicker.launch(
+                        PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly),
+                    )
+                },
+                attachments = state.pendingAttachments.map {
+                    ComposerAttachment(id = it.id, name = it.name, uriString = it.uriString)
+                },
+                onRemoveAttachment = viewModel::removeAttachment,
                 leadingAccessory = {
                     ModelChip(
                         selection = modelSelection,

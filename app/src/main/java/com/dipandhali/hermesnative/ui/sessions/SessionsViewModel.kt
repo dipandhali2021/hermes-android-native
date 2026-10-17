@@ -1,10 +1,13 @@
 package com.dipandhali.hermesnative.ui.sessions
 
+import android.net.Uri
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.dipandhali.hermesnative.core.error.userMessage
+import com.dipandhali.hermesnative.core.model.AttachmentDto
 import com.dipandhali.hermesnative.core.model.SessionRow
 import com.dipandhali.hermesnative.core.net.ApiException
+import com.dipandhali.hermesnative.data.media.MediaRepository
 import com.dipandhali.hermesnative.data.sessions.SessionRepository
 import com.dipandhali.hermesnative.data.settings.ServerState
 import com.dipandhali.hermesnative.data.settings.SettingsStore
@@ -25,6 +28,7 @@ import javax.inject.Inject
 @HiltViewModel
 class SessionsViewModel @Inject constructor(
     private val repository: SessionRepository,
+    private val media: MediaRepository,
     private val settings: SettingsStore,
     private val serverState: ServerState,
 ) : ViewModel() {
@@ -81,16 +85,30 @@ class SessionsViewModel @Inject constructor(
      * create-then-open, and the first message travels with the navigation rather
      * than being sent from the home screen. Sending it here would leave the user
      * on a screen showing a run they cannot see.
+     *
+     * Uploaded attachments follow the same rule: uploads are session-scoped on
+     * the server, so the files upload here — after creation, before navigation —
+     * and a failure lands on this screen while the composer still holds the
+     * picks.
      */
-    fun startChatWith(message: String) {
+    fun startChatWith(message: String, attachmentUris: List<String> = emptyList()) {
         viewModelScope.launch {
             val pick = selection()
-            repository.create(model = pick?.model, provider = pick?.provider)
-                .onSuccess { sessionId ->
-                    refresh()
-                    _effects.trySend(SessionsEffect.OpenSessionAndSend(sessionId, message))
+            val sessionId = repository.create(model = pick?.model, provider = pick?.provider)
+                .getOrElse { error ->
+                    _effects.trySend(SessionsEffect.Message(error.toMessage()))
+                    return@launch
                 }
-                .onFailure { _effects.trySend(SessionsEffect.Message(it.toMessage())) }
+            val attachments = mutableListOf<AttachmentDto>()
+            for (raw in attachmentUris) {
+                val attachment = media.upload(Uri.parse(raw), sessionId).getOrElse { error ->
+                    _effects.trySend(SessionsEffect.Message(error.toMessage()))
+                    return@launch
+                }
+                attachments += attachment
+            }
+            refresh()
+            _effects.trySend(SessionsEffect.OpenSessionAndSend(sessionId, message, attachments))
         }
     }
 
@@ -212,8 +230,15 @@ class SessionsViewModel @Inject constructor(
 sealed interface SessionsEffect {
     data class OpenSession(val sessionId: String) : SessionsEffect
 
-    /** Open a session and immediately send [message] into it. */
-    data class OpenSessionAndSend(val sessionId: String, val message: String) : SessionsEffect
+    /**
+     * Open a session and immediately send [message] into it, with
+     * [attachments] already uploaded and ready to ride the message.
+     */
+    data class OpenSessionAndSend(
+        val sessionId: String,
+        val message: String,
+        val attachments: List<AttachmentDto> = emptyList(),
+    ) : SessionsEffect
 
     data class Message(val text: String) : SessionsEffect
 }
