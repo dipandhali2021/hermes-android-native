@@ -50,7 +50,9 @@ import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.dipandhali.hermesnative.core.net.ApiException
 import com.dipandhali.hermesnative.data.files.WorkspaceFilesRepository
+import com.dipandhali.hermesnative.core.error.DataError
 import com.dipandhali.hermesnative.core.error.userMessage
+import com.dipandhali.hermesnative.ui.components.AudioAttachmentPlayer
 import dagger.hilt.android.lifecycle.HiltViewModel
 import javax.inject.Inject
 import kotlinx.coroutines.Dispatchers
@@ -62,7 +64,7 @@ import kotlinx.coroutines.withContext
 import java.io.File
 
 /** How the preview route presents one path. */
-enum class PreviewKind { TEXT, IMAGE, EXTERNAL }
+enum class PreviewKind { TEXT, IMAGE, AUDIO, EXTERNAL }
 
 data class FilePreviewUiState(
     val loading: Boolean = true,
@@ -95,12 +97,27 @@ class FilePreviewViewModel @Inject constructor(
         val pair = "$sessionId\u0000$path"
         if (loadedPair == pair) return
         loadedPair = pair
-        _state.update { FilePreviewUiState(loading = true, path = path, kind = kindOf(path)) }
+        _state.update { FilePreviewUiState(loading = true, path = path, kind = previewKindOf(path)) }
         when (_state.value.kind) {
             PreviewKind.TEXT -> loadText(sessionId, path)
             PreviewKind.IMAGE -> loadImage(sessionId, path)
-            PreviewKind.EXTERNAL -> Unit // rendered as an "open externally" card until tapped
+            // Neither fetches during load — the player fetches on first tap,
+            // the hand-off card on demand — so the top progress line must not
+            // spin for them.
+            PreviewKind.AUDIO,
+            PreviewKind.EXTERNAL -> _state.update { it.copy(loading = false) }
         }
+    }
+
+    /**
+     * Raw bytes for the audio player's own fetch — the same route the image
+     * branch reads, minus the decode. The pair the screen loaded with is the
+     * session the bytes resolve against.
+     */
+    suspend fun downloadBytes(path: String): Result<ByteArray> {
+        val sessionId = loadedPair?.split('\u0000')?.getOrNull(0)
+            ?: return Result.failure(ApiException(DataError.Malformed("Nothing is loaded.")))
+        return files.downloadRaw(sessionId, path)
     }
 
     private fun readFailureIsTooLarge(err: Throwable): Boolean =
@@ -235,25 +252,40 @@ private val TEXT_EXTENSIONS = setOf(
     "gitignore", "properties", "env", "lock", "conf", "ini",
 )
 
-private fun kindOf(path: String): PreviewKind {
+private val AUDIO_EXTENSIONS = setOf(
+    "m4a", "mp3", "wav", "ogg", "oga", "opus", "flac", "aac", "webm", "weba", "mp4a",
+)
+
+internal fun previewKindOf(path: String): PreviewKind {
     val extension = path.substringAfterLast('.', "").lowercase()
     return when {
         extension in IMAGE_EXTENSIONS -> PreviewKind.IMAGE
+        extension in AUDIO_EXTENSIONS -> PreviewKind.AUDIO
         extension in TEXT_EXTENSIONS -> PreviewKind.TEXT
         else -> PreviewKind.EXTERNAL
     }
 }
 
-private fun mimeFor(path: String): String = when (kindOf(path)) {
+private fun mimeFor(path: String): String = when (previewKindOf(path)) {
     PreviewKind.IMAGE -> "image/png"
+    PreviewKind.AUDIO -> when (path.substringAfterLast('.', "").lowercase()) {
+        "m4a" -> "audio/mp4"
+        "mp3" -> "audio/mpeg"
+        "wav" -> "audio/x-wav"
+        "ogg", "oga", "opus" -> "audio/ogg"
+        "flac" -> "audio/flac"
+        "aac" -> "audio/aac"
+        else -> "audio/*"
+    }
     PreviewKind.TEXT -> "text/plain"
     PreviewKind.EXTERNAL -> "application/octet-stream"
 }
 
 /**
- * One file, three renderings: monospace text with a copy action, a decoded
- * image pinned to the phone's memory budget, or an external-app hand-off
- * (PDF/unknown always; text when the server refused an oversized read).
+ * One file, four renderings: monospace text with a copy action, a decoded
+ * image pinned to the phone's memory budget, an audio player with speed
+ * control, or an external-app hand-off (PDF/unknown always; text when the
+ * server refused an oversized read).
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -304,7 +336,7 @@ fun FilePreviewScreen(
                             Icon(Icons.Rounded.ContentCopy, contentDescription = "Copy file contents")
                         }
                     }
-                    if (state.kind == PreviewKind.EXTERNAL || state.tooLarge) {
+                    if (state.kind == PreviewKind.EXTERNAL || state.kind == PreviewKind.AUDIO || state.tooLarge) {
                         IconButton(onClick = { viewModel.openExternally(context, path) }) {
                             Icon(Icons.Rounded.OpenInNew, contentDescription = "Open externally")
                         }
@@ -370,6 +402,14 @@ fun FilePreviewScreen(
                         .fillMaxSize()
                         .verticalScroll(rememberScrollState())
                         .padding(horizontal = 16.dp, vertical = 10.dp),
+                )
+
+                state.kind == PreviewKind.AUDIO -> AudioAttachmentPlayer(
+                    name = path.substringAfterLast('/'),
+                    localUri = null,
+                    fetchName = path,
+                    loadBytes = { viewModel.downloadBytes(path) },
+                    modifier = Modifier.padding(16.dp),
                 )
 
                 else -> state.bitmap?.let { bitmap ->
