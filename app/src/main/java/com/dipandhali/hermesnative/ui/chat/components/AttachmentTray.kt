@@ -1,8 +1,6 @@
 package com.dipandhali.hermesnative.ui.chat.components
 
-import android.content.Context
 import android.graphics.Bitmap
-import android.graphics.BitmapFactory
 import android.net.Uri
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
@@ -37,6 +35,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.dipandhali.hermesnative.domain.voice.isVoiceClipName
+import com.dipandhali.hermesnative.ui.components.decodeLocalThumbnail
 import java.util.UUID
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -139,7 +138,7 @@ private fun Thumbnail(attachment: ComposerAttachment) {
         value = if (uriString == null) {
             null
         } else {
-            withContext(Dispatchers.IO) { decodeThumbnail(context, uriString) }
+            withContext(Dispatchers.IO) { decodeLocalThumbnail(context, uriString, THUMB_PX) }
         }
     }
     Box(
@@ -171,25 +170,5 @@ private fun Thumbnail(attachment: ComposerAttachment) {
         }
     }
 }
-
-/**
- * Decodes a bounded thumbnail from a content URI.
- *
- * Two passes — bounds, then a downsampled decode — because a modern camera
- * photo is far too large to decode at full resolution for a 32dp chip.
- */
-private fun decodeThumbnail(context: Context, uriString: String): Bitmap? = runCatching {
-    val uri = Uri.parse(uriString)
-    val resolver = context.contentResolver
-    val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
-    resolver.openInputStream(uri)?.use { BitmapFactory.decodeStream(it, null, bounds) }
-    if (bounds.outWidth <= 0 || bounds.outHeight <= 0) return@runCatching null
-    var sample = 1
-    while (bounds.outWidth / (sample * 2) >= THUMB_PX && bounds.outHeight / (sample * 2) >= THUMB_PX) {
-        sample *= 2
-    }
-    val options = BitmapFactory.Options().apply { inSampleSize = sample }
-    resolver.openInputStream(uri)?.use { BitmapFactory.decodeStream(it, null, options) }
-}.getOrNull()
 
 private const val THUMB_PX = 128
