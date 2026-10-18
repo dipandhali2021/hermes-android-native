@@ -92,7 +92,7 @@ import com.dipandhali.hermesnative.ui.chat.components.ModelPickerSheet
 import com.dipandhali.hermesnative.ui.profile.ProfileCreateSheet
 import com.dipandhali.hermesnative.ui.profile.ProfileManagerSheet
 import com.dipandhali.hermesnative.ui.workspace.WorkspaceManageSheet
-import com.dipandhali.hermesnative.ui.workspace.WorkspacePathDialog
+import com.dipandhali.hermesnative.ui.workspace.WorkspacePathSheet
 import com.dipandhali.hermesnative.ui.chat.components.NoticeRow
 import com.dipandhali.hermesnative.ui.chat.components.UserMessage
 import com.dipandhali.hermesnative.ui.theme.HermesMotion
@@ -525,20 +525,14 @@ fun ChatScreen(
             ProfilePickerSheet(
                 state = profiles,
                 onSwitch = viewModel::switchProfile,
-                onManage = {
-                    viewModel.closeProfilePicker()
-                    viewModel.openProfileManager()
-                },
+                onManage = viewModel::openProfileManager,
                 onDismiss = viewModel::closeProfilePicker,
             )
         }
         if (profiles.managerOpen) {
             ProfileManagerSheet(
                 state = profiles,
-                onCreate = {
-                    viewModel.closeProfileManager()
-                    viewModel.openProfileCreate()
-                },
+                onCreate = viewModel::openProfileCreate,
                 onActivate = viewModel::switchProfile,
                 onDelete = viewModel::deleteProfile,
                 onDismiss = viewModel::closeProfileManager,
@@ -549,10 +543,7 @@ fun ChatScreen(
                 state = profiles,
                 catalog = state.picker.catalog,
                 onSubmit = viewModel::createProfile,
-                onBack = {
-                    viewModel.closeProfileCreate()
-                    viewModel.openProfileManager()
-                },
+                onBack = viewModel::closeProfileCreate,
                 onDismiss = viewModel::closeProfileCreate,
             )
         }
@@ -565,10 +556,7 @@ fun ChatScreen(
                 onPick = viewModel::switchWorkspace,
                 onWorktree = viewModel::startWorktreeChat,
                 onPathAdd = viewModel::openWorkspacePathDialog,
-                onManage = {
-                    viewModel.closeWorkspacePicker()
-                    viewModel.openWorkspaceManage()
-                },
+                onManage = viewModel::openWorkspaceManage,
                 onBrowseFiles = onOpenFiles,
                 onRetry = viewModel::retryWorkspaces,
                 onDismiss = viewModel::closeWorkspacePicker,
@@ -583,7 +571,7 @@ fun ChatScreen(
             )
         }
         if (workspaces.pathDialogOpen) {
-            WorkspacePathDialog(
+            WorkspacePathSheet(
                 state = workspaces,
                 onInput = viewModel::workspacePathQuery,
                 onSubmit = viewModel::submitWorkspacePath,

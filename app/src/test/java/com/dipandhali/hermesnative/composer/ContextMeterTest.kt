@@ -3,16 +3,17 @@ package com.dipandhali.hermesnative.composer
 import com.dipandhali.hermesnative.core.chat.TokenUsage
 import com.dipandhali.hermesnative.domain.composer.ContextMeter
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
 /**
- * The composer's context-window readout, pinned against the web client's own
- * strings (`_syncCtxIndicator` in `static/ui.js`). The two rules that matter
- * most: the percentage divides `last_prompt_tokens` by the window — never the
- * cumulative input counter (web CHANGELOG #1436) — and without prompt data the
- * display stays honest with flat token totals.
+ * The composer's context readout, pinned against the web client's own rules
+ * (`_syncCtxIndicator` in `static/ui.js`). The two that matter most: the
+ * percentage divides `last_prompt_tokens` by the window — never the
+ * cumulative input counter (web CHANGELOG #1436) — and without prompt data
+ * the display stays honest with flat token totals.
  */
 class ContextMeterTest {
 
@@ -22,13 +23,13 @@ class ContextMeterTest {
             TokenUsage(inputTokens = 1_500_000, outputTokens = 10_700),
         )!!
         assertNull(meter.pct)
-        assertEquals("1.5M tokens used", meter.usageLine)
-        assertEquals("In: 1.5M · Out: 10.7k", meter.tokensLine)
+        assertFalse(meter.hasWindowPair)
+        assertEquals("1,510,700 used", meter.headline)
         assertEquals("Context window: 1.5M tokens used", meter.contentDescription)
     }
 
     @Test
-    fun `last prompt against a known window shows the percentage`() {
+    fun `last prompt against a known window fills the card`() {
         val meter = ContextMeter.from(
             TokenUsage(
                 inputTokens = 800_000,
@@ -38,8 +39,11 @@ class ContextMeterTest {
             ),
         )!!
         assertEquals(78, meter.pct)
-        assertEquals("Context window: 78% used (22% left)", meter.usageLine)
-        assertEquals("Context window: 780.0k / 1.0M tokens used", meter.tokensLine)
+        assertTrue(meter.hasWindowPair)
+        assertEquals("780,000 / 1,000,000", meter.headline)
+        assertEquals(220_000L, meter.headroomTokens)
+        assertEquals(0.78f, meter.usedFraction, 0.001f)
+        assertEquals("Used (last prompt)", meter.usedRowLabel)
         assertEquals("Context window: 78% used", meter.contentDescription)
     }
 
@@ -49,18 +53,21 @@ class ContextMeterTest {
         // an assumed 128K.
         val meter = ContextMeter.from(TokenUsage(inputTokens = 5000, lastPromptTokens = 4800))!!
         assertNull(meter.pct)
-        assertEquals("5.0k tokens used", meter.usageLine)
+        assertFalse(meter.hasWindowPair)
+        assertEquals("5,000 used", meter.headline)
     }
 
     @Test
-    fun `overflow clamps the ring but says so`() {
+    fun `overflow clamps the bar but says so`() {
         val meter = ContextMeter.from(
             TokenUsage(contextLength = 1_000_000, lastPromptTokens = 1_200_000),
         )!!
         assertEquals(100, meter.pct)
         assertEquals(120, meter.rawPct)
         assertTrue(meter.exceeded)
-        assertEquals("Context window: 120% used (context exceeded)", meter.usageLine)
+        assertEquals(1f, meter.usedFraction, 0.001f)
+        assertEquals("1,200,000 / 1,000,000", meter.headline)
+        assertEquals("Context exceeded", meter.exceededCaption)
     }
 
     @Test
@@ -74,21 +81,55 @@ class ContextMeterTest {
         )!!
         assertTrue(meter.estimated)
         assertEquals(300_000L, meter.contextTokens)
-        assertEquals("Estimated next model context: 30% used (70% left)", meter.usageLine)
+        assertEquals("300,000 / 1,000,000", meter.headline)
+        assertEquals("Estimated next context", meter.usedRowLabel)
+        assertEquals("Estimated next model context: 30% used", meter.contentDescription)
     }
 
     @Test
-    fun `threshold needs both numbers`() {
+    fun `threshold row needs both numbers`() {
         val withBoth = ContextMeter.from(
             TokenUsage(contextLength = 1_000_000, thresholdTokens = 800_000),
         )!!
-        assertEquals("Auto-compress at 800.0k (80%)", withBoth.thresholdLine)
+        assertEquals("800,000 (80%)", withBoth.thresholdValue)
+        assertEquals(0.8f, withBoth.thresholdFraction!!, 0.001f)
 
         val noWindow = ContextMeter.from(TokenUsage(thresholdTokens = 800_000))!!
-        assertNull(noWindow.thresholdLine)
+        assertNull(noWindow.thresholdValue)
+        assertNull(noWindow.thresholdFraction)
 
         val noThreshold = ContextMeter.from(TokenUsage(contextLength = 1_000_000))!!
-        assertNull(noThreshold.thresholdLine)
+        assertNull(noThreshold.thresholdValue)
+    }
+
+    @Test
+    fun `threshold beyond the window clamps on the bar`() {
+        val meter = ContextMeter.from(
+            TokenUsage(contextLength = 1_000_000, thresholdTokens = 1_500_000),
+        )!!
+        assertEquals(1f, meter.thresholdFraction!!, 0.001f)
+    }
+
+    @Test
+    fun `session totals ride along for the card`() {
+        val meter = ContextMeter.from(
+            TokenUsage(
+                inputTokens = 1200,
+                outputTokens = 340,
+                cacheReadTokens = 900,
+                cacheWriteTokens = 100,
+                estimatedCost = 0.004,
+            ),
+        )!!
+        assertEquals(900L, meter.cacheReadTokens)
+        assertEquals(100L, meter.cacheWriteTokens)
+        assertEquals("$0.0040", meter.costLabel)
+    }
+
+    @Test
+    fun `cost label hides at zero`() {
+        val meter = ContextMeter.from(TokenUsage(inputTokens = 1000))!!
+        assertNull(meter.costLabel)
     }
 
     @Test
@@ -103,5 +144,6 @@ class ContextMeterTest {
         assertEquals("950", ContextMeter.formatTokens(950))
         assertEquals("10.7k", ContextMeter.formatTokens(10_700))
         assertEquals("1.5M", ContextMeter.formatTokens(1_510_700))
+        assertEquals("112,900", ContextMeter.formatGrouped(112_900))
     }
 }

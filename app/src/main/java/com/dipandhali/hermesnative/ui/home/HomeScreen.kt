@@ -122,7 +122,7 @@ import com.dipandhali.hermesnative.ui.chat.components.WorkspacePickerSheet
 import com.dipandhali.hermesnative.ui.profile.ProfileCreateSheet
 import com.dipandhali.hermesnative.ui.profile.ProfileManagerSheet
 import com.dipandhali.hermesnative.ui.workspace.WorkspaceManageSheet
-import com.dipandhali.hermesnative.ui.workspace.WorkspacePathDialog
+import com.dipandhali.hermesnative.ui.workspace.WorkspacePathSheet
 import com.dipandhali.hermesnative.ui.chat.components.AttachmentTray
 import com.dipandhali.hermesnative.ui.chat.components.ComposerAttachment
 import com.dipandhali.hermesnative.ui.chat.components.MAX_ATTACHMENTS
@@ -411,20 +411,14 @@ fun HomeScreen(
             ProfilePickerSheet(
                 state = profiles,
                 onSwitch = viewModel::switchProfile,
-                onManage = {
-                    viewModel.closeProfilePicker()
-                    viewModel.openProfileManager()
-                },
+                onManage = viewModel::openProfileManager,
                 onDismiss = viewModel::closeProfilePicker,
             )
         }
         if (profiles.managerOpen) {
             ProfileManagerSheet(
                 state = profiles,
-                onCreate = {
-                    viewModel.closeProfileManager()
-                    viewModel.openProfileCreate()
-                },
+                onCreate = viewModel::openProfileCreate,
                 onActivate = viewModel::switchProfile,
                 onDelete = viewModel::deleteProfile,
                 onDismiss = viewModel::closeProfileManager,
@@ -435,10 +429,7 @@ fun HomeScreen(
                 state = profiles,
                 catalog = state.picker.catalog,
                 onSubmit = viewModel::createProfile,
-                onBack = {
-                    viewModel.closeProfileCreate()
-                    viewModel.openProfileManager()
-                },
+                onBack = viewModel::closeProfileCreate,
                 onDismiss = viewModel::closeProfileCreate,
             )
         }
@@ -451,10 +442,7 @@ fun HomeScreen(
                 onPick = viewModel::pickWorkspace,
                 onWorktree = viewModel::startWorktreeChat,
                 onPathAdd = viewModel::openWorkspacePathDialog,
-                onManage = {
-                    viewModel.closeWorkspacePicker()
-                    viewModel.openWorkspaceManage()
-                },
+                onManage = viewModel::openWorkspaceManage,
                 onBrowseFiles = null,
                 onRetry = viewModel::retryWorkspaces,
                 onDismiss = viewModel::closeWorkspacePicker,
@@ -469,7 +457,7 @@ fun HomeScreen(
             )
         }
         if (workspaces.pathDialogOpen) {
-            WorkspacePathDialog(
+            WorkspacePathSheet(
                 state = workspaces,
                 onInput = viewModel::workspacePathQuery,
                 onSubmit = viewModel::submitWorkspacePath,

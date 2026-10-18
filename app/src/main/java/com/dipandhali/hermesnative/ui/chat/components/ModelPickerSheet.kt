@@ -71,7 +71,7 @@ fun ModelPickerSheet(
     onDismiss: () -> Unit,
     scopeNote: String = "Applies to this conversation from your next message.",
 ) {
-    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = false)
     var query by remember { mutableStateOf("") }
     var expanded by remember { mutableStateOf(emptySet<String>()) }
     var revealed by remember { mutableStateOf(emptySet<String>()) }
