@@ -59,7 +59,7 @@ fun List<MessageDto>.toTranscript(): List<TranscriptItem> = mapIndexedNotNull { 
     when (role) {
         "user" -> TranscriptItem.User(
             key = "u$index",
-            text = dto.content.orEmpty(),
+            text = stripAttachedFilesMarker(dto.content.orEmpty()),
         )
 
         "assistant" -> TranscriptItem.Assistant(
@@ -89,3 +89,12 @@ fun List<MessageDto>.toTranscript(): List<TranscriptItem> = mapIndexedNotNull { 
         else -> null
     }
 }
+
+/**
+ * Removes the send-side upload marker (`\n\n[Attached files: …]`) from stored
+ * user text. The web client strips the same suffix when it renders user
+ * messages (`static/ui.js` `_stripAttachedFilesMarkerForDisplay`); the stored
+ * form keeps the marker so every run can read the file paths.
+ */
+internal fun stripAttachedFilesMarker(text: String): String =
+    text.replace(Regex("\\n\\n\\[Attached files: [^\\]]+\\]$"), "").trim()

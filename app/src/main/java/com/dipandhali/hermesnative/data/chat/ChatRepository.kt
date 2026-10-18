@@ -2,6 +2,7 @@ package com.dipandhali.hermesnative.data.chat
 
 import com.dipandhali.hermesnative.core.chat.ChatEvent
 import com.dipandhali.hermesnative.core.error.DataError
+import com.dipandhali.hermesnative.core.model.AttachmentDto
 import com.dipandhali.hermesnative.core.model.ChatStartRequest
 import com.dipandhali.hermesnative.core.model.ChatStartResponse
 import com.dipandhali.hermesnative.core.model.SessionDetail
@@ -41,7 +42,7 @@ class ChatRepository @Inject constructor(
 
         val request = ChatStartRequest(
             sessionId = sessionId,
-            message = message,
+            message = uploadMessageText(message, attachments),
             model = model,
             modelProvider = modelProvider,
             attachments = attachments.takeIf { it.isNotEmpty() },
@@ -114,4 +115,27 @@ class ChatRepository @Inject constructor(
     }
 
     private fun baseUrl(): String? = serverState.currentBaseUrl
+}
+
+/**
+ * The outgoing text for a turn that carries uploads — the web client's own
+ * send convention (`static/messages.js`), and the only channel that shows the
+ * agent a non-image upload's path (image bytes travel as native parts;
+ * everything else is text). It also keeps an upload-only send non-empty: the
+ * gateway's runs API rejects an empty `input` ("Missing 'input' field") before
+ * any run starts, which is how a caption-less voice note or file upload showed
+ * a message but no reply.
+ *
+ * Mirrors the web client exactly, bytes for bytes:
+ *     if (uploaded.length && !msgText) msgText = `I've uploaded ${n} file(s): ${paths}`
+ *     else if (uploaded.length)        msgText = `${text}\n\n[Attached files: ${paths}]`
+ */
+internal fun uploadMessageText(message: String, attachments: List<AttachmentDto>): String {
+    if (attachments.isEmpty()) return message
+    val paths = attachments.joinToString(", ") { it.path }
+    return if (message.isBlank()) {
+        "I've uploaded ${attachments.size} file(s): $paths"
+    } else {
+        "$message\n\n[Attached files: $paths]"
+    }
 }
