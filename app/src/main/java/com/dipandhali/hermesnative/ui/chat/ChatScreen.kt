@@ -121,6 +121,8 @@ fun ChatScreen(
     onOpenNewSession: (String) -> Unit = {},
     /** The session's workspace Files panel. */
     onOpenFiles: () -> Unit = {},
+    /** Open one attachment (by its server-resolved name) in the file preview. */
+    onOpenAttachment: (String) -> Unit = {},
     viewModel: ChatViewModel = hiltViewModel(),
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
@@ -444,12 +446,22 @@ fun ChatScreen(
                         Box(
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .widthIn(max = 720.dp),
+                                .widthIn(max = 720.dp)
+                                // Rows spring into place as the transcript
+                                // grows, instead of jumping a full row height.
+                                .animateItem(
+                                    fadeInSpec = HermesMotion.effects(),
+                                    placementSpec = HermesMotion.spatial(),
+                                    fadeOutSpec = HermesMotion.effects(),
+                                ),
                         ) {
                             when (item) {
                                 is TranscriptItem.User -> UserMessage(
                                     item = item,
+                                    loadAttachmentBytes = viewModel::loadAttachmentBytes,
                                     onCopy = { clipboard.setText(AnnotatedString(item.text)) },
+                                    onOpenAttachment = onOpenAttachment,
+                                    attachmentKeyPrefix = sessionId.orEmpty(),
                                 )
 
                                 is TranscriptItem.Assistant -> AssistantTurn(

@@ -202,10 +202,14 @@ Steps:
    all call sites).
 5. Commit: `feat(chat): render attachments as thumbnails, players and file rows in bubbles`.
 
-## Task 5 — view-model loader + optimistic attachments
+## Task 5 — view-model loader (absorbed into Task 4)
 
-Files: `ui/chat/ChatViewModel.kt`, `chat/UserAttachmentParsingTest.kt` (add
-mapping cases).
+The mapping half moved into Task 1 (the `User.attachments` type change breaks
+the `send()` call site, so it must update in the same commit) and the loader
+half into Task 4 (the bubble call site and its byte loader are one interface —
+splitting them leaves a non-compiling tree). Recorded in the run ledger.
+
+Files: `ui/chat/ChatViewModel.kt`.
 
 Steps:
 1. RED: add `PendingAttachment → ChatAttachment` cases to

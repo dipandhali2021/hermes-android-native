@@ -8,12 +8,14 @@ import androidx.lifecycle.viewModelScope
 import com.dipandhali.hermesnative.core.chat.ChatEvent
 import com.dipandhali.hermesnative.core.chat.TokenUsage
 import com.dipandhali.hermesnative.core.chat.isClose
+import com.dipandhali.hermesnative.core.error.DataError
 import com.dipandhali.hermesnative.core.error.userMessage
 import com.dipandhali.hermesnative.core.model.AttachmentDto
 import com.dipandhali.hermesnative.core.model.SavedPrompt
 import com.dipandhali.hermesnative.core.model.SessionDetail
 import com.dipandhali.hermesnative.core.net.ApiException
 import com.dipandhali.hermesnative.data.chat.ChatRepository
+import com.dipandhali.hermesnative.data.files.WorkspaceFilesRepository
 import com.dipandhali.hermesnative.data.media.MediaRepository
 import com.dipandhali.hermesnative.data.media.TranscriptionRepository
 import com.dipandhali.hermesnative.data.voice.VoiceRecorder
@@ -81,6 +83,7 @@ class ChatViewModel @Inject constructor(
     private val profilesRepository: com.dipandhali.hermesnative.data.profiles.ProfileRepository,
     private val workspacesRepository: com.dipandhali.hermesnative.data.workspace.WorkspaceRepository,
     private val media: MediaRepository,
+    private val files: WorkspaceFilesRepository,
     private val voiceRecorder: VoiceRecorder,
     @ApplicationContext private val context: Context,
     private val transcription: TranscriptionRepository,
@@ -384,6 +387,21 @@ class ChatViewModel @Inject constructor(
      * Persists the mic's mode. The attach sheet's toggle never dismisses —
      * it configures the button, it does not act.
      */
+    /**
+     * Raw bytes for one transcript attachment.
+     *
+     * The name is the bare file name a stored attachment carries
+     * ([ChatAttachment.fetchName]); the server resolves it against the
+     * session's workspace first, then its own attachment directory. Fetched
+     * through the same cookie-authenticated client every panel uses — the
+     * raw route needs the session cookie.
+     */
+    suspend fun loadAttachmentBytes(name: String): Result<ByteArray> {
+        val sessionId = _uiState.value.sessionId
+            ?: return Result.failure(ApiException(DataError.Malformed("No conversation is open.")))
+        return files.downloadRaw(sessionId, name)
+    }
+
     fun setVoiceMode(mode: VoiceInputMode) {
         _uiState.update { it.copy(voiceMode = mode) }
         viewModelScope.launch { settings.setVoiceInputMode(mode) }

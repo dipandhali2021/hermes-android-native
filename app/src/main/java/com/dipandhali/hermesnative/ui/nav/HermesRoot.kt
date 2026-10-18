@@ -275,6 +275,11 @@ private fun HermesNavHost(startDestination: String) {
                     navController.navigate(Routes.chat(newId))
                 },
                 onOpenFiles = { navController.navigate(Routes.files(sessionId.orEmpty())) },
+                onOpenAttachment = { name ->
+                    // Only a real conversation can resolve attachment bytes:
+                    // its id is what the raw file route demands.
+                    sessionId?.let { navController.navigate(Routes.filePreview(it, name)) }
+                },
             )
         }
 
