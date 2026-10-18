@@ -3,13 +3,14 @@
 ## Status
 Rounds 1–3 (model picker, home-send fix, chip/lockup/attachments), Round 4
 (voice: auto-send, both modes), Round 5 + 5.1 (the `+` attach panel), 5.2
-(tile restyle), **Round 6 (composer power tools: saved prompts, agent
-profiles, workspace switcher, workspace files panel)**, and the 6.1 device
-feedback fixes are implemented. Round 6.1 lives on
-`test/model-picker-home-send` (`2ffb5d7`, merge `39dbd68`, combined CI green);
-device passes for
-Rounds 3–5.2 remain unreported. **No version bump this
-cycle** (per instruction); merge to master only on the user's say-so.
+(tile restyle), Round 6 (composer power tools: saved prompts, agent
+profiles, workspace switcher, workspace files panel), the 6.1 device
+feedback fixes, and **Round 7 (context window meter — the web's composer
+ring and usage card, beside the mic)** are implemented. Round 7 lives on
+`feat/model-picker` (`f0aed62`) and the combined build (`2a4d340`, CI
+green); device passes for Rounds 3–6.1c remain unreported. **No version
+bump this cycle** (per instruction); merge to master only on the user's
+say-so.
 
 ## What changed in Round 6
 Four new tool rows live in the `+` attachment panel's tools section
@@ -85,6 +86,46 @@ composers:
   wire-level tests; round totals: 12 tasks, all committed individually with
   green suites.
 
+## What changed in Round 7 — context window meter (composer)
+Ported from the web client (`static/index.html` `#ctxIndicator` +
+`static/ui.js` `_syncCtxIndicator`), per the user's screenshots: the ring
+button and the usage card.
+
+- **The ring is the button.** A 24 dp progress ring with the percent inside,
+  between the mic and send (the web's `composer-right` order). No static
+  icon: the gauge itself answers "how full is the context?" at a glance.
+  Colour bands match the web — muted `onSurfaceVariant` under half,
+  `tertiary` past 50%, `error` past 75%; the centre reads `·` when there is
+  no prompt/window pair to draw. The control renders only once a usage
+  snapshot exists (the web hides its wrap until data too).
+- **Tap opens the card** (Material 3 `DropdownMenu`, 186–226 dp content
+  width against the web tooltip's 210–250 px window; flips above the
+  keyboard; outside tap / back dismisses): title "Context window", then the
+  web's exact line rules —
+  - percent story: `Context window: 78% used (22% left)`; ring clamps at
+    100 while the raw percent is named when exceeded
+    (`Context window: 120% used (context exceeded)`);
+  - token story: `Context window: 780.0k / 1.0M tokens used`, or the honest
+    fallback (`1.5M tokens used` + `In: 1.5M · Out: 10.7k`);
+  - `Auto-compress at 800.0k (80%)` only when both `threshold_tokens` and
+    `context_length` exist.
+- **Rules copied deliberately** (web CHANGELOG #1436): the percent divides
+  **last_prompt_tokens** — never the cumulative input counter; no real
+  `context_length` means **no percent at all** (the app refuses the web's
+  legacy 128K default, which the web's own changelog calls misleading); a
+  `post_compression_context_tokens_estimate` overrides the prompt figure and
+  relabels to "Estimated next model context".
+- **Data:** `TokenUsage` gains `context_length`, `threshold_tokens`,
+  `last_prompt_tokens`, `post_compression_context_tokens_estimate`;
+  `metering` stops being a bare tick and surfaces its usage snapshot (an
+  older server's bare tick still parses); `done` updates the same state
+  field. `ChatUiState.usage` is cleared on session open and seeded from the
+  session payload's persisted counters (`models.py compact()`), so the ring
+  survives a reopen exactly like the web after a reload.
+- **Out of scope:** the web's compress button (≥50% states) — the app has no
+  slash-command surface; the threshold line still names the auto-compress
+  point. Home composer has no session, so no meter there.
+
 ## Round 4 + attach panel (recap)
 - **The paperclip is a `+` now** (both composers). It rotates 45° into a
   tinted `×` while the panel is open (`Add` ↔ `Close attachments`).
@@ -132,16 +173,22 @@ relaunch recovery.
 - Round 6.1 combined build: [run 39050864981](https://github.com/dipandhali2021/hermes-android-native/actions/runs/39050864981) — green (merge `39dbd68`).
 - Round 6.1b combined build: [run 39052164280](https://github.com/dipandhali2021/hermes-android-native/actions/runs/39052164280) — green (merge `ae6eb77`; adds the tile-label wrap).
 - Round 6.1c build: [run 39053012328](https://github.com/dipandhali2021/hermes-android-native/actions/runs/39053012328) — green (`5fe8342`; centres wrapped tile labels).
+- Round 7 feature build: [run 39064092240](https://github.com/dipandhali2021/hermes-android-native/actions/runs/39064092240) — green (`f0aed62`; context ring + usage card).
+- Round 7 combined build: [run 39064203183](https://github.com/dipandhali2021/hermes-android-native/actions/runs/39064203183) — green (merge `2a4d340`).
+- Local: `./gradlew :app:testDebugUnitTest` green at each Round 7 commit
+  (11 new tests: 3 parser fixtures from the server's payload shape, 8 meter
+  cases).
 - Local: `./gradlew :app:testDebugUnitTest` green at each task commit (12
   separate task-done runs; new suites: profiles, workspaces, switch rules,
   files client, file tree UI).
 
 ## APK paths
-- **Use this one — round 6.1c build:** `/tmp/opencode/mp-r61c-combined/hermes-native-debug-apk/app-debug.apk`
-  (md5 `f6659564fa36478e62508a50f3a6c5d2`, `5fe8342`). Contains the model
-  picker, the home-send fix, Rounds 3–5.2, Round 6, and the 6.1 feedback fixes
-  (DELETE-verb prompt delete, × delete, de-duplicated prompt text, tools as
-  tiles with centred two-line labels, long-press send to save).
+- **Use this one — round 7 build (context window meter):** `/tmp/opencode/mp-r7-context/hermes-native-debug-apk/app-debug.apk`
+  (md5 `fcb9308c3da4a027ac6240e3e17404b0`, merge `2a4d340`). Contains the
+  model picker, the home-send fix, Rounds 3–5.2, Round 6, the 6.1 feedback
+  fixes, and the Round 7 context ring + usage card beside the mic.
+- Round 6.1c build (superseded by round 7): `/tmp/opencode/mp-r61c-combined/hermes-native-debug-apk/app-debug.apk`
+  (md5 `f6659564fa36478e62508a50f3a6c5d2`, `5fe8342`).
 - Round 6.1b combined build (superseded by 6.1c): `/tmp/opencode/mp-r61b-combined/hermes-native-debug-apk/app-debug.apk`
   (md5 `1295b4bd5bc0a0c88cdd6fd282696e5d`, merge `ae6eb77`).
 - Round 6.1 combined build (superseded by 6.1b): `/tmp/opencode/mp-r61-combined/hermes-native-debug-apk/app-debug.apk`
@@ -242,6 +289,23 @@ relaunch recovery.
     same card, equal widths, press-scale, active profile / workspace as the
     small line under the label; the label itself may wrap to two lines
     ("Saved" / "prompts"), each line centred, rather than ellipsize.
+
+### Round 7 device checks
+28. **Ring appears with data:** after a turn that reports usage, a small
+    progress ring sits between the mic and send, percent inside. Before any
+    usage arrives there is no ring — the row never carries a dead gauge.
+29. **Card matches the web:** tap the ring → a card opens above the composer
+    with "Context window", the percent line (or "X tokens used"), the token
+    line (or "In: … · Out: …"), and the auto-compress line when the session
+    has a threshold. The numbers must match the web tooltip for the same
+    session.
+30. **Honest fallback:** for a session where the web shows the fallback
+    ("X tokens used" / "In · Out"), the app card shows the same two lines and
+    the ring centre reads `·` rather than a fake percent.
+31. **Survives reopen; no leaks:** reopen a session that has usage — the ring
+    shows the persisted values immediately, before sending anything (same as
+    the web after a reload). Switching to another session must not show the
+    previous session's numbers.
 
 ## Merge order (important)
 1. `fix/home-send` → master **first** (its own device pass came earlier).
