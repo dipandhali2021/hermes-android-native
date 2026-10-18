@@ -15,7 +15,7 @@ sealed interface TranscriptItem {
     data class User(
         override val key: String,
         val text: String,
-        val attachments: List<String> = emptyList(),
+        val attachments: List<ChatAttachment> = emptyList(),
     ) : TranscriptItem
 
     data class Assistant(
@@ -57,10 +57,14 @@ data class ToolItem(
 fun List<MessageDto>.toTranscript(): List<TranscriptItem> = mapIndexedNotNull { index, dto ->
     val role = dto.role?.lowercase()
     when (role) {
-        "user" -> TranscriptItem.User(
-            key = "u$index",
-            text = stripAttachedFilesMarker(dto.content.orEmpty()),
-        )
+        "user" -> {
+            val parsed = parseUserMessage(dto.content.orEmpty(), dto.attachments)
+            TranscriptItem.User(
+                key = "u$index",
+                text = parsed.text,
+                attachments = parsed.attachments,
+            )
+        }
 
         "assistant" -> TranscriptItem.Assistant(
             key = "a$index",
@@ -90,11 +94,3 @@ fun List<MessageDto>.toTranscript(): List<TranscriptItem> = mapIndexedNotNull { 
     }
 }
 
-/**
- * Removes the send-side upload marker (`\n\n[Attached files: …]`) from stored
- * user text. The web client strips the same suffix when it renders user
- * messages (`static/ui.js` `_stripAttachedFilesMarkerForDisplay`); the stored
- * form keeps the marker so every run can read the file paths.
- */
-internal fun stripAttachedFilesMarker(text: String): String =
-    text.replace(Regex("\\n\\n\\[Attached files: [^\\]]+\\]$"), "").trim()

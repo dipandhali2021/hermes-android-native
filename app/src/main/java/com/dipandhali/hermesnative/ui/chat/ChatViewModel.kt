@@ -1,5 +1,6 @@
 package com.dipandhali.hermesnative.ui.chat
 
+import android.content.Context
 import android.net.Uri
 import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
@@ -47,6 +48,7 @@ import com.dipandhali.hermesnative.domain.voice.assembleDictation
 import com.dipandhali.hermesnative.ui.chat.components.MAX_ATTACHMENTS
 import com.dipandhali.hermesnative.ui.chat.components.attachmentName
 import dagger.hilt.android.lifecycle.HiltViewModel
+import dagger.hilt.android.qualifiers.ApplicationContext
 import java.util.UUID
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.channels.Channel
@@ -80,6 +82,7 @@ class ChatViewModel @Inject constructor(
     private val workspacesRepository: com.dipandhali.hermesnative.data.workspace.WorkspaceRepository,
     private val media: MediaRepository,
     private val voiceRecorder: VoiceRecorder,
+    @ApplicationContext private val context: Context,
     private val transcription: TranscriptionRepository,
     private val settings: SettingsStore,
     private val serverState: ServerState,
@@ -359,6 +362,10 @@ class ChatViewModel @Inject constructor(
                     id = "stage-${UUID.randomUUID()}",
                     name = attachmentName(uri),
                     uriString = raw,
+                    // Photo-picker URIs carry no file extension, so the
+                    // device's resolved type is what classifies the
+                    // optimistic bubble.
+                    mime = runCatching { context.contentResolver.getType(uri) }.getOrNull(),
                 )
             }
             state.copy(pendingAttachments = state.pendingAttachments + staged)
@@ -482,7 +489,7 @@ class ChatViewModel @Inject constructor(
                 items = it.items + TranscriptItem.User(
                     key = "u-${it.items.size}",
                     text = body,
-                    attachments = staged.map { attachment -> attachment.name },
+                    attachments = staged.map { it.toChatAttachment() },
                 ),
                 isBusy = true,
                 error = null,
@@ -1427,6 +1434,9 @@ data class PendingAttachment(
     val id: String,
     val name: String,
     val uriString: String?,
+    /** The device's resolved type for the pick — photo-picker URIs carry no
+     *  file extension, so this is what classifies the optimistic bubble. */
+    val mime: String? = null,
     val uploaded: AttachmentDto? = null,
 )
 

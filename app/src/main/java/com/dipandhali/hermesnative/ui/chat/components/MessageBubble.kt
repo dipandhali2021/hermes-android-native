@@ -84,7 +84,7 @@ fun UserMessage(
                         Text(
                             // A recorded clip is not a filename to a person:
                             // it reads as "Voice message" wherever it appears.
-                            text = displayAttachmentNames(item.attachments),
+                            text = displayAttachmentNames(item.attachments.map { it.name }),
                             style = MaterialTheme.typography.labelSmall,
                             color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.75f),
                             maxLines = 1,
