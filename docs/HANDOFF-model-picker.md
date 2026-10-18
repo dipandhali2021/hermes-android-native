@@ -6,12 +6,14 @@ Rounds 1–3 (model picker, home-send fix, chip/lockup/attachments), Round 4
 (tile restyle), Round 6 (composer power tools: saved prompts, agent
 profiles, workspace switcher, workspace files panel), the 6.1 device
 feedback fixes, **Round 7 (context window meter)** with its **7.1 restyle
-(bottom-sheet card, digit-free ring)**, and **Round 8 (sheet detents +
-sub-flow navigation + path-entry sheet)** are implemented. Latest:
-`feat/model-picker` (`a598a79`) and the combined build (`a3ec6e7`, CI
-green); device passes for Rounds 3–6.1c remain unreported. **No version
-bump this cycle** (per instruction); merge to master only on the user's
-say-so.
+(bottom-sheet card, digit-free ring)**, **Round 8 (sheet detents +
+sub-flow navigation + path-entry sheet)**, and **Round 9 (chat media:
+image thumbnails, a speed-controlled audio player, attachments wired to
+the server store; transcript expressive pass)** are implemented. Latest:
+`feat/chat-media-expressive`, merged into the combined
+`test/model-picker-home-send` build; device passes for Rounds 3–6.1c and
+the attachment-send fix remain unreported. **No version bump this cycle**
+(per instruction); merge to master only on the user's say-so.
 
 ## What changed in Round 6
 Four new tool rows live in the `+` attachment panel's tools section
@@ -157,6 +159,44 @@ button and the usage card.
   and a Cancel / Add workspace action row. Adding a path closes the sheet
   onto the picker with the new path highlighted (chat: switched; home:
   pending).
+
+## What changed in Round 9 — chat media + expressive pass
+User ask: image thumbnails, an audio player with playback-speed control, and
+a modern expressive M3 pass — properly wired to the backend.
+
+- **Attachments render as media inside user bubbles** instead of one text
+  line: image thumbnails (bounded 640 px decode, tiny in-memory cache, sized
+  224×168 single / 140×105 two-up), an inline player for audio, and file rows
+  that tap through to the file preview. Caption-less sends are media-only —
+  the marker line parses away.
+- **Data comes from the server store.** `MessageDto.attachments` (the wire
+  array the webui persists) wins when present; otherwise the send-side marker
+  text (`\n\n[Attached files: …]` or the no-caption `I've uploaded N
+  file(s): …`) is parsed — so sessions sent before this build render media
+  too. Fetch name is always the basename, exactly like the web client; bytes
+  go through `ChatViewModel.loadAttachmentBytes` →
+  `WorkspaceFilesRepository` (session cookie, never from a composable).
+- **Audio player** (framework `MediaPlayer` — no new dependency): play/pause,
+  a seek bar, `m:ss / m:ss`, and a speed pill cycling 1× → 1.5× → 2×
+  (`PlaybackParams`, applied before play only — assigning params on a paused
+  player starts it). Local voice notes play in place; stored clips are
+  fetched into `cacheDir/attachment-audio/` first.
+- **File preview gains AUDIO** using the same player, with "Open externally"
+  still in the top bar. The EXTERNAL card's stuck top progress line was fixed
+  along the way.
+- **Expressive pass, chat-first:** transcript rows spring with the Motion.kt
+  tokens (`animateItem`), media blocks fade in, and the new components key
+  their colours off `LocalContentColor` so they read correctly inside the
+  bubble and standalone. No palette change — `ColorContrastTest` is untouched.
+- **Composer tray** reuses the shared bounded decoder, and optimistic bubbles
+  classify picks by the device-reported mime (photo-picker URIs carry no
+  extension).
+
+Files: `ui/chat/Attachments.kt` and `ui/components/AttachmentMedia.kt` (new),
+plus `Wire.kt`, `Transcript.kt`, `MessageBubble.kt`, `ChatScreen.kt`,
+`ChatViewModel.kt`, `HermesRoot.kt`, `FilePreviewScreen.kt`,
+`AttachmentTray.kt`. Tests: `UserAttachmentParsingTest`,
+`AttachmentPlaybackLogicTest`, `ThumbnailSampleTest`, `FilePreviewKindTest`.
 
 ## Round 4 + attach panel (recap)
 - **The paperclip is a `+` now** (both composers). It rotates 45° into a
@@ -367,6 +407,22 @@ relaunch recovery.
     supporting line, folder-icon field) instead of a centred dialog; typing
     shows suggestion rows; Cancel closes back onto the picker; adding a path
     closes onto the picker with the new path highlighted.
+
+### Round 9 device checks
+36. **Image with caption:** send a photo + text — the bubble shows the
+    thumbnail with the text; reopen the session — the thumbnail returns.
+37. **Image without caption:** send a photo with an empty field — the bubble
+    is media-only (no "I've uploaded…" line); reopen — still clean.
+38. **Voice note:** record and send (with and without caption) — the bubble
+    shows a player; play/pause works; the bar seeks; the speed pill cycles
+    1× / 1.5× / 2× and audibly changes rate; after it ends, play restarts
+    from the beginning.
+39. **Old messages:** a session whose media was sent before this build shows
+    thumbnails/players after reload.
+40. **File rows:** a sent PDF opens the file preview when tapped.
+41. **Preview audio:** Files panel → an audio file → the in-app player
+    renders; "Open externally" still available.
+42. **Animation:** rows spring into place while a reply streams.
 
 ## Merge order (important)
 1. `fix/home-send` → master **first** (its own device pass came earlier).
