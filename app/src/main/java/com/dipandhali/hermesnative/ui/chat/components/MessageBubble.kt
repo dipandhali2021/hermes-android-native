@@ -35,11 +35,10 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.text.AnnotatedString
-import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import com.dipandhali.hermesnative.domain.voice.displayAttachmentNames
 import com.dipandhali.hermesnative.ui.chat.ToolItem
 import com.dipandhali.hermesnative.ui.chat.TranscriptItem
+import com.dipandhali.hermesnative.ui.components.ChatMediaBlocks
 import com.dipandhali.hermesnative.ui.markdown.MessageBody
 
 /**
@@ -48,12 +47,18 @@ import com.dipandhali.hermesnative.ui.markdown.MessageBody
  * Boxed and tinted, with the speaker-side corner tightened so the bubble points at
  * its author. Assistant turns are deliberately *not* boxed this way — see
  * [AssistantTurn] for why.
+ *
+ * Attachments render as media inside the bubble — thumbnails, a player, file
+ * rows — from the local pick while one exists and from the server bytes after.
  */
 @Composable
 fun UserMessage(
     item: TranscriptItem.User,
+    loadAttachmentBytes: suspend (String) -> Result<ByteArray>,
     modifier: Modifier = Modifier,
     onCopy: () -> Unit = {},
+    onOpenAttachment: (String) -> Unit = {},
+    attachmentKeyPrefix: String = "",
 ) {
     var menuOpen by remember { mutableStateOf(false) }
 
@@ -74,24 +79,25 @@ fun UserMessage(
                     .widthIn(max = 320.dp)
                     .clip(MaterialTheme.shapes.large),
             ) {
-                Column(Modifier.padding(horizontal = 14.dp, vertical = 10.dp)) {
-                    Text(
-                        text = item.text,
-                        style = MaterialTheme.typography.bodyLarge,
-                        color = MaterialTheme.colorScheme.onPrimaryContainer,
-                    )
-                    if (item.attachments.isNotEmpty()) {
+                Column(
+                    modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    if (item.text.isNotBlank()) {
                         Text(
-                            // A recorded clip is not a filename to a person:
-                            // it reads as "Voice message" wherever it appears.
-                            text = displayAttachmentNames(item.attachments),
-                            style = MaterialTheme.typography.labelSmall,
-                            color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.75f),
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
-                            modifier = Modifier.padding(top = 4.dp),
+                            text = item.text,
+                            style = MaterialTheme.typography.bodyLarge,
+                            color = MaterialTheme.colorScheme.onPrimaryContainer,
                         )
                     }
+                    // A caption-less send is media only; the fallback line the
+                    // send composed was parsed away in `toTranscript`.
+                    ChatMediaBlocks(
+                        attachments = item.attachments,
+                        cachePrefix = attachmentKeyPrefix,
+                        onOpen = onOpenAttachment,
+                        loadBytes = loadAttachmentBytes,
+                    )
                 }
             }
             DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {

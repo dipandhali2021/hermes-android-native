@@ -1,5 +1,6 @@
 package com.dipandhali.hermesnative.ui.chat
 
+import android.content.Context
 import android.net.Uri
 import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
@@ -7,12 +8,14 @@ import androidx.lifecycle.viewModelScope
 import com.dipandhali.hermesnative.core.chat.ChatEvent
 import com.dipandhali.hermesnative.core.chat.TokenUsage
 import com.dipandhali.hermesnative.core.chat.isClose
+import com.dipandhali.hermesnative.core.error.DataError
 import com.dipandhali.hermesnative.core.error.userMessage
 import com.dipandhali.hermesnative.core.model.AttachmentDto
 import com.dipandhali.hermesnative.core.model.SavedPrompt
 import com.dipandhali.hermesnative.core.model.SessionDetail
 import com.dipandhali.hermesnative.core.net.ApiException
 import com.dipandhali.hermesnative.data.chat.ChatRepository
+import com.dipandhali.hermesnative.data.files.WorkspaceFilesRepository
 import com.dipandhali.hermesnative.data.media.MediaRepository
 import com.dipandhali.hermesnative.data.media.TranscriptionRepository
 import com.dipandhali.hermesnative.data.voice.VoiceRecorder
@@ -47,6 +50,7 @@ import com.dipandhali.hermesnative.domain.voice.assembleDictation
 import com.dipandhali.hermesnative.ui.chat.components.MAX_ATTACHMENTS
 import com.dipandhali.hermesnative.ui.chat.components.attachmentName
 import dagger.hilt.android.lifecycle.HiltViewModel
+import dagger.hilt.android.qualifiers.ApplicationContext
 import java.util.UUID
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.channels.Channel
@@ -79,7 +83,9 @@ class ChatViewModel @Inject constructor(
     private val profilesRepository: com.dipandhali.hermesnative.data.profiles.ProfileRepository,
     private val workspacesRepository: com.dipandhali.hermesnative.data.workspace.WorkspaceRepository,
     private val media: MediaRepository,
+    private val files: WorkspaceFilesRepository,
     private val voiceRecorder: VoiceRecorder,
+    @ApplicationContext private val context: Context,
     private val transcription: TranscriptionRepository,
     private val settings: SettingsStore,
     private val serverState: ServerState,
@@ -359,6 +365,10 @@ class ChatViewModel @Inject constructor(
                     id = "stage-${UUID.randomUUID()}",
                     name = attachmentName(uri),
                     uriString = raw,
+                    // Photo-picker URIs carry no file extension, so the
+                    // device's resolved type is what classifies the
+                    // optimistic bubble.
+                    mime = runCatching { context.contentResolver.getType(uri) }.getOrNull(),
                 )
             }
             state.copy(pendingAttachments = state.pendingAttachments + staged)
@@ -380,6 +390,21 @@ class ChatViewModel @Inject constructor(
     fun setVoiceMode(mode: VoiceInputMode) {
         _uiState.update { it.copy(voiceMode = mode) }
         viewModelScope.launch { settings.setVoiceInputMode(mode) }
+    }
+
+    /**
+     * Raw bytes for one transcript attachment.
+     *
+     * The name is the bare file name a stored attachment carries
+     * ([ChatAttachment.fetchName]); the server resolves it against the
+     * session's workspace first, then its own attachment directory. Fetched
+     * through the same cookie-authenticated client every panel uses — the
+     * raw route needs the session cookie.
+     */
+    suspend fun loadAttachmentBytes(name: String): Result<ByteArray> {
+        val sessionId = _uiState.value.sessionId
+            ?: return Result.failure(ApiException(DataError.Malformed("No conversation is open.")))
+        return files.downloadRaw(sessionId, name)
     }
 
     /**
@@ -476,13 +501,16 @@ class ChatViewModel @Inject constructor(
         // The command prefix is a control word, not part of the message.
         val body = text.removeCommandPrefix()
 
+        // The row this send appends; the post-upload patch rewrites its
+        // attachments once the server names exist.
+        val optimisticKey = "u-${_uiState.value.items.size}"
         _uiState.update {
             it.copy(
                 input = "",
                 items = it.items + TranscriptItem.User(
-                    key = "u-${it.items.size}",
+                    key = optimisticKey,
                     text = body,
-                    attachments = staged.map { attachment -> attachment.name },
+                    attachments = staged.map { it.toChatAttachment() },
                 ),
                 isBusy = true,
                 error = null,
@@ -503,6 +531,28 @@ class ChatViewModel @Inject constructor(
             if (attachments == null) {
                 _uiState.update { it.copy(isBusy = false) }
                 return@launch
+            }
+            // The optimistic bubble snapshotted the staging names; rewrite it
+            // with the server's own references so its taps open what was
+            // actually stored. Local URIs stay (the thumbnail keeps its local
+            // decode). Guarded by size: a skipped staged item would misalign
+            // the positional map.
+            if (attachments.size == staged.size) {
+                _uiState.update { current ->
+                    current.copy(
+                        items = current.items.map { item ->
+                            if (item is TranscriptItem.User && item.key == optimisticKey) {
+                                item.copy(
+                                    attachments = attachments.mapIndexed { index, dto ->
+                                        dto.toChatAttachment(staged.getOrNull(index)?.uriString)
+                                    },
+                                )
+                            } else {
+                                item
+                            }
+                        },
+                    )
+                }
             }
             val selection = state.model?.let { ModelSelection(it, state.modelProvider) }
             val explicit = explicitPickForSend(
@@ -1427,6 +1477,9 @@ data class PendingAttachment(
     val id: String,
     val name: String,
     val uriString: String?,
+    /** The device's resolved type for the pick — photo-picker URIs carry no
+     *  file extension, so this is what classifies the optimistic bubble. */
+    val mime: String? = null,
     val uploaded: AttachmentDto? = null,
 )
 

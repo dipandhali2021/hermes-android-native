@@ -67,6 +67,13 @@ data class MessageDto(
     val role: String? = null,
     val content: String? = null,
     val reasoning: String? = null,
+    /**
+     * The server's own attachment references on a stored user row
+     * (`_normalize_chat_attachments`: name/path/mime + optional size/is_image).
+     * Absent on older servers and on rows written before the server stored
+     * them — the marker text in [content] is the fallback source.
+     */
+    val attachments: List<AttachmentDto> = emptyList(),
     val timestamp: Double? = null,
     @SerialName("tool_calls") val toolCalls: List<ToolCallDto>? = null,
     @SerialName("tool_call_id") val toolCallId: String? = null,
@@ -128,8 +135,10 @@ data class ChatStartRequest(
 
 @Serializable
 data class AttachmentDto(
-    val name: String,
-    val path: String,
+    // Defaults, like every wire field: one malformed stored entry must not
+    // sink the whole session decode.
+    val name: String = "",
+    val path: String = "",
     val mime: String? = null,
     val size: Long? = null,
     @SerialName("is_image") val isImage: Boolean = false,
