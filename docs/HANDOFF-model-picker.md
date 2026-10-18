@@ -5,9 +5,10 @@ Rounds 1–3 (model picker, home-send fix, chip/lockup/attachments), Round 4
 (voice: auto-send, both modes), Round 5 + 5.1 (the `+` attach panel), 5.2
 (tile restyle), Round 6 (composer power tools: saved prompts, agent
 profiles, workspace switcher, workspace files panel), the 6.1 device
-feedback fixes, and **Round 7 (context window meter — the web's composer
-ring and usage card, beside the mic)** are implemented. Round 7 lives on
-`feat/model-picker` (`f0aed62`) and the combined build (`2a4d340`, CI
+feedback fixes, **Round 7 (context window meter)** with its **7.1 restyle
+(bottom-sheet card, digit-free ring)**, and **Round 8 (sheet detents +
+sub-flow navigation + path-entry sheet)** are implemented. Latest:
+`feat/model-picker` (`a598a79`) and the combined build (`a3ec6e7`, CI
 green); device passes for Rounds 3–6.1c remain unreported. **No version
 bump this cycle** (per instruction); merge to master only on the user's
 say-so.
@@ -91,24 +92,29 @@ Ported from the web client (`static/index.html` `#ctxIndicator` +
 `static/ui.js` `_syncCtxIndicator`), per the user's screenshots: the ring
 button and the usage card.
 
-- **The ring is the button.** A 24 dp progress ring with the percent inside,
-  between the mic and send (the web's `composer-right` order). No static
-  icon: the gauge itself answers "how full is the context?" at a glance.
-  Colour bands match the web — muted `onSurfaceVariant` under half,
-  `tertiary` past 50%, `error` past 75%; the centre reads `·` when there is
-  no prompt/window pair to draw. The control renders only once a usage
-  snapshot exists (the web hides its wrap until data too).
-- **Tap opens the card** (Material 3 `DropdownMenu`, 186–226 dp content
-  width against the web tooltip's 210–250 px window; flips above the
-  keyboard; outside tap / back dismisses): title "Context window", then the
-  web's exact line rules —
-  - percent story: `Context window: 78% used (22% left)`; ring clamps at
-    100 while the raw percent is named when exceeded
-    (`Context window: 120% used (context exceeded)`);
-  - token story: `Context window: 780.0k / 1.0M tokens used`, or the honest
-    fallback (`1.5M tokens used` + `In: 1.5M · Out: 10.7k`);
-  - `Auto-compress at 800.0k (80%)` only when both `threshold_tokens` and
-    `context_length` exist.
+- **The ring is the button; no digits inside** (7.1 — the 8 sp centre digits
+  were unreadable). A 24 dp gauge arc over a quiet track, between the mic and
+  send (the web's `composer-right` order). No static glyph: the gauge itself
+  answers "how full is the context?" at a glance. Colour bands as the web
+  bands — quiet `onSurfaceVariant` under half, `tertiary` past 50%, `error`
+  past 75%. The control renders only once a usage snapshot exists (the web
+  hides its wrap until data too).
+- **Tap opens the card as a small bottom sheet** (7.1 — the mid-screen
+  anchored `DropdownMenu` read cramped). It takes the attach panel's
+  contract: focus clears first so the sheet owns the freed space. Layout
+  follows the user's reference: "Context" left with `112,900 / 128,000` in
+  the amber accent right; a used-over-track bar with a thin mark at the
+  auto-compress point; dot rows — Used (last prompt) / Headroom /
+  Auto-compress (`800,000 (80%)`); then the session's cumulative counters
+  (Input / Output / Cache read / Cache write / Cost) below a divider.
+  Figures are grouped exact (`112,900`); the web tooltip's compact `1.5M`
+  form stays for the accessible label and the no-window fallback.
+- **The reference's per-category breakdown does not exist on the server.**
+  Checked: `context_status` is prefill metadata (message/char counts of the
+  injected workspace context), `context_engine_state` is persisted but never
+  populated with token parts, and no endpoint reports system-prompt / tools /
+  files / conversation splits. The card reports what is real — window pair,
+  headroom, threshold, session totals — and invents no categories.
 - **Rules copied deliberately** (web CHANGELOG #1436): the percent divides
   **last_prompt_tokens** — never the cumulative input counter; no real
   `context_length` means **no percent at all** (the app refuses the web's
@@ -125,6 +131,32 @@ button and the usage card.
 - **Out of scope:** the web's compress button (≥50% states) — the app has no
   slash-command surface; the threshold line still names the auto-compress
   point. Home composer has no session, so no meter there.
+
+## What changed in Round 8 — sheet detents + sub-flow navigation (device feedback)
+- **Sheets open at the Material 3 partial detent** (about half the screen)
+  and drag up to the height they used to open at — the two-detent pattern
+  common in map/mail/store apps. Prompts, profile picker/manager, workspace
+  picker/manage and the model picker all take the change. The forced heights
+  stay on purpose: they are now the expanded state, so pinned footers and
+  list scrolling behave exactly as before. The profile-create form keeps
+  opening fully (fields + keyboard need the room); the context card sheet
+  stays content-sized.
+- **Back from a sub-sheet lands on its picker.** Workspace Manage, Profile
+  Manage, New profile and the path entry now open *stacked over* their
+  picker, which stays put underneath — back, a scrim tap or a drag-down
+  reveals the picker with the fresh list instead of dropping out to the
+  transcript. The view-model state machine is unchanged; the screens simply
+  stop closing the parent first.
+- **Picker footer labels** shortened to "Choose path" / "Manage" with centred
+  text and ellipsis safety — the old labels overflowed the half-width
+  buttons, and `maxLines = 1` with the default `Clip` overflow left the text
+  stuck against the left edge (the "Manage is not centered" report).
+- **The "Choose workspace path" dialog is a sheet now**: sheet typography for
+  the title + supporting line, a folder-icon field, suggestion rows styled
+  like the picker's rows, an inline progress line while the add round-trips,
+  and a Cancel / Add workspace action row. Adding a path closes the sheet
+  onto the picker with the new path highlighted (chat: switched; home:
+  pending).
 
 ## Round 4 + attach panel (recap)
 - **The paperclip is a `+` now** (both composers). It rotates 45° into a
@@ -175,6 +207,10 @@ relaunch recovery.
 - Round 6.1c build: [run 39053012328](https://github.com/dipandhali2021/hermes-android-native/actions/runs/39053012328) — green (`5fe8342`; centres wrapped tile labels).
 - Round 7 feature build: [run 39064092240](https://github.com/dipandhali2021/hermes-android-native/actions/runs/39064092240) — green (`f0aed62`; context ring + usage card).
 - Round 7 combined build: [run 39064203183](https://github.com/dipandhali2021/hermes-android-native/actions/runs/39064203183) — green (merge `2a4d340`).
+- Round 7.1 + 8 feature build: [run 39107762404](https://github.com/dipandhali2021/hermes-android-native/actions/runs/39107762404) — green (`a598a79`; context sheet restyle, sheet detents, flow navigation, path sheet).
+- Round 7.1 + 8 combined build: [run 39107821114](https://github.com/dipandhali2021/hermes-android-native/actions/runs/39107821114) — green (merge `a3ec6e7`; APK artifact md5 `94b1123beedd3c0c9ba67570205788b9`).
+- Local: `./gradlew :app:testDebugUnitTest` green at each Round 7.1/8 commit
+  (feat) and on the merged test tree.
 - Local: `./gradlew :app:testDebugUnitTest` green at each Round 7 commit
   (11 new tests: 3 parser fixtures from the server's payload shape, 8 meter
   cases).
@@ -183,11 +219,15 @@ relaunch recovery.
   files client, file tree UI).
 
 ## APK paths
-- **Use this one — round 7 build (context window meter):** `/tmp/opencode/mp-r7-context/hermes-native-debug-apk/app-debug.apk`
-  (md5 `fcb9308c3da4a027ac6240e3e17404b0`, merge `2a4d340`). Contains the
+- **Use this one — round 7.1 + 8 build:** `/tmp/opencode/mp-r8-sheets/hermes-native-debug-apk/app-debug.apk`
+  (md5 `94b1123beedd3c0c9ba67570205788b9`, merge `a3ec6e7`). Contains the
   model picker, the home-send fix, Rounds 3–5.2, Round 6, the 6.1 feedback
-  fixes, and the Round 7 context ring + usage card beside the mic.
-- Round 6.1c build (superseded by round 7): `/tmp/opencode/mp-r61c-combined/hermes-native-debug-apk/app-debug.apk`
+  fixes, the Round 7 context meter with its 7.1 restyle (bottom-sheet card,
+  digit-free ring), and Round 8's sheet detents + sub-flow navigation +
+  path-entry sheet.
+- Round 7 build (superseded by 7.1 + 8): `/tmp/opencode/mp-r7-context/hermes-native-debug-apk/app-debug.apk`
+  (md5 `fcb9308c3da4a027ac6240e3e17404b0`, merge `2a4d340`).
+- Round 6.1c build (superseded by 7.1 + 8): `/tmp/opencode/mp-r61c-combined/hermes-native-debug-apk/app-debug.apk`
   (md5 `f6659564fa36478e62508a50f3a6c5d2`, `5fe8342`).
 - Round 6.1b combined build (superseded by 6.1c): `/tmp/opencode/mp-r61b-combined/hermes-native-debug-apk/app-debug.apk`
   (md5 `1295b4bd5bc0a0c88cdd6fd282696e5d`, merge `ae6eb77`).
@@ -290,22 +330,43 @@ relaunch recovery.
     small line under the label; the label itself may wrap to two lines
     ("Saved" / "prompts"), each line centred, rather than ellipsize.
 
-### Round 7 device checks
-28. **Ring appears with data:** after a turn that reports usage, a small
-    progress ring sits between the mic and send, percent inside. Before any
-    usage arrives there is no ring — the row never carries a dead gauge.
-29. **Card matches the web:** tap the ring → a card opens above the composer
-    with "Context window", the percent line (or "X tokens used"), the token
-    line (or "In: … · Out: …"), and the auto-compress line when the session
-    has a threshold. The numbers must match the web tooltip for the same
-    session.
-30. **Honest fallback:** for a session where the web shows the fallback
-    ("X tokens used" / "In · Out"), the app card shows the same two lines and
-    the ring centre reads `·` rather than a fake percent.
-31. **Survives reopen; no leaks:** reopen a session that has usage — the ring
+### Round 7 device checks (revised for the 7.1 restyle)
+28. **Ring appears with data:** after a turn that reports usage, a gauge ring
+    sits between the mic and send — arc over a quiet track, **no digits**.
+    Before any usage arrives there is no ring — the row never carries a dead
+    gauge.
+29. **Card is a bottom sheet, reference layout:** tap the ring → the keyboard
+    drops and the card opens attached to the bottom of the screen. "Context"
+    left, `used / window` in amber right (grouped numbers); the
+    used-over-track bar with the auto-compress mark; dot rows Used (last
+    prompt) / Headroom / Auto-compress (`800,000 (80%)`); session totals
+    (Input / Output / Cache read / Cache write / Cost) under a divider.
+    Numbers must match the web tooltip for the same session.
+30. **Honest fallback:** a session where the web shows only "X tokens used"
+    (no window pair) → the card shows "X used" in the header, the line
+    "No context window reported for this session.", and the session totals;
+    never a fabricated percent. No per-category rows are shown — the server
+    reports no system-prompt / tools / files split (see the Round 7 section).
+31. **Survives reopen; no leaks:** reopen a session that has usage — the card
     shows the persisted values immediately, before sending anything (same as
     the web after a reload). Switching to another session must not show the
     previous session's numbers.
+
+### Round 8 device checks
+32. **Detents:** open Saved prompts / Profile / Workspace (also the manager
+    sheets and the model picker) — each opens at about half the screen;
+    dragging the sheet up expands it to the previous full height; dragging
+    down again collapses; swiping down from half dismisses.
+33. **Manage returns to the picker:** workspace picker → Manage → back (or
+    drag the manage sheet down) → the chat-workspace picker is back
+    underneath — not the transcript. Same for Profile → Manage, and
+    Profile → Manage → New profile → back.
+34. **Footer buttons centred:** the picker's two footer buttons read
+    "Choose path" and "Manage", with the text centred in both.
+35. **Path entry is a sheet:** "Choose path" opens a sheet (proper title,
+    supporting line, folder-icon field) instead of a centred dialog; typing
+    shows suggestion rows; Cancel closes back onto the picker; adding a path
+    closes onto the picker with the new path highlighted.
 
 ## Merge order (important)
 1. `fix/home-send` → master **first** (its own device pass came earlier).

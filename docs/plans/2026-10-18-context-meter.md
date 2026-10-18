@@ -87,3 +87,32 @@ to the native composer, beside the mic.
 - Session with no prompt-token data → ring shows "·", card shows
   "X tokens used" + "In · Out".
 - Reopen a session → ring reflects persisted values without sending.
+
+## Round 7.1 — card restyle (device feedback)
+
+- Feedback: the card read cramped mid-screen — make it a small bottom
+  attachment like the reference and fetch more session data from the backend
+  "if available"; the ring's centre digits are not good — the reference is a
+  clean ring with a gap.
+- Research (hermes-webui server): **no per-category context breakdown
+  exists.** `context_status` is prefill metadata (`message_count` / char
+  counts of the injected workspace context); `context_engine_state` is
+  persisted but never populated with token parts; no context endpoint reports
+  system prompt / tools / files / conversation splits. The card therefore
+  reports only what the wire really has: window pair, headroom, threshold,
+  and the session's cumulative counters (`input_tokens`, `output_tokens`,
+  `cache_read_tokens`, `cache_write_tokens`, `estimated_cost`).
+- Built (`fc2bbd4`): `ContextMeter` gains headroom / usedFraction /
+  thresholdFraction / headline / usedRowLabel / thresholdValue /
+  exceededCaption / costLabel plus `formatGrouped` (grouped exact figures),
+  all unit-tested; `ContextIndicator` becomes a digit-free gauge ring (arc
+  over a quiet track) + a `ModalBottomSheet` card ("Context" + amber
+  `used / window`, used-over-track bar with the auto-compress mark, dot rows
+  Used / Headroom / Auto-compress, Session totals under a divider); the
+  sheet clears focus first (attach-panel contract).
+- The draft device checks above are superseded by the handoff's revised
+  checks 28–31 (bottom-sheet card, digit-free ring, no fabricated
+  categories).
+- Evidence rides the round 8 push (same branch): feature run 39107762404
+  green, combined run 39107821114 green; APK
+  `94b1123beedd3c0c9ba67570205788b9`.
