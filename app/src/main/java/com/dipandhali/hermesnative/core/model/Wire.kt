@@ -135,8 +135,10 @@ data class ChatStartRequest(
 
 @Serializable
 data class AttachmentDto(
-    val name: String,
-    val path: String,
+    // Defaults, like every wire field: one malformed stored entry must not
+    // sink the whole session decode.
+    val name: String = "",
+    val path: String = "",
     val mime: String? = null,
     val size: Long? = null,
     @SerialName("is_image") val isImage: Boolean = false,

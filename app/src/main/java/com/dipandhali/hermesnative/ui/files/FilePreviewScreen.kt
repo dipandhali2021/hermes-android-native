@@ -52,6 +52,7 @@ import com.dipandhali.hermesnative.core.net.ApiException
 import com.dipandhali.hermesnative.data.files.WorkspaceFilesRepository
 import com.dipandhali.hermesnative.core.error.DataError
 import com.dipandhali.hermesnative.core.error.userMessage
+import com.dipandhali.hermesnative.ui.components.AUDIO_EXTENSIONS
 import com.dipandhali.hermesnative.ui.components.AudioAttachmentPlayer
 import dagger.hilt.android.lifecycle.HiltViewModel
 import javax.inject.Inject
@@ -250,10 +251,6 @@ private val TEXT_EXTENSIONS = setOf(
     "kt", "kts", "java", "py", "js", "ts", "jsx", "tsx", "sh", "bash", "zsh",
     "rs", "go", "rb", "php", "c", "h", "cpp", "hpp", "swift", "gradle", "sql",
     "gitignore", "properties", "env", "lock", "conf", "ini",
-)
-
-private val AUDIO_EXTENSIONS = setOf(
-    "m4a", "mp3", "wav", "ogg", "oga", "opus", "flac", "aac", "webm", "weba", "mp4a",
 )
 
 internal fun previewKindOf(path: String): PreviewKind {

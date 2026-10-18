@@ -28,6 +28,8 @@ class FilePreviewKindTest {
     fun `unknown binaries stay a hand-off`() {
         assertEquals(PreviewKind.EXTERNAL, previewKindOf("blob.bin"))
         assertEquals(PreviewKind.EXTERNAL, previewKindOf("archive.zip"))
+        // The server classifies webm as video, so it keeps the hand-off card.
+        assertEquals(PreviewKind.EXTERNAL, previewKindOf("screen.webm"))
     }
 
     @Test

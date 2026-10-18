@@ -20,6 +20,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.AttachFile
+import androidx.compose.material.icons.rounded.BrokenImage
 import androidx.compose.material.icons.rounded.Pause
 import androidx.compose.material.icons.rounded.Photo
 import androidx.compose.material.icons.rounded.PlayArrow
@@ -53,7 +54,6 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.dipandhali.hermesnative.domain.voice.displayAttachmentNames
 import com.dipandhali.hermesnative.domain.voice.formatElapsed
-import com.dipandhali.hermesnative.domain.voice.isVoiceClipName
 import com.dipandhali.hermesnative.ui.chat.AttachmentKind
 import com.dipandhali.hermesnative.ui.chat.ChatAttachment
 import com.dipandhali.hermesnative.ui.theme.HermesMotion
@@ -71,6 +71,18 @@ import kotlinx.coroutines.withContext
  * surrounding colours — the player and file row key off `LocalContentColor`
  * (on-primary inside a bubble, on-surface standalone).
  */
+
+/**
+ * Extensions this app plays inline.
+ *
+ * `.webm` is deliberately absent: the server classifies it as video
+ * (`api/config.py`), and a webm screen recording has no audio track. An
+ * audio-only webm clip — the browser's own voice-note format — still renders
+ * as a player through its stored `audio/webm` mime.
+ */
+internal val AUDIO_EXTENSIONS = setOf(
+    "m4a", "mp3", "wav", "ogg", "oga", "opus", "flac", "aac", "mp4a",
+)
 
 /** The audio player's speed cycle, in tap order. */
 val PLAYBACK_SPEEDS = listOf(1f, 1.5f, 2f)
@@ -163,6 +175,7 @@ private fun ChatImageAttachment(
     val context = LocalContext.current
     val cacheKey = "$cachePrefix|${attachment.localUri ?: attachment.fetchName}"
     var bitmap by remember(cacheKey) { mutableStateOf(AttachmentImageCache.get(cacheKey)) }
+    var failed by remember(cacheKey) { mutableStateOf(false) }
     LaunchedEffect(cacheKey) {
         if (bitmap != null) return@LaunchedEffect
         val decoded = withContext(Dispatchers.IO) {
@@ -173,6 +186,9 @@ private fun ChatImageAttachment(
         if (decoded != null) {
             AttachmentImageCache.put(cacheKey, decoded)
             bitmap = decoded
+        } else {
+            // Re-entry retries: the effect reruns when the row comes back.
+            failed = true
         }
     }
     val alpha by animateFloatAsState(
@@ -200,7 +216,9 @@ private fun ChatImageAttachment(
             )
         } else {
             Icon(
-                imageVector = Icons.Rounded.Photo,
+                // A failed fetch gets its own glyph instead of a forever-
+                // "loading" photo.
+                imageVector = if (failed) Icons.Rounded.BrokenImage else Icons.Rounded.Photo,
                 contentDescription = null,
                 tint = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.size(20.dp),
@@ -256,7 +274,11 @@ fun AudioAttachmentPlayer(
     }
 
     fun startPrepared(mediaPlayer: MediaPlayer) {
-        if (speed != 1f) applySpeed(mediaPlayer)
+        // Written before every start, 1× included: params survive a pause, so
+        // an explicit 1× must overwrite a stale 2× after the pill cycled back.
+        // Safe here because start() follows immediately — the "params start a
+        // paused player" quirk is masked by the explicit play.
+        applySpeed(mediaPlayer)
         mediaPlayer.start()
         isPreparing = false
         isPlaying = true
@@ -298,7 +320,16 @@ fun AudioAttachmentPlayer(
                 isPlaying = false
                 positionMs = durationMs.toLong()
             }
+            var errored = false
             mediaPlayer.setOnErrorListener { _, _, _ ->
+                errored = true
+                // Error is terminal: isPlaying()/start() on this instance
+                // throw from here on. Drop it so the next tap re-prepares
+                // rather than crashing on a dead player.
+                if (player === mediaPlayer) {
+                    player = null
+                    runCatching { mediaPlayer.release() }
+                }
                 isPreparing = false
                 isPlaying = false
                 failed = true
@@ -311,10 +342,10 @@ fun AudioAttachmentPlayer(
                 }
                 mediaPlayer.prepareAsync()
             }
-            if (started.isFailure || disposed) {
+            if (started.isFailure || disposed || errored) {
                 runCatching { mediaPlayer.release() }
                 isPreparing = false
-                if (started.isFailure) failed = true
+                if (started.isFailure || errored) failed = true
                 return@launch
             }
             player = mediaPlayer

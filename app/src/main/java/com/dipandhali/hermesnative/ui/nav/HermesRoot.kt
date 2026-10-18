@@ -1,5 +1,6 @@
 package com.dipandhali.hermesnative.ui.nav
 
+import android.net.Uri
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.CalendarMonth
@@ -98,18 +99,20 @@ object Routes {
         )}"
     }
 
-    /**
-     * The workspace Files panel for one session. The path arg is
-     * URL-encoded because a workspace path is full of `/`.
-     */
+    /** The workspace Files panel for one session. */
     const val FILES = "files"
-    fun files(sessionId: String): String =
-        "$FILES/${java.net.URLEncoder.encode(sessionId, "UTF-8")}"
+    fun files(sessionId: String): String = "$FILES/${Uri.encode(sessionId)}"
 
     const val FILE_PREVIEW = "file_preview"
+
+    /**
+     * `Uri.encode`, not `URLEncoder`: the route string is parsed as a URI and
+     * Navigation decodes the arguments itself (`NavUriUtils` for path
+     * segments, `Uri.getQueryParameters` for query values), so form
+     * encoding's `+` for a space would arrive as a literal plus.
+     */
     fun filePreview(sessionId: String, path: String): String =
-        "$FILE_PREVIEW/${java.net.URLEncoder.encode(sessionId, "UTF-8")}" +
-            "?path=${java.net.URLEncoder.encode(path, "UTF-8")}"
+        "$FILE_PREVIEW/${Uri.encode(sessionId)}?path=${Uri.encode(path)}"
 }
 
 /**
@@ -312,14 +315,11 @@ private fun HermesNavHost(startDestination: String) {
                 navArgument("path") { type = NavType.StringType },
             ),
         ) { entry ->
-            val sessionId = java.net.URLDecoder.decode(
-                entry.arguments?.getString("sessionId").orEmpty(),
-                "UTF-8",
-            )
-            val path = java.net.URLDecoder.decode(
-                entry.arguments?.getString("path").orEmpty(),
-                "UTF-8",
-            )
+            // Navigation has already decoded both arguments; decoding again
+            // here would turn a stored `+` into a space and crash on a stray
+            // `%` (URLDecoder is strict, the platform decoder is not).
+            val sessionId = entry.arguments?.getString("sessionId").orEmpty()
+            val path = entry.arguments?.getString("path").orEmpty()
             FilePreviewScreen(
                 sessionId = sessionId,
                 path = path,

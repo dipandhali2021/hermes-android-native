@@ -1,6 +1,7 @@
 package com.dipandhali.hermesnative.ui.chat
 
 import com.dipandhali.hermesnative.core.model.AttachmentDto
+import com.dipandhali.hermesnative.ui.components.AUDIO_EXTENSIONS
 
 /** How one attachment renders in a transcript. */
 enum class AttachmentKind { IMAGE, AUDIO, FILE }
@@ -34,10 +35,6 @@ data class ChatAttachment(
 }
 
 private val IMAGE_EXTENSIONS = setOf("png", "jpg", "jpeg", "gif", "webp", "bmp", "heic", "heif")
-
-private val AUDIO_EXTENSIONS = setOf(
-    "m4a", "mp3", "wav", "ogg", "oga", "opus", "flac", "aac", "webm", "weba", "mp4a",
-)
 
 /**
  * Classifies by MIME first (the server's own metadata when present), then the
@@ -89,15 +86,9 @@ fun parseUserMessage(
     val text = if (match == null) trimmed else trimmed.removeRange(match.range).trim()
 
     val attachments = when {
-        wire.isNotEmpty() -> wire.map { dto ->
-            val name = dto.name.ifBlank { dto.path.substringAfterLast('/') }
-            ChatAttachment(
-                name = name,
-                path = dto.path,
-                mime = dto.mime,
-                kind = attachmentKind(name.ifBlank { dto.path }, dto.mime, dto.isImage),
-            )
-        }
+        wire.isNotEmpty() -> wire
+            .filter { it.name.isNotBlank() || it.path.isNotBlank() }
+            .map { it.toChatAttachment() }
 
         match != null -> match.groupValues[1]
             .split(", ")
@@ -114,6 +105,24 @@ fun parseUserMessage(
         else -> emptyList()
     }
     return ParsedUserMessage(text = text, attachments = attachments)
+}
+
+/**
+ * One stored wire attachment as a render-ready row.
+ *
+ * [localUri] is carried through for the optimistic bubble, which keeps its
+ * device-side pick rendering while the server reference (path, mime) is
+ * already final.
+ */
+fun AttachmentDto.toChatAttachment(localUri: String? = null): ChatAttachment {
+    val effectiveName = name.ifBlank { path.substringAfterLast('/') }
+    return ChatAttachment(
+        name = effectiveName,
+        path = path,
+        mime = mime,
+        localUri = localUri,
+        kind = attachmentKind(effectiveName.ifBlank { path }, mime, isImage),
+    )
 }
 
 /**

@@ -1,12 +1,15 @@
 package com.dipandhali.hermesnative.chat
 
 import com.dipandhali.hermesnative.core.model.AttachmentDto
+import com.dipandhali.hermesnative.core.model.MessageDto
+import com.dipandhali.hermesnative.data.chat.uploadMessageText
 import com.dipandhali.hermesnative.ui.chat.AttachmentKind
 import com.dipandhali.hermesnative.ui.chat.ChatAttachment
 import com.dipandhali.hermesnative.ui.chat.PendingAttachment
 import com.dipandhali.hermesnative.ui.chat.attachmentKind
 import com.dipandhali.hermesnative.ui.chat.parseUserMessage
 import com.dipandhali.hermesnative.ui.chat.toChatAttachment
+import kotlinx.serialization.json.Json
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -151,5 +154,53 @@ class UserAttachmentParsingTest {
 
         assertEquals(AttachmentKind.AUDIO, mapped.kind)
         assertEquals("content://x/voice-1690000000000.m4a", mapped.localUri)
+    }
+
+    @Test
+    fun `video webm stays a file while an audio webm mime still plays`() {
+        // The server calls .webm video (api/config.py); screen recordings have
+        // no audio track, so only a stored audio/webm mime gets the player.
+        assertEquals(AttachmentKind.FILE, attachmentKind("screen.webm", "video/webm"))
+        assertEquals(AttachmentKind.FILE, attachmentKind("clip.webm", null))
+        assertEquals(AttachmentKind.AUDIO, attachmentKind("clip.webm", "audio/webm"))
+    }
+
+    @Test
+    fun `blank wire entries are skipped`() {
+        val parsed = parseUserMessage("hi", listOf(AttachmentDto(name = "", path = "")))
+
+        assertEquals("hi", parsed.text)
+        assertTrue(parsed.attachments.isEmpty())
+    }
+
+    @Test
+    fun `wire attachment entries decode with missing fields`() {
+        val message = Json { ignoreUnknownKeys = true }.decodeFromString(
+            MessageDto.serializer(),
+            """{"role":"user","content":"hi","attachments":[{"name":"a.jpg"}]}""",
+        )
+
+        assertEquals("", message.attachments[0].path)
+    }
+
+    @Test
+    fun `send composition and parsing round-trip`() {
+        val files = listOf(
+            AttachmentDto(name = "pic.jpg", path = "pic.jpg", mime = "image/jpeg", isImage = true),
+            AttachmentDto(name = "report final.pdf", path = "report final.pdf"),
+        )
+
+        val withCaption = parseUserMessage(uploadMessageText("Look at these", files))
+        assertEquals("Look at these", withCaption.text)
+        assertEquals(listOf("pic.jpg", "report final.pdf"), withCaption.attachments.map { it.name })
+        assertEquals(
+            listOf("pic.jpg", "report final.pdf"),
+            withCaption.attachments.map { it.fetchName },
+        )
+        assertEquals(AttachmentKind.IMAGE, withCaption.attachments[0].kind)
+
+        val captionless = parseUserMessage(uploadMessageText("", files))
+        assertEquals("", captionless.text)
+        assertEquals(2, captionless.attachments.size)
     }
 }

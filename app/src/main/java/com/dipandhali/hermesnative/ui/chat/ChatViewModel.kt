@@ -387,6 +387,11 @@ class ChatViewModel @Inject constructor(
      * Persists the mic's mode. The attach sheet's toggle never dismisses —
      * it configures the button, it does not act.
      */
+    fun setVoiceMode(mode: VoiceInputMode) {
+        _uiState.update { it.copy(voiceMode = mode) }
+        viewModelScope.launch { settings.setVoiceInputMode(mode) }
+    }
+
     /**
      * Raw bytes for one transcript attachment.
      *
@@ -400,11 +405,6 @@ class ChatViewModel @Inject constructor(
         val sessionId = _uiState.value.sessionId
             ?: return Result.failure(ApiException(DataError.Malformed("No conversation is open.")))
         return files.downloadRaw(sessionId, name)
-    }
-
-    fun setVoiceMode(mode: VoiceInputMode) {
-        _uiState.update { it.copy(voiceMode = mode) }
-        viewModelScope.launch { settings.setVoiceInputMode(mode) }
     }
 
     /**
@@ -501,11 +501,14 @@ class ChatViewModel @Inject constructor(
         // The command prefix is a control word, not part of the message.
         val body = text.removeCommandPrefix()
 
+        // The row this send appends; the post-upload patch rewrites its
+        // attachments once the server names exist.
+        val optimisticKey = "u-${_uiState.value.items.size}"
         _uiState.update {
             it.copy(
                 input = "",
                 items = it.items + TranscriptItem.User(
-                    key = "u-${it.items.size}",
+                    key = optimisticKey,
                     text = body,
                     attachments = staged.map { it.toChatAttachment() },
                 ),
@@ -528,6 +531,28 @@ class ChatViewModel @Inject constructor(
             if (attachments == null) {
                 _uiState.update { it.copy(isBusy = false) }
                 return@launch
+            }
+            // The optimistic bubble snapshotted the staging names; rewrite it
+            // with the server's own references so its taps open what was
+            // actually stored. Local URIs stay (the thumbnail keeps its local
+            // decode). Guarded by size: a skipped staged item would misalign
+            // the positional map.
+            if (attachments.size == staged.size) {
+                _uiState.update { current ->
+                    current.copy(
+                        items = current.items.map { item ->
+                            if (item is TranscriptItem.User && item.key == optimisticKey) {
+                                item.copy(
+                                    attachments = attachments.mapIndexed { index, dto ->
+                                        dto.toChatAttachment(staged.getOrNull(index)?.uriString)
+                                    },
+                                )
+                            } else {
+                                item
+                            }
+                        },
+                    )
+                }
             }
             val selection = state.model?.let { ModelSelection(it, state.modelProvider) }
             val explicit = explicitPickForSend(
