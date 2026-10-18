@@ -6,10 +6,14 @@ import com.dipandhali.hermesnative.core.net.SseClient
 import com.dipandhali.hermesnative.data.chat.ChatRepository
 import com.dipandhali.hermesnative.data.settings.ServerState
 import kotlinx.coroutines.test.runTest
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
 import mockwebserver3.MockResponse
 import mockwebserver3.MockWebServer
 import okhttp3.OkHttpClient
 import org.junit.After
+import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Before
@@ -22,6 +26,11 @@ import org.junit.Test
  * `explicit_model_pick` the server repairs a non-default provider back to the
  * profile default. So the flag must appear exactly when the user picked the
  * model, and an unknown selection must add nothing at all to the request.
+ *
+ * The upload send convention rides here too: the message text must carry the
+ * web client's file references (`I've uploaded N file(s): …` / `[Attached
+ * files: …]`) whenever attachments are present — that is what keeps an
+ * upload-only send from reaching the gateway as an empty `input`.
  */
 class ChatRepositoryStartTest {
 
@@ -94,4 +103,58 @@ class ChatRepositoryStartTest {
         assertTrue(body.contains(""""is_image":true"""))
         assertFalse(body.contains("explicit_model_pick"))
     }
+
+    @Test
+    fun `startTurn with uploads and no text sends the uploaded-files line`() = runTest {
+        server.enqueue(MockResponse.Builder().code(200).body("""{"stream_id":"st-1"}""").build())
+        repository().startTurn(
+            "",
+            attachments = listOf(
+                AttachmentDto(
+                    name = "voice.m4a",
+                    path = "/srv/attachments/voice.m4a",
+                    mime = "audio/mp4",
+                    size = 9,
+                    isImage = false,
+                ),
+            ),
+        )
+        assertEquals(
+            "I've uploaded 1 file(s): /srv/attachments/voice.m4a",
+            sentMessage(),
+        )
+    }
+
+    @Test
+    fun `startTurn with uploads and text appends the attached-files marker`() = runTest {
+        server.enqueue(MockResponse.Builder().code(200).body("""{"stream_id":"st-1"}""").build())
+        repository().startTurn(
+            "look at these",
+            attachments = listOf(
+                AttachmentDto(
+                    name = "a.png",
+                    path = "/srv/attachments/a.png",
+                    mime = "image/png",
+                    size = 1,
+                    isImage = true,
+                ),
+                AttachmentDto(
+                    name = "b.pdf",
+                    path = "/srv/attachments/b.pdf",
+                    mime = "application/pdf",
+                    size = 2,
+                    isImage = false,
+                ),
+            ),
+        )
+        assertEquals(
+            "look at these\n\n[Attached files: /srv/attachments/a.png, /srv/attachments/b.pdf]",
+            sentMessage(),
+        )
+    }
+
+    /** The `message` field of the request the repository just posted. */
+    private fun sentMessage(): String =
+        Json.parseToJsonElement(server.takeRequest().body?.utf8() ?: "")
+            .jsonObject.getValue("message").jsonPrimitive.content
 }
