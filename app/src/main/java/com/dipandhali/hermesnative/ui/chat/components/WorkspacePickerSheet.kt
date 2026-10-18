@@ -38,6 +38,8 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.dipandhali.hermesnative.core.model.WorkspaceDto
 import com.dipandhali.hermesnative.domain.composer.WorkspacesUiState
@@ -63,7 +65,7 @@ fun WorkspacePickerSheet(
     onRetry: () -> Unit,
     onDismiss: () -> Unit,
 ) {
-    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = false)
     var query by remember { mutableStateOf("") }
 
     ModalBottomSheet(onDismissRequest = onDismiss, sheetState = sheetState) {
@@ -161,13 +163,23 @@ fun WorkspacePickerSheet(
                     onClick = onPathAdd,
                     modifier = Modifier.weight(1f),
                 ) {
-                    Text("Choose workspace path…", maxLines = 1)
+                    Text(
+                        text = "Choose path",
+                        maxLines = 1,
+                        textAlign = TextAlign.Center,
+                        overflow = TextOverflow.Ellipsis,
+                    )
                 }
                 OutlinedButton(
                     onClick = onManage,
                     modifier = Modifier.weight(1f),
                 ) {
-                    Text("Manage workspaces", maxLines = 1)
+                    Text(
+                        text = "Manage",
+                        maxLines = 1,
+                        textAlign = TextAlign.Center,
+                        overflow = TextOverflow.Ellipsis,
+                    )
                 }
             }
             onBrowseFiles?.let { browse ->

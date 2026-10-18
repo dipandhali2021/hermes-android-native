@@ -60,7 +60,7 @@ fun WorkspaceManageSheet(
     onRemove: (String) -> Unit,
     onDismiss: () -> Unit,
 ) {
-    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = false)
     var renaming by remember { mutableStateOf<WorkspaceDto?>(null) }
     var renameDraft by remember { mutableStateOf("") }
 

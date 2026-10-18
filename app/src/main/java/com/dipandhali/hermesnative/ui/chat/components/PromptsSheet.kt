@@ -63,7 +63,7 @@ fun PromptsSheet(
     onRetry: () -> Unit,
     onDismiss: () -> Unit,
 ) {
-    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = false)
     val draftNotBlank = draftProvider().isNotBlank()
 
     ModalBottomSheet(onDismissRequest = onDismiss, sheetState = sheetState) {
