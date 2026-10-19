@@ -296,7 +296,6 @@ fun HomeScreen(
                 onRetryPrompts = viewModel::retryPrompts,
                 onOpenProfilePicker = viewModel::openProfilePicker,
                 onOpenWorkspacePicker = viewModel::openWorkspacePicker,
-                isAgentMode = state.isAgentMode,
                 // The composer is the only element that insets itself against the
                 // keyboard and the gesture bar. `inner` below is only a padding
                 // value — it is not consumed — so a second imePadding anywhere in
@@ -381,18 +380,14 @@ fun HomeScreen(
             // grows upward from the button and may use every pixel between the
             // composer and the top bar, while the composer keeps its own place in
             // the layout no matter how much of that height the menu takes.
-            // Direct mode has no workspace, file, prompts or profile API, so
-            // the whole panel of power tools is absent rather than failing.
-            if (!state.isAgentMode) {
-                FabMenu(
-                    actions = fabActions,
-                    expanded = menuOpen,
-                    onExpandedChange = { menuOpen = it },
-                    modifier = Modifier
-                        .align(Alignment.BottomEnd)
-                        .padding(end = 16.dp, bottom = 8.dp),
-                )
-            }
+            FabMenu(
+                actions = fabActions,
+                expanded = menuOpen,
+                onExpandedChange = { menuOpen = it },
+                modifier = Modifier
+                    .align(Alignment.BottomEnd)
+                    .padding(end = 16.dp, bottom = 8.dp),
+            )
         }
     }
 
@@ -516,8 +511,6 @@ private fun HomeComposer(
     onRetryPrompts: () -> Unit,
     onOpenProfilePicker: () -> Unit,
     onOpenWorkspacePicker: () -> Unit,
-    /** Direct-agent mode: no attachments, no voice, no power tools. */
-    isAgentMode: Boolean = false,
 ) {
     var text by remember { mutableStateOf("") }
     var attachments by remember { mutableStateOf(listOf<ComposerAttachment>()) }
@@ -532,7 +525,7 @@ private fun HomeComposer(
     // The panel is not modal, so it owns the back press while it is open.
     // Composed inside the bottom bar, after the screen's FAB-menu handler:
     // the last enabled handler wins.
-    BackHandler(enabled = attachOpen && !isAgentMode) { attachOpen = false }
+    BackHandler(enabled = attachOpen) { attachOpen = false }
 
     val attachPicker = rememberLauncherForActivityResult(
         ActivityResultContracts.PickMultipleVisualMedia(MAX_ATTACHMENTS),
@@ -581,7 +574,7 @@ private fun HomeComposer(
             modifier = Modifier.fillMaxWidth(),
         ) {
             Column {
-                if (attachments.isNotEmpty() && !isAgentMode) {
+                if (attachments.isNotEmpty()) {
                     AttachmentTray(
                         attachments = attachments,
                         onRemove = { id -> attachments = attachments.filterNot { it.id == id } },
@@ -628,62 +621,58 @@ private fun HomeComposer(
                             verticalAlignment = Alignment.CenterVertically,
                             horizontalArrangement = Arrangement.End,
                         ) {
-                            if (!isAgentMode) {
-                                // The toggle signs itself: the plus folds a quarter
-                                // turn into a close mark and takes the accent role
-                                // while the panel is open.
-                                val attachProgress by animateFloatAsState(
-                                    targetValue = if (attachOpen) 1f else 0f,
-                                    animationSpec = HermesMotion.spatialFast(),
-                                    label = "attach-toggle-rotation",
+                            // The toggle signs itself: the plus folds a quarter
+                            // turn into a close mark and takes the accent role
+                            // while the panel is open.
+                            val attachProgress by animateFloatAsState(
+                                targetValue = if (attachOpen) 1f else 0f,
+                                animationSpec = HermesMotion.spatialFast(),
+                                label = "attach-toggle-rotation",
+                            )
+                            val attachTint by animateColorAsState(
+                                targetValue = if (attachOpen) {
+                                    MaterialTheme.colorScheme.primary
+                                } else {
+                                    MaterialTheme.colorScheme.onSurfaceVariant
+                                },
+                                animationSpec = HermesMotion.effects(),
+                                label = "attach-toggle-tint",
+                            )
+                            IconButton(
+                                onClick = {
+                                    focusManager.clearFocus()
+                                    attachOpen = !attachOpen
+                                },
+                                enabled = !isStarting,
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Rounded.Add,
+                                    contentDescription = attachToggleDescription(attachOpen),
+                                    tint = attachTint,
+                                    modifier = Modifier.rotate(ATTACH_ROTATION_DEGREES * attachProgress),
                                 )
-                                val attachTint by animateColorAsState(
-                                    targetValue = if (attachOpen) {
-                                        MaterialTheme.colorScheme.primary
-                                    } else {
-                                        MaterialTheme.colorScheme.onSurfaceVariant
-                                    },
-                                    animationSpec = HermesMotion.effects(),
-                                    label = "attach-toggle-tint",
-                                )
-                                IconButton(
-                                    onClick = {
-                                        focusManager.clearFocus()
-                                        attachOpen = !attachOpen
-                                    },
-                                    enabled = !isStarting,
-                                ) {
-                                    Icon(
-                                        imageVector = Icons.Rounded.Add,
-                                        contentDescription = attachToggleDescription(attachOpen),
-                                        tint = attachTint,
-                                        modifier = Modifier.rotate(ATTACH_ROTATION_DEGREES * attachProgress),
-                                    )
-                                }
                             }
 
                             leadingAccessory?.invoke()
 
                             Box(Modifier.weight(1f))
 
-                            if (!isAgentMode) {
-                                IconButton(
-                                    onClick = {
-                                        // The strip replaces the row; a panel under
-                                        // a recording is not a thing.
-                                        if (attachOpen) attachOpen = false
-                                        onMicTap()
-                                    },
-                                    enabled = !isStarting,
-                                    colors = IconButtonDefaults.iconButtonColors(
-                                        contentColor = MaterialTheme.colorScheme.onSurfaceVariant,
-                                    ),
-                                ) {
-                                    Icon(
-                                        imageVector = voiceModeIcon(voiceMode),
-                                        contentDescription = "Voice input",
-                                    )
-                                }
+                            IconButton(
+                                onClick = {
+                                    // The strip replaces the row; a panel under
+                                    // a recording is not a thing.
+                                    if (attachOpen) attachOpen = false
+                                    onMicTap()
+                                },
+                                enabled = !isStarting,
+                                colors = IconButtonDefaults.iconButtonColors(
+                                    contentColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                                ),
+                            ) {
+                                Icon(
+                                    imageVector = voiceModeIcon(voiceMode),
+                                    contentDescription = "Voice input",
+                                )
                             }
 
                             // m3's FilledIconButton cannot carry a long-press
@@ -692,10 +681,7 @@ private fun HomeComposer(
                             // filled circle under combinedClickable, colours
                             // from the real defaults.
                             val sendColors = IconButtonDefaults.filledIconButtonColors()
-                            val sendEnabled = (
-                                text.isNotBlank() ||
-                                    (attachments.isNotEmpty() && !isAgentMode)
-                                ) && !isStarting
+                            val sendEnabled = (text.isNotBlank() || attachments.isNotEmpty()) && !isStarting
                             Box(
                                 modifier = Modifier
                                     .size(44.dp)
@@ -757,7 +743,7 @@ private fun HomeComposer(
         }
 
         AnimatedVisibility(
-            visible = attachOpen && !isAgentMode && voicePhase == VoicePhase.Idle,
+            visible = attachOpen && voicePhase == VoicePhase.Idle,
             enter = expandVertically(
                 animationSpec = HermesMotion.contentSize,
                 expandFrom = Alignment.Top,

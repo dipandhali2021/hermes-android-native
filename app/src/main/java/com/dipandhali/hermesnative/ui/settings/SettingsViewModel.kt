@@ -3,7 +3,6 @@ package com.dipandhali.hermesnative.ui.settings
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.dipandhali.hermesnative.data.auth.AuthRepository
-import com.dipandhali.hermesnative.data.settings.BackendMode
 import com.dipandhali.hermesnative.data.settings.ServerState
 import com.dipandhali.hermesnative.data.settings.SettingsStore
 import com.dipandhali.hermesnative.ui.theme.ThemeMode
@@ -23,12 +22,7 @@ class SettingsViewModel @Inject constructor(
     serverState: ServerState,
 ) : ViewModel() {
 
-    private val _state = MutableStateFlow(
-        SettingsUiState(
-            serverUrl = serverState.currentBaseUrl,
-            backendMode = serverState.mode.value,
-        ),
-    )
+    private val _state = MutableStateFlow(SettingsUiState(serverUrl = serverState.currentBaseUrl))
     val state: StateFlow<SettingsUiState> = _state.asStateFlow()
 
     init {
@@ -62,7 +56,6 @@ class SettingsViewModel @Inject constructor(
 
 data class SettingsUiState(
     val serverUrl: String? = null,
-    val backendMode: BackendMode = BackendMode.WEBUI,
     val themeMode: ThemeMode = ThemeMode.SYSTEM,
     val dynamicColor: Boolean = true,
     val signedOut: Boolean = false,

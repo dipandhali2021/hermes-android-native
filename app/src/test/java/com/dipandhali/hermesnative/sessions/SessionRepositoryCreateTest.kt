@@ -1,7 +1,6 @@
 package com.dipandhali.hermesnative.sessions
 
 import com.dipandhali.hermesnative.core.error.DataError
-import com.dipandhali.hermesnative.core.net.AgentApi
 import com.dipandhali.hermesnative.core.net.ApiException
 import com.dipandhali.hermesnative.core.net.HermesApi
 import com.dipandhali.hermesnative.data.sessions.SessionRepository
@@ -75,6 +74,6 @@ class SessionRepositoryCreateTest {
 
     private fun repository(): SessionRepository {
         val state = ServerState().apply { setBaseUrl(server.url("/").toString()) }
-        return SessionRepository(HermesApi(OkHttpClient()), AgentApi(OkHttpClient()), state)
+        return SessionRepository(HermesApi(OkHttpClient()), state)
     }
 }

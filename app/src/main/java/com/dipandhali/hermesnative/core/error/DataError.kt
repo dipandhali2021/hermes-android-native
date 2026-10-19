@@ -29,15 +29,6 @@ sealed interface DataError {
     /** Reached something, but it is not a Hermes WebUI server. */
     data object NotHermes : DataError
 
-    /** Reached an agent API server, but its key rejected this request. */
-    data object InvalidApiKey : DataError
-
-    /** Reached something, but it is not a Hermes agent API server. */
-    data object NotAgent : DataError
-
-    /** The active backend does not expose this feature. */
-    data class Unsupported(val feature: String) : DataError
-
     /** The session does not exist (or belongs to another profile). */
     data object NotFound : DataError
 
@@ -71,13 +62,6 @@ fun DataError.userMessage(): String = when (this) {
         "That password was not accepted."
     DataError.NotHermes ->
         "Something responded, but it isn't a Hermes WebUI server. Check the address."
-    DataError.InvalidApiKey ->
-        "The agent rejected this API key. Check the API_SERVER_KEY value and try again."
-    DataError.NotAgent ->
-        "That address answered, but it isn't a Hermes agent API server. Use the agent's " +
-            "own URL (usually port 8642) and its API key."
-    is DataError.Unsupported ->
-        "$feature needs the WebUI connection."
     DataError.NotFound ->
         "That session no longer exists."
     is DataError.SessionBusy ->
@@ -94,6 +78,5 @@ fun DataError.userMessage(): String = when (this) {
 val DataError.isRetryable: Boolean
     get() = when (this) {
         DataError.Unreachable, DataError.Timeout, is DataError.Server, is DataError.Unknown -> true
-        DataError.InvalidApiKey, DataError.NotAgent, is DataError.Unsupported -> false
         else -> false
     }

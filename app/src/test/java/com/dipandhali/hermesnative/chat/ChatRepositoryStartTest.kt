@@ -1,7 +1,6 @@
 package com.dipandhali.hermesnative.chat
 
 import com.dipandhali.hermesnative.core.model.AttachmentDto
-import com.dipandhali.hermesnative.core.net.AgentApi
 import com.dipandhali.hermesnative.core.net.HermesApi
 import com.dipandhali.hermesnative.core.net.SseClient
 import com.dipandhali.hermesnative.data.chat.ChatRepository
@@ -53,7 +52,7 @@ class ChatRepositoryStartTest {
         val state = ServerState()
         state.setBaseUrl(server.url("/").toString())
         state.setActiveSession("sess-1")
-        return ChatRepository(HermesApi(client), AgentApi(client), SseClient(client), SseClient(client), state)
+        return ChatRepository(HermesApi(client), SseClient(client), state)
     }
 
     @Test

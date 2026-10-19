@@ -37,8 +37,8 @@ sealed interface ChatEvent {
     /** Mid-turn assistant prose, before the final answer. */
     data class InterimAssistant(val text: String) : ChatEvent
 
-    /** Destructive-command approval prompt. */
-    data class ApprovalRequested(val approval: ApprovalRequest) : ChatEvent
+    /** Destructive-command approval prompt. Not handled in v1. */
+    data object ApprovalRequested : ChatEvent
 
     /** Structured clarification prompt. Not handled in v1. */
     data object ClarificationRequested : ChatEvent

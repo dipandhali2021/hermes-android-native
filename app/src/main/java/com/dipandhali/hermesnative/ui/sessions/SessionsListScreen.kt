@@ -174,11 +174,7 @@ fun SessionsListScreen(
                                 row = row,
                                 onClick = { viewModel.open(row) },
                                 onRename = { renameTarget = row },
-                                onArchive = if (state.isAgentMode) {
-                                    null
-                                } else {
-                                    { viewModel.setArchived(row, true) }
-                                },
+                                onArchive = { viewModel.setArchived(row, true) },
                                 onDelete = { deleteTarget = row },
                             )
                         }
@@ -224,8 +220,7 @@ private fun SessionCard(
     row: SessionRow,
     onClick: () -> Unit,
     onRename: () -> Unit,
-    /** Null in direct-agent mode: the agent has no archive state. */
-    onArchive: (() -> Unit)?,
+    onArchive: () -> Unit,
     onDelete: () -> Unit,
 ) {
     var menuOpen by remember { mutableStateOf(false) }
@@ -313,22 +308,16 @@ private fun SessionCard(
                             onRename()
                         },
                     )
-                    if (onArchive != null) {
-                        DropdownMenuItem(
-                            text = { Text("Archive") },
-                            leadingIcon = {
-                                Icon(
-                                    Icons.Rounded.Archive,
-                                    contentDescription = null,
-                                    Modifier.size(18.dp),
-                                )
-                            },
-                            onClick = {
-                                menuOpen = false
-                                onArchive()
-                            },
-                        )
-                    }
+                    DropdownMenuItem(
+                        text = { Text("Archive") },
+                        leadingIcon = {
+                            Icon(Icons.Rounded.Archive, contentDescription = null, Modifier.size(18.dp))
+                        },
+                        onClick = {
+                            menuOpen = false
+                            onArchive()
+                        },
+                    )
                     DropdownMenuItem(
                         text = { Text("Delete") },
                         leadingIcon = {

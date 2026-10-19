@@ -71,14 +71,6 @@ android {
     packaging {
         resources { excludes += "/META-INF/{AL2.0,LGPL2.1}" }
     }
-
-    testOptions {
-        unitTests {
-            // Compose UI tests run under Robolectric, which needs the merged
-            // debug manifest and resources to resolve its host activity.
-            isIncludeAndroidResources = true
-        }
-    }
 }
 
 kotlin {

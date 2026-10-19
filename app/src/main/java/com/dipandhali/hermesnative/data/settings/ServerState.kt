@@ -25,28 +25,12 @@ class ServerState @Inject constructor() {
     private val _baseUrl = MutableStateFlow<String?>(null)
     val baseUrl: StateFlow<String?> = _baseUrl.asStateFlow()
 
-    private val _mode = MutableStateFlow(BackendMode.WEBUI)
-    val mode: StateFlow<BackendMode> = _mode.asStateFlow()
-
     private val _activeSessionId = MutableStateFlow<String?>(null)
     val activeSessionId: StateFlow<String?> = _activeSessionId.asStateFlow()
 
     val currentBaseUrl: String? get() = _baseUrl.value
 
-    /**
-     * The agent API key for this connection, in memory only.
-     *
-     * Not persisted here: [SettingsStore] never sees it. The encrypted
-     * [SecretStore] owns the copy at rest and hands it back at startup.
-     */
-    @Volatile
-    private var apiKey: String? = null
-
-    val currentApiKey: String? get() = apiKey
-
     val currentSessionId: String? get() = _activeSessionId.value
-
-    val isAgent: Boolean get() = _mode.value == BackendMode.AGENT
 
     /** True once a server is configured; drives the start destination. */
     val isConfigured: Boolean get() = !_baseUrl.value.isNullOrBlank()
@@ -55,27 +39,7 @@ class ServerState @Inject constructor() {
         _baseUrl.value = url?.trimEnd('/')
     }
 
-    /**
-     * Publishes one complete connection atomically: mode, address, and (for
-     * agent mode) the key that belongs to that address. Passing a key with
-     * WebUI mode is a programming error and is cleared here, so a leftover key
-     * can never ride along on a WebUI request.
-     */
-    fun setBackend(mode: BackendMode, url: String, apiKey: String? = null) {
-        _baseUrl.value = url.trimEnd('/')
-        this.apiKey = if (mode == BackendMode.AGENT) apiKey else null
-        _mode.value = mode
-    }
-
     fun setActiveSession(sessionId: String?) {
         _activeSessionId.value = sessionId
-    }
-
-    /** Disconnect completely. Keeps the last URLs in DataStore for prefill. */
-    fun clear() {
-        _baseUrl.value = null
-        apiKey = null
-        _activeSessionId.value = null
-        _mode.value = BackendMode.WEBUI
     }
 }

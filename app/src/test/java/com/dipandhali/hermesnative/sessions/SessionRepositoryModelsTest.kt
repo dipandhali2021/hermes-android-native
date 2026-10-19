@@ -1,6 +1,5 @@
 package com.dipandhali.hermesnative.sessions
 
-import com.dipandhali.hermesnative.core.net.AgentApi
 import com.dipandhali.hermesnative.core.net.HermesApi
 import com.dipandhali.hermesnative.data.sessions.SessionRepository
 import com.dipandhali.hermesnative.data.settings.ServerState
@@ -42,7 +41,7 @@ class SessionRepositoryModelsTest {
     private fun repository(): SessionRepository {
         val state = ServerState()
         state.setBaseUrl(server.url("/").toString())
-        return SessionRepository(HermesApi(OkHttpClient()), AgentApi(OkHttpClient()), state)
+        return SessionRepository(HermesApi(OkHttpClient()), state)
     }
 
     private val payload = """

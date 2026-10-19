@@ -5,7 +5,6 @@ import android.net.Uri
 import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
-import com.dipandhali.hermesnative.core.chat.ApprovalRequest
 import com.dipandhali.hermesnative.core.chat.ChatEvent
 import com.dipandhali.hermesnative.core.chat.TokenUsage
 import com.dipandhali.hermesnative.core.chat.isClose
@@ -94,7 +93,7 @@ class ChatViewModel @Inject constructor(
     private val todoStore: com.dipandhali.hermesnative.data.panels.TodoStore,
 ) : ViewModel() {
 
-    private val _uiState = MutableStateFlow(ChatUiState(isAgentMode = serverState.isAgent))
+    private val _uiState = MutableStateFlow(ChatUiState())
     val uiState: StateFlow<ChatUiState> = _uiState.asStateFlow()
 
     private val _effects = Channel<ChatEffect>(Channel.BUFFERED)
@@ -641,27 +640,6 @@ class ChatViewModel @Inject constructor(
         }
     }
 
-    /**
-     * Answers the agent's destructive-tool prompt.
-     *
-     * Optimistically closes the sheet; on failure the prompt comes back so the
-     * run is never left paused with no visible way to resume it.
-     */
-    fun respondApproval(choice: String) {
-        val state = _uiState.value
-        val approval = state.pendingApproval ?: return
-        val runId = state.activeStreamId ?: approval.runId ?: return
-
-        _uiState.update { it.copy(pendingApproval = null) }
-        viewModelScope.launch {
-            chat.respondApproval(runId = runId, approvalId = approval.id, choice = choice)
-                .onFailure { throwable ->
-                    _uiState.update { it.copy(pendingApproval = approval) }
-                    _effects.trySend(ChatEffect.ShowMessage(throwable.toMessage()))
-                }
-        }
-    }
-
     private fun queue() {
         val text = _uiState.value.input.trim()
         if (text.isEmpty()) return
@@ -778,15 +756,9 @@ class ChatViewModel @Inject constructor(
                         }
                     }
 
-                    is ChatEvent.ApprovalRequested -> if (serverState.isAgent) {
-                        // Direct mode: the run is paused until this is answered,
-                        // and answering is the only way it can continue.
-                        _uiState.update { it.copy(pendingApproval = event.approval) }
-                    }
-
                     is ChatEvent.Cancelled -> flushPending()
 
-                    is ChatEvent.ClarificationRequested,
+                    ChatEvent.ApprovalRequested, ChatEvent.ClarificationRequested,
                     ChatEvent.ContextStatus, ChatEvent.Goal,
                     ChatEvent.StateSaved, ChatEvent.Heartbeat,
                     is ChatEvent.TitleStatus,
@@ -1552,22 +1524,12 @@ data class ChatUiState(
     /** Mic mode, mirrored from settings; the attach sheet's toggle writes it. */
     val voiceMode: VoiceInputMode = VoiceInputMode.TRANSCRIBE,
     val voicePhase: VoicePhase = VoicePhase.Idle,
-
-    /** Non-null while the agent waits on a destructive-tool approval. */
-    val pendingApproval: ApprovalRequest? = null,
-
-    /**
-     * Direct-agent mode. WebUI-only affordances (attachments, mic, files,
-     * steering) are hidden rather than failing requests against the agent.
-     */
-    val isAgentMode: Boolean = false,
 ) {
     // 2. Derived — never constructor parameters.
     val hasContent: Boolean get() = input.isNotBlank()
 
-    /** Staged attachments make a send possible with no text at all (WebUI only). */
-    val hasSendableContent: Boolean
-        get() = hasContent || (pendingAttachments.isNotEmpty() && !isAgentMode)
+    /** Staged attachments make a send possible with no text at all. */
+    val hasSendableContent: Boolean get() = hasContent || pendingAttachments.isNotEmpty()
 
     val composerAction: ComposerAction
         get() = resolveComposerAction(
@@ -1577,9 +1539,7 @@ data class ChatUiState(
             hasContent = if (isBusy) hasContent else hasSendableContent,
             isBusy = isBusy,
             hasActiveStream = activeStreamId != null,
-            // The agent exposes no steer endpoint; a typed message queues locally
-            // instead of pretending to reach the running turn.
-            busySendMode = if (isAgentMode) BusySendMode.QUEUE else busySendMode,
+            busySendMode = busySendMode,
             explicitCommand = if (isBusy) parseComposerCommand(input) else null,
         )
 

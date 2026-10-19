@@ -1,13 +1,10 @@
 package com.dipandhali.hermesnative.data.auth
 
 import com.dipandhali.hermesnative.core.error.DataError
-import com.dipandhali.hermesnative.core.net.AgentApi
 import com.dipandhali.hermesnative.core.net.ApiException
 import com.dipandhali.hermesnative.core.net.HermesApi
 import com.dipandhali.hermesnative.core.net.PersistentCookieJar
 import com.dipandhali.hermesnative.core.net.normalizeBaseUrl
-import com.dipandhali.hermesnative.data.settings.BackendMode
-import com.dipandhali.hermesnative.data.settings.SecretStore
 import com.dipandhali.hermesnative.data.settings.ServerState
 import com.dipandhali.hermesnative.data.settings.SettingsStore
 import kotlinx.coroutines.flow.first
@@ -32,25 +29,18 @@ sealed interface ConnectResult {
 /**
  * Connecting to a server, and staying connected to it.
  *
- * Two backends share this entry point:
- *
- * - WebUI: `/health` (unauthenticated), then `/api/auth/status` for the
- *   password requirement, then a cookie session.
- * - Agent: `/health` for reachability, `/v1/capabilities` to prove the key and
- *   the surface, then Bearer auth on every request.
- *
- * The wrong mode's credentials are never reused: switching to the agent clears
- * the cookie jar, and the API key lives only in the encrypted [SecretStore].
+ * The probe order matters and mirrors what the server actually does: `/health` is
+ * unauthenticated, so it proves reachability; `/api/auth/status` then says whether
+ * a password is needed at all. Auth is off by default on a LAN install, so
+ * demanding a password up front would be wrong for most users.
  */
 @Singleton
 class AuthRepository @Inject constructor(
     private val api: HermesApi,
-    private val agentApi: AgentApi,
     private val settings: SettingsStore,
     private val serverState: ServerState,
     private val cookieJar: PersistentCookieJar,
-    private val secretStore: SecretStore,
-) : ConnectionManager {
+) {
 
     /**
      * Points the app at [rawUrl] and reports what happened.
@@ -59,45 +49,7 @@ class AuthRepository @Inject constructor(
      * host must never be offered to another, and host scoping alone does not cover
      * two servers sharing a hostname on different ports.
      */
-    override suspend fun connect(
-        rawUrl: String,
-        password: String?,
-        mode: BackendMode,
-        apiKey: String?,
-    ): ConnectResult = when (mode) {
-        BackendMode.WEBUI -> connectWebUi(rawUrl, password)
-        BackendMode.AGENT -> connectAgent(rawUrl, apiKey)
-    }
-
-    override suspend fun savedConnection(): SavedConnection = SavedConnection(
-        mode = settings.backendMode.first(),
-        webuiUrl = settings.serverUrl.first(),
-        agentUrl = settings.agentUrl.first(),
-    )
-
-    suspend fun signOut() {
-        val url = serverState.currentBaseUrl
-        if (serverState.mode.value == BackendMode.WEBUI && url != null) {
-            runCatching { api.logout(url) }
-        }
-        cookieJar.clear()
-        settings.clearCookies()
-        settings.setLastSessionId(null)
-        // The key is a credential, not a preference: drop the encrypted copy so a
-        // signed-out device cannot silently reconnect.
-        secretStore.clearAgentKey()
-        serverState.clear()
-    }
-
-    /** Restores the saved connection at startup so a returning user skips onboarding. */
-    suspend fun restoreSavedServer(): String? = when (settings.backendMode.first()) {
-        BackendMode.AGENT -> restoreAgent()
-        BackendMode.WEBUI -> restoreWebUi()
-    }
-
-    // ---- WebUI ----
-
-    private suspend fun connectWebUi(rawUrl: String, password: String?): ConnectResult {
+    suspend fun connect(rawUrl: String, password: String? = null): ConnectResult {
         val url = normalizeBaseUrl(rawUrl)
             ?: return ConnectResult.Failed(DataError.NotHermes)
 
@@ -105,6 +57,7 @@ class AuthRepository @Inject constructor(
             cookieJar.clear()
             settings.clearCookies()
         }
+        serverState.setBaseUrl(url)
 
         val health = api.health(url).getOrElse {
             return ConnectResult.Failed((it as? ApiException)?.error ?: DataError.Unreachable)
@@ -123,27 +76,29 @@ class AuthRepository @Inject constructor(
         }
 
         if (!auth.authEnabled) {
-            persist(url, BackendMode.WEBUI)
+            persist(url)
             return ConnectResult.Connected(health.version)
         }
 
         // Already signed in from a previous launch.
         if (auth.loggedIn && cookieJar.hasSession()) {
-            persist(url, BackendMode.WEBUI)
+            persist(url)
             return ConnectResult.SignedIn(health.version)
         }
 
         if (password.isNullOrEmpty()) {
+            serverState.setBaseUrl(null)
             return ConnectResult.NeedsPassword(health.version)
         }
 
         return api.login(url, password).fold(
             onSuccess = {
-                persist(url, BackendMode.WEBUI)
+                persist(url)
                 ConnectResult.SignedIn(health.version)
             },
             onFailure = { throwable ->
                 val error = (throwable as? ApiException)?.error ?: DataError.Unknown("login failed")
+                serverState.setBaseUrl(null)
                 // The server answers 401 for a wrong password; that is a credential
                 // problem, not an expired session, and the copy differs.
                 ConnectResult.Failed(
@@ -153,63 +108,24 @@ class AuthRepository @Inject constructor(
         )
     }
 
-    // ---- agent ----
-
-    private suspend fun connectAgent(rawUrl: String, apiKey: String?): ConnectResult {
-        val url = normalizeBaseUrl(rawUrl)
-            ?: return ConnectResult.Failed(DataError.NotAgent)
-        val key = apiKey?.trim().orEmpty()
-        if (key.isEmpty()) return ConnectResult.Failed(DataError.InvalidApiKey)
-
-        val health = agentApi.health(url, key).getOrElse {
-            return ConnectResult.Failed((it as? ApiException)?.error ?: DataError.Unreachable)
-        }
-        val capabilities = agentApi.capabilities(url, key).getOrElse { throwable ->
-            val error = (throwable as? ApiException)?.error ?: DataError.NotAgent
-            // A missing /v1/capabilities is either not an agent or an agent too old
-            // for this mode; both are "not the surface you picked".
-            return ConnectResult.Failed(if (error is DataError.NotFound) DataError.NotAgent else error)
-        }
-
-        AgentConnectionValidator.validate(health, capabilities)?.let { return ConnectResult.Failed(it) }
-
-        // Store first: a connection we cannot restore after a restart is a worse
-        // failure than a refused connect.
-        if (!secretStore.saveAgentKey(key)) {
-            return ConnectResult.Failed(DataError.Unknown("The API key could not be stored securely."))
-        }
-
+    suspend fun signOut() {
+        val url = serverState.currentBaseUrl
+        if (url != null) runCatching { api.logout(url) }
         cookieJar.clear()
         settings.clearCookies()
-        persist(url, BackendMode.AGENT)
-        serverState.setBackend(BackendMode.AGENT, url, key)
-        return ConnectResult.Connected(health.version)
+        serverState.setBaseUrl(null)
+        serverState.setActiveSession(null)
     }
 
-    private suspend fun restoreAgent(): String? {
-        val url = settings.agentUrl.first()?.let(::normalizeBaseUrl) ?: return null
-        // Fail closed: no key means no agent connection, not a WebUI fallback.
-        val key = secretStore.readAgentKey() ?: return null
-        serverState.setBackend(BackendMode.AGENT, url, key)
-        settings.lastSessionId.firstOrNull()?.let { serverState.setActiveSession(it) }
-        return url
-    }
-
-    private suspend fun restoreWebUi(): String? {
+    /** Restores the saved server at startup so a returning user skips onboarding. */
+    suspend fun restoreSavedServer(): String? {
         val normalized = settings.serverUrl.first()?.let(::normalizeBaseUrl) ?: return null
-        serverState.setBackend(BackendMode.WEBUI, normalized)
+        serverState.setBaseUrl(normalized)
         settings.lastSessionId.firstOrNull()?.let { serverState.setActiveSession(it) }
         return normalized
     }
 
-    private suspend fun persist(url: String, mode: BackendMode) {
-        val previousMode = settings.backendMode.first()
-        if (mode == BackendMode.AGENT) settings.setAgentUrl(url) else settings.setServerUrl(url)
-        settings.setBackendMode(mode)
-        if (previousMode != mode) {
-            // Session ids are backend-scoped; one must not be offered to the other.
-            settings.setLastSessionId(null)
-            serverState.setActiveSession(null)
-        }
+    private suspend fun persist(url: String) {
+        settings.setServerUrl(url)
     }
 }
