@@ -76,6 +76,7 @@ import com.dipandhali.hermesnative.data.media.newCameraCaptureUri
 import com.dipandhali.hermesnative.domain.composer.workspaceLabel
 import com.dipandhali.hermesnative.domain.modelpicker.ModelSelection
 import com.dipandhali.hermesnative.domain.modelpicker.displaySelection
+import com.dipandhali.hermesnative.ui.chat.components.ApprovalSheet
 import com.dipandhali.hermesnative.ui.chat.components.AssistantTurn
 import com.dipandhali.hermesnative.ui.chat.components.AttachPanel
 import com.dipandhali.hermesnative.ui.chat.components.Composer
@@ -286,9 +287,12 @@ fun ChatScreen(
                 },
                 actions = {
                     // One tap from a chat to its workspace's files: the session
-                    // exists by construction on this route.
-                    IconButton(onClick = onOpenFiles) {
-                        Icon(Icons.Rounded.FolderOpen, contentDescription = "Browse workspace files")
+                    // exists by construction on this route. Direct mode has no
+                    // workspace API, so the action is absent rather than broken.
+                    if (!state.isAgentMode) {
+                        IconButton(onClick = onOpenFiles) {
+                            Icon(Icons.Rounded.FolderOpen, contentDescription = "Browse workspace files")
+                        }
                     }
                     IconButton(onClick = onOpenSettings) {
                         Icon(Icons.Rounded.Tune, contentDescription = "Settings")
@@ -329,9 +333,9 @@ fun ChatScreen(
                 onSavePrompt = { viewModel.saveDraftAsPrompt() },
                 // The context ring appears beside the mic once usage exists.
                 contextUsage = state.usage,
-                onAttach = { attachOpen = !attachOpen },
-                attachOpen = attachOpen,
-                attachPanel = {
+                onAttach = if (state.isAgentMode) null else ({ attachOpen = !attachOpen }),
+                attachOpen = attachOpen && !state.isAgentMode,
+                attachPanel = if (state.isAgentMode) null else ({
                     AttachPanel(
                         voiceMode = state.voiceMode,
                         onVoiceModeChange = viewModel::setVoiceMode,
@@ -396,12 +400,12 @@ fun ChatScreen(
                             }.takeIf { it.isNotEmpty() }?.let { ChatToolsSection(rows = it) }
                         },
                     )
-                },
+                }),
                 attachments = state.pendingAttachments.map {
                     ComposerAttachment(id = it.id, name = it.name, uriString = it.uriString)
                 },
                 onRemoveAttachment = viewModel::removeAttachment,
-                onMic = onMicTap,
+                onMic = if (state.isAgentMode) null else onMicTap,
                 micEnabled = !state.isBusy,
                 voiceMode = state.voiceMode,
                 voicePhase = state.voicePhase,
@@ -588,6 +592,16 @@ fun ChatScreen(
                 onInput = viewModel::workspacePathQuery,
                 onSubmit = viewModel::submitWorkspacePath,
                 onDismiss = viewModel::closeWorkspacePathDialog,
+            )
+        }
+
+        // Direct mode only: without this the agent run stays paused on a
+        // destructive tool and the transcript just stops.
+        state.pendingApproval?.let { approval ->
+            ApprovalSheet(
+                request = approval,
+                onChoose = viewModel::respondApproval,
+                onDismiss = { viewModel.respondApproval("deny") },
             )
         }
     }

@@ -36,14 +36,34 @@ class SseClient(private val client: OkHttpClient) {
         url: String,
         onOpen: (Response) -> Unit = {},
         onClosed: (lastEventId: String?) -> Unit = {},
-    ): Flow<StreamFrame> = callbackFlow {
-        var lastId: String? = null
-
-        val request = Request.Builder()
+    ): Flow<StreamFrame> = stream(
+        request = Request.Builder()
             .url(url)
             .header("Accept", "text/event-stream")
             .get()
-            .build()
+            .build(),
+        onOpen = onOpen,
+        onClosed = onClosed,
+        // The WebUI always names its frames; an unnamed frame is a keepalive and
+        // is not a ChatEvent.
+        parse = { type, data -> type?.let { SseEventParser.parse(it, data) } },
+    )
+
+    /**
+     * Opens an arbitrary SSE [request] and lets the caller own the vocabulary.
+     *
+     * The agent path uses this: its frames carry Bearer auth in the request and
+     * its payload's own `event` field may matter even when the SSE type is
+     * generic. Returning null from [parse] drops a frame (used for WebUI
+     * keepalives); the transport still completes the flow when the socket closes.
+     */
+    fun stream(
+        request: Request,
+        onOpen: (Response) -> Unit = {},
+        onClosed: (lastEventId: String?) -> Unit = {},
+        parse: (type: String?, data: String) -> ChatEvent?,
+    ): Flow<StreamFrame> = callbackFlow {
+        var lastId: String? = null
 
         val listener = object : EventSourceListener() {
             override fun onOpen(eventSource: EventSource, response: Response) {
@@ -57,10 +77,10 @@ class SseClient(private val client: OkHttpClient) {
                 data: String,
             ) {
                 if (id != null) lastId = id
-                val name = type ?: return
+                val event = parse(type, data) ?: return
                 // trySendBlocking, not trySend: a token burst can outrun the
                 // channel and a dropped token silently corrupts the transcript.
-                trySendBlocking(StreamFrame.Event(SseEventParser.parse(name, data)))
+                trySendBlocking(StreamFrame.Event(event))
             }
 
             override fun onClosed(eventSource: EventSource) {

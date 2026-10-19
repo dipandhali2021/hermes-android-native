@@ -33,6 +33,8 @@ class SettingsStore @Inject constructor(
 ) {
     private object Keys {
         val serverUrl = stringPreferencesKey("server_url")
+        val backendMode = stringPreferencesKey("backend_mode")
+        val agentUrl = stringPreferencesKey("agent_url")
         val cookies = stringPreferencesKey("cookies")
         val themeMode = stringPreferencesKey("theme_mode")
         val dynamicColor = booleanPreferencesKey("dynamic_color")
@@ -44,6 +46,18 @@ class SettingsStore @Inject constructor(
     }
 
     val serverUrl: Flow<String?> = context.dataStore.data.map { it[Keys.serverUrl] }
+
+    /** Which surface the last successful connection used. Unknown values fall back to WEBUI. */
+    val backendMode: Flow<BackendMode> = context.dataStore.data.map { prefs ->
+        BackendMode.from(prefs[Keys.backendMode])
+    }
+
+    /**
+     * The last agent URL, kept separately from [serverUrl] so switching modes
+     * never rewrites the other mode's address and a stale WebUI cookie can never
+     * be paired with an agent base URL.
+     */
+    val agentUrl: Flow<String?> = context.dataStore.data.map { it[Keys.agentUrl] }
 
     val themeMode: Flow<ThemeMode> = context.dataStore.data.map { prefs ->
         runCatching { ThemeMode.valueOf(prefs[Keys.themeMode] ?: ThemeMode.SYSTEM.name) }
@@ -66,6 +80,13 @@ class SettingsStore @Inject constructor(
     }
 
     suspend fun setServerUrl(url: String) = context.dataStore.edit { it[Keys.serverUrl] = url }
+
+    suspend fun setBackendMode(mode: BackendMode) =
+        context.dataStore.edit { it[Keys.backendMode] = mode.name }
+
+    suspend fun setAgentUrl(url: String?) = context.dataStore.edit { prefs ->
+        if (url == null) prefs.remove(Keys.agentUrl) else prefs[Keys.agentUrl] = url
+    }
 
     suspend fun setThemeMode(mode: ThemeMode) =
         context.dataStore.edit { it[Keys.themeMode] = mode.name }

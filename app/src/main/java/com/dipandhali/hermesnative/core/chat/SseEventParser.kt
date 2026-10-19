@@ -70,7 +70,7 @@ object SseEventParser {
                 isError = bool("is_error"),
             )
             "interim_assistant" -> ChatEvent.InterimAssistant(str("text") ?: "")
-            "approval" -> ChatEvent.ApprovalRequested
+            "approval" -> ChatEvent.ApprovalRequested(ApprovalRequestParser.parse(payload))
             "clarify" -> ChatEvent.ClarificationRequested
             "compressing" -> ChatEvent.Compressing
             "compressed" -> ChatEvent.Compressed

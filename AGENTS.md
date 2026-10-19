@@ -45,8 +45,17 @@ curl -s <artifact>.aar | python3 -c "import sys,zipfile,io; \
 - **Never send `Origin`, `Referer` or `Sec-Fetch-*`.** The server exempts
   non-browser clients from CSRF only when those are absent, and
   `Sec-Fetch-Site: cross-site` is an outright rejection.
-- **`hermes_session` is a cookie, not a token.** There is no bearer auth. The
-  jar is cleared whenever the server URL changes.
+- **`hermes_session` is a cookie, not a token.** WebUI mode authenticates with
+  that cookie only. The jar is cleared whenever the server URL changes.
+- **Direct-agent mode is Bearer only.** It sends `Authorization: Bearer
+  <API_SERVER_KEY>` from a separate OkHttp client that has no cookie jar; a
+  WebUI cookie must never ride an agent request and a key must never ride a
+  WebUI request. The key lives only in `SecretStore`
+  (`EncryptedSharedPreferences`), never DataStore, prefs, or logs.
+- **Agent run events are unnamed frames.** `/v1/runs/{id}/events` writes
+  `data: {...}` with `event`/`type` inside the payload, so that field wins over
+  the SSE name. The deployed agent exposes no steer, upload, audio, or archive
+  endpoint; those controls are hidden in direct mode rather than failing.
 - **The server may be older or newer than this app.** Every wire field is
   optional with a default; unknown event names are carried as `Unknown` rather
   than dropped, so a protocol addition is visible in logs.

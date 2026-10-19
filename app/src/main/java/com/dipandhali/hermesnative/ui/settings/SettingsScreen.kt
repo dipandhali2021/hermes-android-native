@@ -42,6 +42,7 @@ import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.dipandhali.hermesnative.BuildConfig
+import com.dipandhali.hermesnative.data.settings.BackendMode
 import com.dipandhali.hermesnative.ui.theme.ThemeMode
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -77,6 +78,20 @@ fun SettingsScreen(
         ) {
             SectionHeader("Server")
             ListItem(
+                headlineContent = { Text("Mode") },
+                supportingContent = {
+                    Text(
+                        when (state.backendMode) {
+                            BackendMode.AGENT ->
+                                "Direct agent · chat, sessions, tools and approvals"
+
+                            BackendMode.WEBUI ->
+                                "Hermes WebUI · full client, including uploads and voice"
+                        },
+                    )
+                },
+            )
+            ListItem(
                 headlineContent = { Text("Address") },
                 supportingContent = {
                     Text(
@@ -87,8 +102,10 @@ fun SettingsScreen(
                 },
             )
             ListItem(
-                headlineContent = { Text("Change server") },
-                supportingContent = { Text("Sign out and connect to a different server") },
+                headlineContent = { Text("Change connection") },
+                supportingContent = {
+                    Text("Sign out and pick the WebUI or the direct agent")
+                },
                 modifier = Modifier.clickable { confirmSignOut = true },
             )
 

@@ -1,10 +1,13 @@
 package com.dipandhali.hermesnative.di
 
 import android.content.Context
+import com.dipandhali.hermesnative.core.net.AgentApi
 import com.dipandhali.hermesnative.core.net.HermesApi
 import com.dipandhali.hermesnative.core.net.HttpClientFactory
 import com.dipandhali.hermesnative.core.net.PersistentCookieJar
 import com.dipandhali.hermesnative.core.net.SseClient
+import com.dipandhali.hermesnative.data.settings.EncryptedSecretStore
+import com.dipandhali.hermesnative.data.settings.SecretStore
 import com.dipandhali.hermesnative.data.settings.SettingsStore
 import dagger.Module
 import dagger.Provides
@@ -23,6 +26,11 @@ object AppModule {
     @Singleton
     fun provideSettingsStore(@ApplicationContext context: Context): SettingsStore =
         SettingsStore(context)
+
+    @Provides
+    @Singleton
+    fun provideSecretStore(@ApplicationContext context: Context): SecretStore =
+        EncryptedSecretStore(context)
 
     @Provides
     @Singleton
@@ -47,4 +55,23 @@ object AppModule {
     @Provides
     @Singleton
     fun provideSseClient(@Named("stream") client: OkHttpClient): SseClient = SseClient(client)
+
+    @Provides
+    @Singleton
+    @Named("agent")
+    fun provideAgentClient(): OkHttpClient = HttpClientFactory.createAgent()
+
+    @Provides
+    @Singleton
+    @Named("agentStream")
+    fun provideAgentStreamingClient(): OkHttpClient = HttpClientFactory.createAgentStreaming()
+
+    @Provides
+    @Singleton
+    fun provideAgentApi(@Named("agent") client: OkHttpClient): AgentApi = AgentApi(client)
+
+    @Provides
+    @Singleton
+    @Named("agentStream")
+    fun provideAgentSseClient(@Named("agentStream") client: OkHttpClient): SseClient = SseClient(client)
 }

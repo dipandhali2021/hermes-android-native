@@ -66,6 +66,17 @@ LAN or tailnet address cannot be a scoped exception. The protection moves to
 recommending HTTPS, storing credentials encrypted, and scoping the session
 cookie to the configured host.
 
+**Two backends share one data layer.** `ServerState` holds the active
+`BackendMode`, base URL and (in memory only) agent key. Repositories branch on
+that mode: WebUI uses `HermesApi` with the cookie jar and the WebUI SSE
+vocabulary; direct mode uses `AgentApi` with `Authorization: Bearer` and the
+run-event mapper. The two OkHttp clients are separate on purpose — a cookie must
+never ride an agent request and a key must never ride a WebUI request. At rest
+the key is in `SecretStore` (`EncryptedSharedPreferences`); DataStore holds only
+the mode and the two URLs. Agent-only gaps (uploads, workspaces, archive,
+mid-run steering) return `DataError.Unsupported` and are hidden by capability
+gating rather than shown as broken controls.
+
 **A fixed signing key is committed.** CI generates a fresh debug keystore on
 every run, and Android refuses to install an APK over a package with a different
 signature — so without this, every update would require uninstalling and losing
