@@ -150,9 +150,10 @@ The project uses the superpowers workflow. In order:
 - `master` — released code. Currently `v0.4.1` (2026-10-16).
 - `test/model-picker-home-send` — the long-lived **integration/test** branch.
   The WebUI feature line is integrated through Round 9 at `f791721` (a revert
-  commit whose tree is identical to the Round 9 integration `8e91363`); that
-  is the build to install. The direct-agent experiment was reverted and must
-  not be reintroduced. **Never merge this branch itself to master**; integrate
+  commit whose tree is identical to the Round 9 integration `8e91363`), with
+  the documentation merged on top; that is the build to install. The
+  direct-agent experiment was reverted and must not be reintroduced. **Never
+  merge this branch itself to master**; integrate
   per feature (or on a deliberate release branch) when the user decides.
 - `feat/*` — one feature each, branched from the integration branch. Merge
   back with `--no-ff` after CI is green.
