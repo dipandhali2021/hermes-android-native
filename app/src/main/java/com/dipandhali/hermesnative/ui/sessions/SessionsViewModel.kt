@@ -61,6 +61,7 @@ class SessionsViewModel @Inject constructor(
     val effects = _effects.receiveAsFlow()
 
     init {
+        _state.update { it.copy(isAgentMode = serverState.isAgent) }
         refresh()
         viewModelScope.launch {
             settings.model.collect { (model, provider) ->
@@ -985,6 +986,12 @@ data class SessionsUiState(
     /** Mic mode, mirrored from settings; the attach sheet's toggle writes it. */
     val voiceMode: VoiceInputMode = VoiceInputMode.TRANSCRIBE,
     val voicePhase: VoicePhase = VoicePhase.Idle,
+    /**
+     * Direct-agent mode. The home composer hides attachments and the mic, and
+     * the FAB panel actions (files, prompts, profiles, workspaces) are absent
+     * because the agent API does not expose them.
+     */
+    val isAgentMode: Boolean = false,
 ) {
     // Derived, not stored, so the list and the filter cannot disagree.
     val visible: List<SessionRow>

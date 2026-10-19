@@ -67,4 +67,35 @@ object HttpClientFactory {
             .callTimeout(0, TimeUnit.MILLISECONDS)
             .retryOnConnectionFailure(true)
             .build()
+
+    /**
+     * The agent's request/response client.
+     *
+     * No cookie jar on purpose: WebUI session cookies are host-scoped, and an
+     * agent on the same host but another port would otherwise receive
+     * `hermes_session` alongside its Bearer key.
+     */
+    fun createAgent(): OkHttpClient =
+        OkHttpClient.Builder()
+            .addInterceptor(noBrowserHeaders)
+            .connectTimeout(15, TimeUnit.SECONDS)
+            .writeTimeout(30, TimeUnit.SECONDS)
+            .readTimeout(60, TimeUnit.SECONDS)
+            .callTimeout(90, TimeUnit.SECONDS)
+            .retryOnConnectionFailure(true)
+            .build()
+
+    /**
+     * For the agent's SSE stream: no read or call timeout, and again no cookies.
+     * The agent sends keepalives while a run is paused on approval.
+     */
+    fun createAgentStreaming(): OkHttpClient =
+        OkHttpClient.Builder()
+            .addInterceptor(noBrowserHeaders)
+            .connectTimeout(15, TimeUnit.SECONDS)
+            .writeTimeout(30, TimeUnit.SECONDS)
+            .readTimeout(0, TimeUnit.MILLISECONDS)
+            .callTimeout(0, TimeUnit.MILLISECONDS)
+            .retryOnConnectionFailure(true)
+            .build()
 }

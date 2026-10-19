@@ -33,8 +33,12 @@ the signature stays stable across builds.
 
 ## Connecting it to your server
 
-The app is a client; it needs a running Hermes WebUI server. Three setups, in
-order of preference:
+The app can talk to either the Hermes WebUI or the agent's own API, and you pick
+which on the Connect screen.
+
+### Hermes WebUI (full client)
+
+Point it at a running Hermes WebUI server. Three setups, in order of preference:
 
 **1. Tailscale Serve (recommended).** Keeps the server on loopback while giving
 your tailnet a real HTTPS hostname:
@@ -56,6 +60,22 @@ Then use `http://<tailscale-ip>:8787`.
 
 **3. Localhost, same machine (emulator or on-device server).**
 `http://localhost:8787` works with no configuration.
+
+### Direct agent (chat, sessions, tools, approvals)
+
+The same switch can bypass the WebUI and talk to the agent's own API server
+(usually port 8642) with the key it was started with:
+
+```bash
+API_SERVER_KEY=your-secret
+```
+
+Enter the agent's address and that key on the Connect screen. Direct mode covers
+chat, session history, tool calls and approval prompts. Uploads, workspace files,
+voice input, profiles, prompts and the model catalog are WebUI surfaces, so those
+controls are hidden in direct mode. The key is stored in the Android Keystore
+(`EncryptedSharedPreferences`), never in plain preferences, and each mode uses a
+separate HTTP client so a cookie and a Bearer key never cross.
 
 ### A note on transport security
 
@@ -92,12 +112,14 @@ Single `:app` module, package-by-feature — see
 ## What works
 
 - **Connect** to a self-hosted server, with a connection test that distinguishes
-  an unreachable host, a wrong address, a TLS problem and a bad password.
-- **Sessions** — list, search, create, rename, archive, delete, with a live
-  indicator on any session currently answering.
+  an unreachable host, a wrong address, a TLS problem and a bad password. The
+  same screen switches to the agent's own API with a Bearer key.
+- **Sessions** — list, search, create, rename, delete, with a live indicator on
+  any session currently answering. Archive is a WebUI-only action.
 - **Streaming chat** — tokens, model reasoning, tool calls with results and
   failures, and context-compression notices.
-- **Composer** — send, stop, steer a run mid-flight, or `/queue` a message.
+- **Composer** — send, stop, or `/queue` a message; mid-run steering is available
+  in WebUI mode. Direct mode also surfaces tool-approval prompts.
 - **Material 3 Expressive** — Material You dynamic colour on Android 12+, a
   generated Hermes-gold fallback below that, expressive shape and spring motion,
   and light/dark/system themes that change live.
@@ -113,6 +135,7 @@ Single `:app` module, package-by-feature — see
 - [x] M6 — streaming chat over SSE
 - [x] M7 — composer state machine (send / stop / steer / queue)
 - [x] M8 — reasoning disclosure, tool cards, error retry
+- [x] M9 — direct agent backend and the two-mode Connect switch
 - [ ] Model and reasoning-effort pickers
 - [ ] Image attachments
 - [ ] Reconnect and gap recovery after backgrounding
