@@ -1,9 +1,10 @@
 # Direct agent backend + expressive login switch
 
-**Status:** implemented on `feat/direct-agent-backend`; all unit tests green
-(46 classes, 274 tests). Device verification against the deployed agent is
-pending. Merge `--no-ff` into `test/model-picker-home-send` only after CI is
-green; never merge to master.
+**Status:** implemented on `feat/direct-agent-backend`, live-verified against the
+deployed agent (v0.19.0), and merged `--no-ff` into
+`test/model-picker-home-send` (`3bac235`). Unit tests: 46 classes, 274 tests,
+0 failures; both branches' CI builds are green. Device UI verification is
+pending (no adb device was attached). Never merge to master.
 
 **Goal:** Let the Android app connect either to Hermes WebUI (cookie auth) or
 directly to the deployed Hermes agent API (`/v1/runs`, Bearer key), selected on
@@ -169,10 +170,23 @@ routes/auth/errors, connection validation, Connect view-model mode isolation,
 the Compose login switch, repository agent branches, the SSE custom parser,
 approval sheet choices, and all pre-existing tests.
 
-Not covered (needs the live deployment): a real connect and run, approvals
-against a streaming run, and device rendering. Those require explicit approval
-because they write to the deployed session database; no live run was started.
-The mode-2 voice-note transcription still needs an explicit "go".
+Live contract check (temporary harness using the app's `AgentApi`, `SseClient`,
+`AgentEventMapper` and `AgentSessionMapper`; URL/key from the environment, not
+committed, never run in CI) against the deployed agent v0.19.0:
+
+- `/health` -> `ok`, `hermes-agent`, 0.19.0
+- `/v1/capabilities` -> platform `hermes-agent`, `auth.type = bearer`
+- `/v1/models` -> `[hermes-agent]`
+- session created (`api_1792422382_1e29a4c3`)
+- run `run_ce23c4ab3755468d9ff87a358c6e5cdc` answered `pong` in 2.5 s
+- SSE events: `reasoning` x1, `token` x2, `done` x1
+- transcript: 2 rows (`user`, `assistant`); the session is present in the list
+- `AgentConnectionValidator` accepted the live pair
+
+Not covered: an approval prompt against a live run (the verification turn used
+no tools, so none was raised; the request/body path is unit-tested), live stop,
+and device rendering. The mode-2 voice-note transcription still needs an
+explicit "go".
 
 ## Out of scope (explicit)
 
