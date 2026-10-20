@@ -98,6 +98,8 @@ class FakeKanbanRepository : KanbanRepository {
     val unblockCalls = mutableListOf<String>()
     val taskCalls = mutableListOf<String>()
     val dispatchCalls = mutableListOf<DispatchCall>()
+    val eventCalls = mutableListOf<EventCall>()
+    val pollCalls = mutableListOf<Long>()
 
     override suspend fun openBoard(preferredSlug: String?): Result<KanbanOpen> {
         calls += "open:${preferredSlug ?: "current"}"
@@ -218,6 +220,7 @@ class FakeKanbanRepository : KanbanRepository {
     }
 
     override suspend fun events(slug: String, since: Long): Flow<KanbanStreamFrame> = flow {
+        eventCalls += EventCall(slug, since)
         synchronized(activeEvents) {
             activeEvents[slug] = (activeEvents[slug] ?: 0) + 1
         }
@@ -233,6 +236,7 @@ class FakeKanbanRepository : KanbanRepository {
 
     override suspend fun pollEvents(slug: String, since: Long): Result<KanbanEventsPage> {
         calls += "poll:$slug"
+        pollCalls += since
         return pollHandler(slug, since)
     }
 
@@ -244,6 +248,8 @@ data class UpdateCall(val taskId: String, val patch: KanbanTaskPatch)
 data class BlockCall(val taskId: String, val reason: String)
 
 data class DispatchCall(val slug: String, val dryRun: Boolean, val max: Int)
+
+data class EventCall(val slug: String, val since: Long)
 
 object KanbanTestData {
     fun boardSummary(slug: String, current: Boolean = true): KanbanBoardSummary =

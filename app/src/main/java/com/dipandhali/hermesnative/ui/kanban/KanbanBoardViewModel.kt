@@ -23,10 +23,14 @@ import com.dipandhali.hermesnative.domain.kanban.KanbanStreamFrame
 import com.dipandhali.hermesnative.domain.kanban.KanbanTaskPatch
 import dagger.hilt.android.lifecycle.HiltViewModel
 import javax.inject.Inject
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.FlowPreview
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.channels.BufferOverflow
 import kotlinx.coroutines.channels.Channel
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -34,6 +38,7 @@ import kotlinx.coroutines.flow.debounce
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.receiveAsFlow
 import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.serialization.json.JsonObject
 
@@ -57,7 +62,13 @@ class KanbanBoardViewModel @Inject constructor(
     private var switchJob: Job? = null
     private var liveJob: Job? = null
     private var pollJob: Job? = null
+    private var reloadJob: Job? = null
     private var dispatcherJob: Job? = null
+    private var liveGeneration = 0
+    private var liveRefresh = MutableSharedFlow<Unit>(
+        extraBufferCapacity = 1,
+        onBufferOverflow = BufferOverflow.DROP_OLDEST,
+    )
 
     private var loadGeneration = 0
     private var mutationGeneration = 0
@@ -90,10 +101,13 @@ class KanbanBoardViewModel @Inject constructor(
 
     fun onScreenStopped() {
         foreground = false
+        liveGeneration += 1
         liveJob?.cancel()
         liveJob = null
         pollJob?.cancel()
         pollJob = null
+        reloadJob?.cancel()
+        reloadJob = null
         refreshJob?.cancel()
         refreshJob = null
         switchJob?.cancel()
@@ -201,10 +215,13 @@ class KanbanBoardViewModel @Inject constructor(
         if (slug.isBlank()) return
         lastUndo = null
         lastUndoTaskId = null
+        liveGeneration += 1
         liveJob?.cancel()
         liveJob = null
         pollJob?.cancel()
         pollJob = null
+        reloadJob?.cancel()
+        reloadJob = null
         _state.update {
             it.copy(
                 live = KanbanLiveState.OFF,
@@ -864,40 +881,154 @@ class KanbanBoardViewModel @Inject constructor(
     private fun startLive() {
         if (!foreground) return
         val slug = _state.value.boardSlug ?: return
-        if (liveJob?.isActive == true) return
+
+        liveGeneration += 1
+        val generation = liveGeneration
+        liveJob?.cancel()
+        liveJob = null
+        pollJob?.cancel()
+        pollJob = null
+        reloadJob?.cancel()
+        reloadJob = null
+        liveRefresh = MutableSharedFlow(
+            extraBufferCapacity = 1,
+            onBufferOverflow = BufferOverflow.DROP_OLDEST,
+        )
+
+        reloadJob = viewModelScope.launch {
+            liveRefresh.collect {
+                reloadFullSilent()
+            }
+        }
+
         val since = _state.value.lastEventId
+        if (since == 0L) {
+            // A board with no cursor cannot resume an SSE stream meaningfully;
+            // polling is the safe fallback.
+            startPolling(slug)
+            return
+        }
+
         liveJob = viewModelScope.launch {
             _state.update { it.copy(live = KanbanLiveState.CONNECTING) }
-            repository.events(slug, since).collect { frame ->
-                when (frame) {
-                    is KanbanStreamFrame.Hello -> _state.update {
-                        it.copy(
-                            live = KanbanLiveState.LIVE,
-                            lastEventId = maxOf(it.lastEventId, frame.cursor),
-                        )
-                    }
-
-                    is KanbanStreamFrame.Changed -> _state.update {
-                        it.copy(
-                            live = KanbanLiveState.LIVE,
-                            lastEventId = maxOf(it.lastEventId, frame.cursor),
-                        )
-                    }
-
-                    KanbanStreamFrame.Ended -> _state.update {
-                        it.copy(live = KanbanLiveState.OFFLINE)
-                    }
-
-                    is KanbanStreamFrame.Failed -> {
-                        if (frame.error is DataError.Unauthorized) {
-                            _effects.trySend(KanbanBoardEffect.SessionExpired)
+            var handedOff = false
+            try {
+                repository.events(slug, since).collect { frame ->
+                    if (generation != liveGeneration) return@collect
+                    when (frame) {
+                        is KanbanStreamFrame.Hello -> _state.update {
+                            it.copy(
+                                live = KanbanLiveState.LIVE,
+                                lastEventId = maxOf(it.lastEventId, frame.cursor),
+                            )
                         }
-                        _state.update { it.copy(live = KanbanLiveState.OFFLINE) }
+
+                        is KanbanStreamFrame.Changed -> {
+                            _state.update {
+                                it.copy(
+                                    live = KanbanLiveState.LIVE,
+                                    lastEventId = maxOf(it.lastEventId, frame.cursor),
+                                )
+                            }
+                            requestLiveRefresh()
+                        }
+
+                        KanbanStreamFrame.Ended -> {
+                            handedOff = true
+                            startPolling(slug)
+                        }
+
+                        is KanbanStreamFrame.Failed -> {
+                            handedOff = true
+                            if (frame.error is DataError.Unauthorized) {
+                                stopForAuth()
+                            } else {
+                                startPolling(slug)
+                            }
+                        }
                     }
                 }
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (_: Throwable) {
+                if (!handedOff) {
+                    handedOff = true
+                    startPolling(slug)
+                }
+            } finally {
+                if (!handedOff && generation == liveGeneration && stillOn(slug)) {
+                    _state.update { it.copy(live = KanbanLiveState.OFFLINE) }
+                }
             }
-            _state.update { it.copy(live = KanbanLiveState.OFFLINE) }
         }
+    }
+
+    private fun startPolling(slug: String) {
+        pollJob?.cancel()
+        pollJob = viewModelScope.launch {
+            _state.update { current ->
+                if (current.boardSlug == slug) {
+                    current.copy(live = KanbanLiveState.POLLING)
+                } else {
+                    current
+                }
+            }
+            while (isActive) {
+                delay(POLL_INTERVAL_MS)
+                if (!stillOn(slug)) return@launch
+                val result = repository.pollEvents(slug, _state.value.lastEventId)
+                if (!stillOn(slug)) return@launch
+                result
+                    .onSuccess { page ->
+                        if (!stillOn(slug)) return@onSuccess
+                        if (page.latestEventId > _state.value.lastEventId) {
+                            _state.update { it.copy(lastEventId = page.latestEventId) }
+                        }
+                        _state.update { it.copy(live = KanbanLiveState.POLLING) }
+                        if (page.events.isNotEmpty()) requestLiveRefresh()
+                    }
+                    .onFailure { error ->
+                        if (!stillOn(slug)) return@onFailure
+                        if (error.dataError() is DataError.Unauthorized) {
+                            stopForAuth()
+                        } else {
+                            _state.update { it.copy(live = KanbanLiveState.OFFLINE) }
+                        }
+                    }
+            }
+        }
+    }
+
+    private fun requestLiveRefresh() {
+        liveRefresh.tryEmit(Unit)
+    }
+
+    private suspend fun reloadFullSilent() {
+        val slug = _state.value.boardSlug ?: return
+        repository.board(slug, _state.value.filters, since = null)
+            .onSuccess { result ->
+                if (stillOn(slug)) applyBoardResult(result)
+            }
+            .onFailure { error ->
+                if (!stillOn(slug)) return@onFailure
+                if (error.dataError() is DataError.Unauthorized) {
+                    stopForAuth()
+                } else {
+                    _state.update { it.copy(live = KanbanLiveState.OFFLINE) }
+                }
+            }
+    }
+
+    private fun stopForAuth() {
+        liveGeneration += 1
+        liveJob?.cancel()
+        liveJob = null
+        pollJob?.cancel()
+        pollJob = null
+        reloadJob?.cancel()
+        reloadJob = null
+        _state.update { it.copy(live = KanbanLiveState.OFFLINE) }
+        _effects.trySend(KanbanBoardEffect.SessionExpired)
     }
 
     private fun applyOpen(open: KanbanOpen, resetSearch: Boolean) {
@@ -1061,6 +1192,7 @@ class KanbanBoardViewModel @Inject constructor(
 
     private companion object {
         const val QUERY_DEBOUNCE_MS = 120L
+        const val POLL_INTERVAL_MS = 30_000L
         const val DISPATCH_MAX = 8
         const val READ_ONLY_MESSAGE = "This board is read-only."
     }
