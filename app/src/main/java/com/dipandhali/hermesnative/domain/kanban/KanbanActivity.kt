@@ -34,6 +34,18 @@ sealed interface KanbanActivityItem {
 object KanbanActivity {
     private val pretty = Json { prettyPrint = true }
 
+    private val knownKinds = setOf(
+        "created", "status", "assigned", "blocked", "updated", "edited",
+        "unblocked", "completed", "archived", "scheduled", "claimed",
+        "commented", "linked", "unlinked", "link", "unlink", "dependency_wait",
+        "spawned", "run_started", "run_ended", "reclaimed", "timed_out",
+        "gave_up", "review_requested", "changes_requested", "review_reopened",
+        "reprioritized", "promoted", "attached", "attachment_removed",
+    )
+
+    /** True when the UI knows a human summary for this event kind. */
+    fun isKnownKind(raw: String): Boolean = raw in knownKinds
+
     fun merge(
         comments: List<KanbanCommentUi>,
         events: List<KanbanEventDto>,
@@ -85,6 +97,21 @@ object KanbanActivity {
             "scheduled" -> "Scheduled"
             "claimed" -> "Claimed"
             "commented" -> "Commented"
+            "linked", "link" -> "Linked task"
+            "unlinked", "unlink" -> "Dependency removed"
+            "dependency_wait" -> "Waiting on a parent task"
+            "spawned", "run_started" -> "Run started"
+            "run_ended" -> "Run ended"
+            "reclaimed" -> "Run reclaimed"
+            "timed_out" -> "Run timed out"
+            "gave_up" -> "Gave up after repeated failures"
+            "review_requested" -> "Review requested"
+            "changes_requested" -> "Changes requested"
+            "review_reopened" -> "Review reopened"
+            "reprioritized" -> "Priority changed"
+            "promoted" -> "Promoted"
+            "attached" -> "Attachment added"
+            "attachment_removed" -> "Attachment removed"
             else -> humanize(event.kind)
         }
     }

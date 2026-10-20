@@ -12,14 +12,18 @@ import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.WindowInsetsSides
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.only
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
@@ -76,6 +80,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalClipboardManager
+import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.style.TextAlign
@@ -91,8 +96,13 @@ import com.dipandhali.hermesnative.domain.kanban.KanbanAction
 import com.dipandhali.hermesnative.domain.kanban.KanbanFormat
 import com.dipandhali.hermesnative.domain.kanban.KanbanMoveVia
 import com.dipandhali.hermesnative.domain.kanban.KanbanStatus
+import com.dipandhali.hermesnative.ui.kanban.components.KanbanActivityEmpty
+import com.dipandhali.hermesnative.ui.kanban.components.KanbanActivityFilter
+import com.dipandhali.hermesnative.ui.kanban.components.KanbanActivityFilters
+import com.dipandhali.hermesnative.ui.kanban.components.KanbanActivityRow
 import com.dipandhali.hermesnative.ui.kanban.components.KanbanArchiveSheet
 import com.dipandhali.hermesnative.ui.kanban.components.KanbanBlockSheet
+import com.dipandhali.hermesnative.ui.kanban.components.KanbanCommentComposer
 import com.dipandhali.hermesnative.ui.kanban.components.KanbanCompleteSheet
 import com.dipandhali.hermesnative.ui.kanban.components.KanbanDependencyChip
 import com.dipandhali.hermesnative.ui.kanban.components.KanbanDetailHero
@@ -100,6 +110,7 @@ import com.dipandhali.hermesnative.ui.kanban.components.KanbanMoveSheet
 import com.dipandhali.hermesnative.ui.kanban.components.KanbanReopenSheet
 import com.dipandhali.hermesnative.ui.kanban.components.KanbanRestoreSheet
 import com.dipandhali.hermesnative.ui.kanban.components.KanbanTaskPickerSheet
+import com.dipandhali.hermesnative.ui.kanban.components.activityKey
 import com.dipandhali.hermesnative.ui.markdown.MessageBody
 import com.dipandhali.hermesnative.ui.theme.HermesMotion
 import java.time.Instant
@@ -128,17 +139,45 @@ fun KanbanDetailScreen(
     val snackbarHostState = remember { SnackbarHostState() }
     val scope = rememberCoroutineScope()
     val clipboard = LocalClipboardManager.current
+    val focusManager = LocalFocusManager.current
 
     var selectedTab by rememberSaveable { mutableIntStateOf(0) }
+    var activityFilterName by rememberSaveable {
+        mutableStateOf(KanbanActivityFilter.ALL.name)
+    }
     var menuOpen by remember { mutableStateOf(false) }
     var sheet by remember { mutableStateOf<DetailSheet?>(null) }
     var sheetStatus by remember { mutableStateOf("") }
     var gone by rememberSaveable { mutableStateOf(false) }
     var sessionExpired by rememberSaveable { mutableStateOf(false) }
     val listState = rememberLazyListState()
+    val activityFilter = remember(activityFilterName) {
+        KanbanActivityFilter.valueOf(activityFilterName)
+    }
+    val visibleActivity = remember(state.activity, activityFilter) {
+        state.activity.filter(activityFilter::matches)
+    }
+    val pendingComments = state.comments.count { it.pending }
 
     LifecycleEventEffect(Lifecycle.Event.ON_START) { viewModel.onScreenStarted() }
     LifecycleEventEffect(Lifecycle.Event.ON_STOP) { viewModel.onScreenStopped() }
+
+    LaunchedEffect(selectedTab) {
+        if (selectedTab != 1) focusManager.clearFocus()
+    }
+    LaunchedEffect(state.readOnly, gone, sessionExpired) {
+        if (state.readOnly || gone || sessionExpired) focusManager.clearFocus()
+    }
+    LaunchedEffect(pendingComments, selectedTab, activityFilterName, visibleActivity.size) {
+        if (selectedTab == 1 &&
+            pendingComments > 0 &&
+            activityFilter != KanbanActivityFilter.EVENTS &&
+            visibleActivity.isNotEmpty()
+        ) {
+            // Hero + sticky tabs + filter chips precede the timeline.
+            listState.animateScrollToItem(2 + visibleActivity.size)
+        }
+    }
 
     val task = state.task
     val copyId: () -> Unit = {
@@ -203,6 +242,7 @@ fun KanbanDetailScreen(
     fun openSheet(next: DetailSheet) {
         val current = state.task ?: return
         if (state.readOnly) return
+        focusManager.clearFocus()
         sheetStatus = current.status
         sheet = next
     }
@@ -244,6 +284,25 @@ fun KanbanDetailScreen(
     Scaffold(
         contentWindowInsets = WindowInsets.safeDrawing,
         snackbarHost = { SnackbarHost(snackbarHostState) },
+        bottomBar = {
+            if (selectedTab == 1 &&
+                !state.readOnly &&
+                state.task != null &&
+                !gone &&
+                !sessionExpired
+            ) {
+                KanbanCommentComposer(
+                    draft = state.commentDraft,
+                    author = state.activeAuthor,
+                    sending = state.sendingComment,
+                    onDraftChange = viewModel::onCommentDraftChange,
+                    onSend = viewModel::onSendComment,
+                    modifier = Modifier.windowInsetsPadding(
+                        WindowInsets.safeDrawing.only(WindowInsetsSides.Bottom),
+                    ),
+                )
+            }
+        },
         topBar = {
             TopAppBar(
                 navigationIcon = {
@@ -483,7 +542,10 @@ fun KanbanDetailScreen(
                                         onOpenTask(id, boardSlug, state.cursor)
                                     },
                                     onRemove = viewModel::onRemoveDependency,
-                                    onAdd = viewModel::onAddDependencyOpened,
+                                    onAdd = {
+                                        focusManager.clearFocus()
+                                        viewModel.onAddDependencyOpened()
+                                    },
                                     modifier = Modifier.padding(
                                         horizontal = 20.dp,
                                         vertical = 12.dp,
@@ -513,11 +575,36 @@ fun KanbanDetailScreen(
                             }
                         }
 
-                        1 -> item(key = "activity-placeholder") {
-                            TabPlaceholder(
-                                title = "Activity",
-                                body = "Comments and run events will appear here.",
-                            )
+                        1 -> {
+                            item(key = "activity-filters") {
+                                KanbanActivityFilters(
+                                    selected = activityFilter,
+                                    comments = state.comments.size,
+                                    events = state.events.size,
+                                    onSelected = { activityFilterName = it.name },
+                                    modifier = Modifier.padding(
+                                        horizontal = 20.dp,
+                                        vertical = 10.dp,
+                                    ),
+                                )
+                            }
+                            if (visibleActivity.isEmpty()) {
+                                item(key = "activity-empty") {
+                                    KanbanActivityEmpty(
+                                        filter = activityFilter,
+                                        hasAnyActivity = state.activity.isNotEmpty(),
+                                    )
+                                }
+                            }
+                            items(
+                                items = visibleActivity,
+                                key = { it.activityKey() },
+                            ) { item ->
+                                KanbanActivityRow(
+                                    item = item,
+                                    onRetryComment = viewModel::onRetryComment,
+                                )
+                            }
                         }
 
                         else -> item(key = "runs-placeholder") {

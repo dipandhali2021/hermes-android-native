@@ -9,6 +9,7 @@ import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.jsonObject
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -71,6 +72,14 @@ class KanbanActivityTest {
             describe(event(7, "updated", 7.0, """{"fields":["title","body"]}""")),
         )
         assertEquals("Future kind", describe(event(8, "future_kind", 8.0)))
+    }
+
+    @Test
+    fun `known event kinds are separated from extension kinds`() {
+        assertTrue(KanbanActivity.isKnownKind("status"))
+        assertTrue(KanbanActivity.isKnownKind("linked"))
+        assertTrue(KanbanActivity.isKnownKind("review_requested"))
+        assertFalse(KanbanActivity.isKnownKind("future_kind"))
     }
 
     @Test
