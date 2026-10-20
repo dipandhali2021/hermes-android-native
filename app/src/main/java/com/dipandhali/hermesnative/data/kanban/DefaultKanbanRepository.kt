@@ -7,10 +7,12 @@ import com.dipandhali.hermesnative.core.model.KanbanBoardResponse
 import com.dipandhali.hermesnative.core.model.KanbanBoardSummary
 import com.dipandhali.hermesnative.core.model.KanbanBoardsResponse
 import com.dipandhali.hermesnative.core.model.KanbanConfigDto
+import com.dipandhali.hermesnative.core.model.KanbanCreateTaskBody
 import com.dipandhali.hermesnative.core.model.KanbanEventsPage
 import com.dipandhali.hermesnative.core.model.KanbanLogResponse
 import com.dipandhali.hermesnative.core.model.KanbanTaskDetailResponse
 import com.dipandhali.hermesnative.core.model.KanbanTaskDto
+import com.dipandhali.hermesnative.core.model.KanbanTaskEnvelope
 import com.dipandhali.hermesnative.core.model.ProfileDto
 import com.dipandhali.hermesnative.core.model.WorkspaceDto
 import com.dipandhali.hermesnative.core.net.ApiException
@@ -19,9 +21,11 @@ import com.dipandhali.hermesnative.core.net.RawSseClient
 import com.dipandhali.hermesnative.data.settings.ServerState
 import com.dipandhali.hermesnative.domain.kanban.KanbanBoardResult
 import com.dipandhali.hermesnative.domain.kanban.KanbanCreateOutcome
+import com.dipandhali.hermesnative.domain.kanban.KanbanCreatePlan
 import com.dipandhali.hermesnative.domain.kanban.KanbanCreateRequest
 import com.dipandhali.hermesnative.domain.kanban.KanbanFilters
 import com.dipandhali.hermesnative.domain.kanban.KanbanOpen
+import com.dipandhali.hermesnative.domain.kanban.KanbanStatus
 import com.dipandhali.hermesnative.domain.kanban.KanbanStreamFrame
 import com.dipandhali.hermesnative.domain.kanban.KanbanTaskPatch
 import javax.inject.Inject
@@ -30,6 +34,8 @@ import javax.inject.Singleton
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.emptyFlow
 import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.put
 
 @Singleton
 class DefaultKanbanRepository @Inject constructor(
@@ -158,70 +164,192 @@ class DefaultKanbanRepository @Inject constructor(
     override fun cachedTasks(slug: String): Map<String, KanbanTaskDto> =
         if (cachedSlug == slug) cachedTaskMap else emptyMap()
 
-    // ---- writes and live streaming are completed in the next two tasks ----
+    // ---- writes ----
 
     override suspend fun createTask(
         slug: String,
         request: KanbanCreateRequest,
-    ): Result<KanbanCreateOutcome> = notWired("createTask")
+    ): Result<KanbanCreateOutcome> {
+        val base = serverState.currentBaseUrl ?: return noServer()
+        val status = sanitizeCreateStatus(request.status)
+        val plan = KanbanCreatePlan.forStatus(status)
+        val workspaceKind = sanitizeWorkspaceKind(request.workspaceKind)
+        val workspacePath = request.workspacePath
+            ?.takeIf { workspaceKind == "worktree" || workspaceKind == "dir" }
+            ?.takeIf { it.isNotBlank() }
+
+        val body = KanbanCreateTaskBody(
+            title = request.title,
+            body = request.body?.takeIf { it.isNotBlank() },
+            assignee = request.assignee?.takeIf { it.isNotBlank() },
+            tenant = request.tenant?.takeIf { it.isNotBlank() },
+            priority = request.priority,
+            parents = request.parents,
+            triage = if (plan.triage) true else null,
+            workspaceKind = workspaceKind,
+            workspacePath = workspacePath,
+            skills = request.skills?.takeIf { it.isNotEmpty() },
+            maxRuntimeSeconds = request.maxRuntimeSeconds,
+        )
+
+        val created = api.kanbanCreateTask(base, slug, body).getOrElse {
+            return Result.failure(it)
+        }
+        val createdTask = created.task
+            ?: return Result.success(KanbanCreateOutcome(task = null, requestedStatus = status))
+        val followUpStatus = plan.followUpStatus
+            ?: return Result.success(KanbanCreateOutcome(task = createdTask, requestedStatus = status))
+
+        val followUp = api.kanbanUpdateTask(
+            base,
+            slug,
+            createdTask.id,
+            buildJsonObject { put("status", followUpStatus) },
+        )
+        return followUp.fold(
+            onSuccess = { envelope ->
+                Result.success(
+                    KanbanCreateOutcome(
+                        task = envelope.task ?: createdTask,
+                        requestedStatus = status,
+                    ),
+                )
+            },
+            onFailure = { error ->
+                Result.success(
+                    KanbanCreateOutcome(
+                        task = createdTask,
+                        requestedStatus = status,
+                        followUpError = (error as? ApiException)?.error
+                            ?: DataError.Unknown(error.message ?: "follow-up failed"),
+                    ),
+                )
+            },
+        )
+    }
 
     override suspend fun updateTask(
         slug: String,
         taskId: String,
         patch: KanbanTaskPatch,
-    ): Result<KanbanTaskDto> = notWired("updateTask")
+    ): Result<KanbanTaskDto> {
+        val base = serverState.currentBaseUrl ?: return noServer()
+        val json = try {
+            patch.toJson()
+        } catch (e: IllegalArgumentException) {
+            return Result.failure(ApiException(DataError.Malformed(e.message ?: "invalid patch")))
+        }
+        return api.kanbanUpdateTask(base, slug, taskId, json).taskOrMalformed()
+    }
 
     override suspend fun blockTask(
         slug: String,
         taskId: String,
         reason: String,
-    ): Result<KanbanTaskDto> = notWired("blockTask")
+    ): Result<KanbanTaskDto> {
+        val base = serverState.currentBaseUrl ?: return noServer()
+        return api.kanbanBlock(base, slug, taskId, reason).taskOrMalformed()
+    }
 
     override suspend fun unblockTask(
         slug: String,
         taskId: String,
-    ): Result<KanbanTaskDto> = notWired("unblockTask")
+    ): Result<KanbanTaskDto> {
+        val base = serverState.currentBaseUrl ?: return noServer()
+        return api.kanbanUnblock(base, slug, taskId).taskOrMalformed()
+    }
 
     override suspend fun addComment(
         slug: String,
         taskId: String,
         body: String,
         author: String?,
-    ): Result<Long?> = notWired("addComment")
+    ): Result<Long?> {
+        val base = serverState.currentBaseUrl ?: return noServer()
+        return api.kanbanComment(base, slug, taskId, body, author).map { it.commentId }
+    }
 
     override suspend fun addLink(
         slug: String,
         parentId: String,
         childId: String,
-    ): Result<Unit> = notWired("addLink")
+    ): Result<Unit> {
+        val base = serverState.currentBaseUrl ?: return noServer()
+        return api.kanbanLink(base, slug, parentId, childId).map { }
+    }
 
     override suspend fun removeLink(
         slug: String,
         parentId: String,
         childId: String,
-    ): Result<Boolean> = notWired("removeLink")
+    ): Result<Boolean> {
+        val base = serverState.currentBaseUrl ?: return noServer()
+        return api.kanbanUnlink(base, slug, parentId, childId).map { it.changed }
+    }
 
     override suspend fun createBoard(
         request: KanbanBoardRequest,
-    ): Result<KanbanBoardSummary> = notWired("createBoard")
+    ): Result<KanbanBoardSummary> {
+        val base = serverState.currentBaseUrl ?: return noServer()
+        val response = api.kanbanCreateBoard(base, request).getOrElse {
+            return Result.failure(it)
+        }
+        val board = response.board
+            ?: return Result.failure(ApiException(DataError.Malformed("board missing")))
+        return Result.success(board)
+    }
 
     override suspend fun updateBoard(
         slug: String,
         patch: KanbanBoardPatch,
-    ): Result<KanbanBoardSummary> = notWired("updateBoard")
+    ): Result<KanbanBoardSummary> {
+        val base = serverState.currentBaseUrl ?: return noServer()
+        val response = api.kanbanUpdateBoard(base, slug, patch).getOrElse {
+            return Result.failure(it)
+        }
+        val board = response.board
+            ?: return Result.failure(ApiException(DataError.Malformed("board missing")))
+        return Result.success(board)
+    }
 
-    override suspend fun archiveBoard(slug: String): Result<String> = notWired("archiveBoard")
+    override suspend fun archiveBoard(slug: String): Result<String> {
+        val base = serverState.currentBaseUrl ?: return noServer()
+        return api.kanbanArchiveBoard(base, slug).map { it.current }
+    }
 
     override suspend fun dispatch(
         slug: String,
         dryRun: Boolean,
         max: Int,
-    ): Result<JsonObject> = notWired("dispatch")
+    ): Result<JsonObject> {
+        val base = serverState.currentBaseUrl ?: return noServer()
+        return dispatchApi.kanbanDispatch(base, slug, dryRun, max)
+    }
 
     override suspend fun events(slug: String, since: Long): Flow<KanbanStreamFrame> = emptyFlow()
 
     override suspend fun pollEvents(slug: String, since: Long): Result<KanbanEventsPage> =
         notWired("pollEvents")
+
+    private fun sanitizeCreateStatus(raw: String): String = when (raw) {
+        KanbanStatus.TRIAGE, KanbanStatus.TODO, KanbanStatus.READY -> raw
+        else -> KanbanStatus.READY
+    }
+
+    private fun sanitizeWorkspaceKind(raw: String): String =
+        raw.takeIf { it == "scratch" || it == "worktree" || it == "dir" } ?: "scratch"
+
+    private fun Result<KanbanTaskEnvelope>.taskOrMalformed(): Result<KanbanTaskDto> = fold(
+        onSuccess = { envelope ->
+            val task = envelope.task
+            if (task == null) {
+                Result.failure(ApiException(DataError.Malformed("task missing")))
+            } else {
+                Result.success(task)
+            }
+        },
+        onFailure = { Result.failure(it) },
+    )
 
     private fun cache(slug: String, board: KanbanBoardResponse) {
         cachedTaskMap = board.columns.flatMap { it.tasks }.associateBy { it.id }
