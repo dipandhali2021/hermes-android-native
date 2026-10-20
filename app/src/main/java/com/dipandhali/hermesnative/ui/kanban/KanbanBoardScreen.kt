@@ -79,15 +79,18 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.dipandhali.hermesnative.core.model.KanbanBoardSummary
 import com.dipandhali.hermesnative.core.model.KanbanTaskDto
 import com.dipandhali.hermesnative.domain.kanban.KanbanAction
+import com.dipandhali.hermesnative.domain.kanban.KanbanFilters
 import com.dipandhali.hermesnative.domain.kanban.KanbanMoveVia
 import com.dipandhali.hermesnative.domain.kanban.KanbanSearch
 import com.dipandhali.hermesnative.domain.kanban.KanbanStatus
 import com.dipandhali.hermesnative.domain.kanban.KanbanTransitions
+import com.dipandhali.hermesnative.ui.kanban.components.KanbanActiveFilters
 import com.dipandhali.hermesnative.ui.kanban.components.KanbanArchiveSheet
 import com.dipandhali.hermesnative.ui.kanban.components.KanbanBlockSheet
 import com.dipandhali.hermesnative.ui.kanban.components.KanbanColumnPage
 import com.dipandhali.hermesnative.ui.kanban.components.KanbanCompleteSheet
 import com.dipandhali.hermesnative.ui.kanban.components.KanbanEmptyState
+import com.dipandhali.hermesnative.ui.kanban.components.KanbanFilterSheet
 import com.dipandhali.hermesnative.ui.kanban.components.KanbanLiveBadge
 import com.dipandhali.hermesnative.ui.kanban.components.KanbanMoveSheet
 import com.dipandhali.hermesnative.ui.kanban.components.KanbanReopenSheet
@@ -110,7 +113,6 @@ fun KanbanBoardScreen(
     onCreateTask: ((board: String, status: String) -> Unit)? = null,
     onOpenNewBoard: (() -> Unit)? = null,
     onOpenBoardSettings: ((KanbanBoardSummary) -> Unit)? = null,
-    onOpenFilters: (() -> Unit)? = null,
     onRunDispatcher: (() -> Unit)? = null,
     viewModel: KanbanBoardViewModel = hiltViewModel(),
 ) {
@@ -123,6 +125,7 @@ fun KanbanBoardScreen(
     val searchFocus = remember { FocusRequester() }
 
     var searchOpen by rememberSaveable { mutableStateOf(false) }
+    var filterOpen by rememberSaveable { mutableStateOf(false) }
     var sheet by remember { mutableStateOf<KanbanSheet?>(null) }
     var menuOpen by remember { mutableStateOf(false) }
     var scrollToTopTick by remember { mutableIntStateOf(0) }
@@ -132,7 +135,7 @@ fun KanbanBoardScreen(
 
     val closeSearch = {
         searchOpen = false
-        viewModel.onQueryChange("")
+        viewModel.onSearchClosed()
         focusManager.clearFocus()
         keyboard?.hide()
     }
@@ -230,6 +233,7 @@ fun KanbanBoardScreen(
     }
 
     LaunchedEffect(state.boardSlug) {
+        filterOpen = false
         if (sheet != null) {
             sheet = null
             viewModel.onSheetClosed()
@@ -370,15 +374,18 @@ fun KanbanBoardScreen(
                             Icon(Icons.Rounded.Search, contentDescription = "Search")
                         }
                     }
-                    if (onOpenFilters != null) {
-                        IconButton(onClick = onOpenFilters) {
-                            BadgedBox(
-                                badge = {
-                                    if (activeFilters) Badge()
-                                },
-                            ) {
-                                Icon(Icons.Rounded.FilterList, contentDescription = "Filters")
-                            }
+                    IconButton(
+                        onClick = {
+                            viewModel.onFilterSheetOpened()
+                            filterOpen = true
+                        },
+                    ) {
+                        BadgedBox(
+                            badge = {
+                                if (activeFilters) Badge()
+                            },
+                        ) {
+                            Icon(Icons.Rounded.FilterList, contentDescription = "Filters")
                         }
                     }
                     Box {
@@ -490,6 +497,40 @@ fun KanbanBoardScreen(
                 else -> Column(Modifier.fillMaxSize()) {
                     if (state.switching) {
                         LinearProgressIndicator(Modifier.fillMaxWidth())
+                    }
+                    if (state.filters.isActive || state.query.isNotBlank()) {
+                        KanbanActiveFilters(
+                            filters = state.filters,
+                            query = state.query,
+                            onClearOnlyMine = {
+                                viewModel.onClearFilter(KanbanFilterKind.ONLY_MINE)
+                            },
+                            onClearAssignee = {
+                                viewModel.onClearFilter(KanbanFilterKind.ASSIGNEE)
+                            },
+                            onClearTenant = {
+                                viewModel.onClearFilter(KanbanFilterKind.TENANT)
+                            },
+                            onClearArchived = {
+                                viewModel.onClearFilter(KanbanFilterKind.ARCHIVED)
+                            },
+                            onClearSearch = {
+                                if (searchOpen) {
+                                    viewModel.onQueryChange("")
+                                } else {
+                                    viewModel.onSearchClosed()
+                                }
+                            },
+                            onClearAll = {
+                                if (searchOpen) {
+                                    viewModel.onQueryChange("")
+                                } else {
+                                    viewModel.onSearchClosed()
+                                }
+                                viewModel.onApplyFilters(KanbanFilters())
+                            },
+                            modifier = Modifier.padding(vertical = 2.dp),
+                        )
                     }
                     KanbanStatusRail(
                         columns = visibleColumns,
@@ -630,6 +671,19 @@ fun KanbanBoardScreen(
         )
 
         null -> Unit
+    }
+
+    if (filterOpen) {
+        KanbanFilterSheet(
+            filters = state.filters,
+            options = state.filterOptions,
+            assigneesLoading = state.assigneesLoading,
+            onDismiss = { filterOpen = false },
+            onApply = { draft ->
+                filterOpen = false
+                viewModel.onApplyFilters(draft)
+            },
+        )
     }
 }
 

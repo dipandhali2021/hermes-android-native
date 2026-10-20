@@ -66,14 +66,16 @@ internal fun KanbanSheetFrame(
                 style = MaterialTheme.typography.headlineSmall,
                 color = MaterialTheme.colorScheme.onSurface,
             )
-            Spacer(Modifier.height(4.dp))
-            Text(
-                text = taskTitle.ifBlank { "Untitled task" },
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                maxLines = 2,
-                overflow = TextOverflow.Ellipsis,
-            )
+            if (taskTitle.isNotBlank()) {
+                Spacer(Modifier.height(4.dp))
+                Text(
+                    text = taskTitle,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
             Spacer(Modifier.height(18.dp))
             content()
         }
