@@ -96,6 +96,13 @@ class FakeKanbanRepository : KanbanRepository {
     var taskIndexHandler: suspend (String) -> Result<List<KanbanTaskDto>> = {
         Result.success(emptyList())
     }
+    var createHandler: suspend (String, KanbanCreateRequest) -> Result<KanbanCreateOutcome> = {
+            _, _ ->
+        error("createTask not configured")
+    }
+    var workspacesHandler: suspend () -> Result<List<WorkspaceDto>> = {
+        Result.success(emptyList())
+    }
     var addCommentHandler: suspend (String, String, String, String?) -> Result<Long?> = {
             _, _, _, _ ->
         error("addComment not configured")
@@ -125,6 +132,8 @@ class FakeKanbanRepository : KanbanRepository {
     val profileCalls = mutableListOf<Unit>()
     val logCalls = mutableListOf<LogCall>()
     val taskIndexCalls = mutableListOf<String>()
+    val createCalls = mutableListOf<CreateCall>()
+    val workspaceCalls = mutableListOf<Unit>()
     val commentCalls = mutableListOf<CommentCall>()
     val linkCalls = mutableListOf<LinkCall>()
     val unlinkCalls = mutableListOf<LinkCall>()
@@ -167,7 +176,11 @@ class FakeKanbanRepository : KanbanRepository {
         return profilesHandler()
     }
 
-    override suspend fun workspaces(): Result<List<WorkspaceDto>> = error("workspaces not used")
+    override suspend fun workspaces(): Result<List<WorkspaceDto>> {
+        calls += "workspaces"
+        workspaceCalls += Unit
+        return workspacesHandler()
+    }
 
     override suspend fun task(slug: String, taskId: String): Result<KanbanTaskDetailResponse> {
         calls += "task:$taskId"
@@ -190,7 +203,11 @@ class FakeKanbanRepository : KanbanRepository {
     override suspend fun createTask(
         slug: String,
         request: KanbanCreateRequest,
-    ): Result<KanbanCreateOutcome> = error("createTask not used")
+    ): Result<KanbanCreateOutcome> {
+        calls += "create:$slug"
+        createCalls += CreateCall(slug, request)
+        return createHandler(slug, request)
+    }
 
     override suspend fun updateTask(
         slug: String,
@@ -342,3 +359,5 @@ object KanbanTestData {
 }
 
 data class LogCall(val slug: String, val taskId: String, val tail: Int)
+
+data class CreateCall(val slug: String, val request: KanbanCreateRequest)
