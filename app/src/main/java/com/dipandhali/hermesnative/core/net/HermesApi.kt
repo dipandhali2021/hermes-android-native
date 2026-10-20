@@ -7,7 +7,7 @@ import com.dipandhali.hermesnative.core.model.ChatStartResponse
 import com.dipandhali.hermesnative.core.model.HealthResponse
 import com.dipandhali.hermesnative.core.model.CronsResponse
 import com.dipandhali.hermesnative.core.model.InsightsResponse
-import com.dipandhali.hermesnative.core.model.KanbanTasksResponse
+import com.dipandhali.hermesnative.core.model.LegacyKanbanTasksResponse
 import com.dipandhali.hermesnative.core.model.LogsResponse
 import com.dipandhali.hermesnative.core.model.MemoryResponse
 import com.dipandhali.hermesnative.core.model.ModelsResponse
@@ -461,11 +461,11 @@ class HermesApi(private val client: OkHttpClient) {
             LogsResponse.serializer(),
         )
 
-    suspend fun kanbanTasks(baseUrl: String, board: String? = null): Result<KanbanTasksResponse> =
+    suspend fun kanbanTasks(baseUrl: String, board: String? = null): Result<LegacyKanbanTasksResponse> =
         get(
             baseUrl,
             "api/kanban/tasks" + (board?.let { "?board=${it.urlEncoded()}" } ?: ""),
-            KanbanTasksResponse.serializer(),
+            LegacyKanbanTasksResponse.serializer(),
         )
 
     /** Absolute SSE URL for a stream id, opened by [SseClient]. */

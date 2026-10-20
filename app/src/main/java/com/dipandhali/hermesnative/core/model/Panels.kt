@@ -221,10 +221,10 @@ data class LogsResponse(
         ?: lines.takeIf { it.isNotEmpty() }?.joinToString("\n")
 }
 
-// ---------- Kanban ----------
+// ---------- Kanban (legacy panel stub; removed with the stub in Phase 2) ----------
 
 @Serializable
-data class KanbanTaskDto(
+data class LegacyKanbanTaskDto(
     val id: String? = null,
     val title: String? = null,
     val description: String? = null,
@@ -237,8 +237,8 @@ data class KanbanTaskDto(
 }
 
 @Serializable
-data class KanbanTasksResponse(
-    val tasks: List<KanbanTaskDto> = emptyList(),
+data class LegacyKanbanTasksResponse(
+    val tasks: List<LegacyKanbanTaskDto> = emptyList(),
     val count: Int = 0,
 )
 

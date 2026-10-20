@@ -3,7 +3,7 @@ package com.dipandhali.hermesnative.data.panels
 import com.dipandhali.hermesnative.core.error.DataError
 import com.dipandhali.hermesnative.core.model.CronJobDto
 import com.dipandhali.hermesnative.core.model.InsightsResponse
-import com.dipandhali.hermesnative.core.model.KanbanTaskDto
+import com.dipandhali.hermesnative.core.model.LegacyKanbanTaskDto
 import com.dipandhali.hermesnative.core.model.LogsResponse
 import com.dipandhali.hermesnative.core.model.MemoryResponse
 import com.dipandhali.hermesnative.core.model.ProfileDto
@@ -79,7 +79,7 @@ class PanelsRepository @Inject constructor(
             .mapCatching { api.logs(it, tail = tail) }
             .mapCatching { it.getOrThrow() }
 
-    suspend fun kanban(): Result<PanelResult<List<KanbanTaskDto>>> =
+    suspend fun kanban(): Result<PanelResult<List<LegacyKanbanTaskDto>>> =
         runCatching { baseUrl() }
             .mapCatching { api.kanbanTasks(it) }
             .mapCatching { response ->

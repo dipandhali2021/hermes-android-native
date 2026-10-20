@@ -214,7 +214,7 @@ data class PanelsUiState(
     val memory: List<Pair<String, String>> = emptyList(),
     val workspaces: List<com.dipandhali.hermesnative.core.model.WorkspaceDto> = emptyList(),
     val profiles: List<com.dipandhali.hermesnative.core.model.ProfileDto> = emptyList(),
-    val kanban: List<com.dipandhali.hermesnative.core.model.KanbanTaskDto> = emptyList(),
+    val kanban: List<com.dipandhali.hermesnative.core.model.LegacyKanbanTaskDto> = emptyList(),
     val insights: com.dipandhali.hermesnative.core.model.InsightsResponse? = null,
     val logText: String? = null,
     val logFiles: List<com.dipandhali.hermesnative.core.model.LogFileDto> = emptyList(),
