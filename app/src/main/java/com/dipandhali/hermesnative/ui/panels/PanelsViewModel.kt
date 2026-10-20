@@ -18,7 +18,6 @@ import javax.inject.Inject
 enum class PanelKind(val title: String) {
     SKILLS("Skills"),
     TASKS("Tasks"),
-    KANBAN("Kanban"),
     MEMORY("Memory"),
     SPACES("Spaces"),
     PROFILES("Agent profiles"),
@@ -28,11 +27,11 @@ enum class PanelKind(val title: String) {
 }
 
 /**
- * One view model for all nine panels.
+ * One view model for all eight panels.
  *
  * They share a lifecycle exactly — opened, loaded once, refreshed — and differ
- * only in payload. Nine view models would be nine copies of the same three-state
- * load with nine chances to forget the loading state.
+ * only in payload. Eight view models would be eight copies of the same three-state
+ * load with eight chances to forget the loading state.
  */
 @HiltViewModel
 class PanelsViewModel @Inject constructor(
@@ -161,19 +160,6 @@ class PanelsViewModel @Inject constructor(
                     onFailure = ::fail,
                 )
 
-                PanelKind.KANBAN -> repository.kanban().fold(
-                    onSuccess = { result ->
-                        _state.update {
-                            it.copy(
-                                isLoading = false,
-                                kanban = (result as? PanelResult.Content)?.value ?: emptyList(),
-                                unavailable = (result as? PanelResult.Unavailable)?.reason,
-                            )
-                        }
-                    },
-                    onFailure = ::fail,
-                )
-
                 // Todos have no HTTP endpoint: the server sends them on the chat
                 // stream, so there is nothing to fetch and the panel is simply
                 // whatever the last turn reported.
@@ -214,7 +200,6 @@ data class PanelsUiState(
     val memory: List<Pair<String, String>> = emptyList(),
     val workspaces: List<com.dipandhali.hermesnative.core.model.WorkspaceDto> = emptyList(),
     val profiles: List<com.dipandhali.hermesnative.core.model.ProfileDto> = emptyList(),
-    val kanban: List<com.dipandhali.hermesnative.core.model.LegacyKanbanTaskDto> = emptyList(),
     val insights: com.dipandhali.hermesnative.core.model.InsightsResponse? = null,
     val logText: String? = null,
     val logFiles: List<com.dipandhali.hermesnative.core.model.LogFileDto> = emptyList(),

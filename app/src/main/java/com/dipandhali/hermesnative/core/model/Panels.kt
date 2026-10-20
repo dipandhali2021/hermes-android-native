@@ -221,27 +221,6 @@ data class LogsResponse(
         ?: lines.takeIf { it.isNotEmpty() }?.joinToString("\n")
 }
 
-// ---------- Kanban (legacy panel stub; removed with the stub in Phase 2) ----------
-
-@Serializable
-data class LegacyKanbanTaskDto(
-    val id: String? = null,
-    val title: String? = null,
-    val description: String? = null,
-    val status: String? = null,
-    @SerialName("board_slug") val boardSlug: String? = null,
-    val assignee: String? = null,
-    val priority: String? = null,
-) {
-    val label: String get() = title?.takeIf { it.isNotBlank() } ?: id ?: "Task"
-}
-
-@Serializable
-data class LegacyKanbanTasksResponse(
-    val tasks: List<LegacyKanbanTaskDto> = emptyList(),
-    val count: Int = 0,
-)
-
 /**
  * Reads a loosely-typed panel payload when the shape is not known ahead of time.
  *

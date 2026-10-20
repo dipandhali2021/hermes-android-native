@@ -25,7 +25,6 @@ import com.dipandhali.hermesnative.core.model.KanbanLogResponse
 import com.dipandhali.hermesnative.core.model.KanbanSwitchResponse
 import com.dipandhali.hermesnative.core.model.KanbanTaskDetailResponse
 import com.dipandhali.hermesnative.core.model.KanbanTaskEnvelope
-import com.dipandhali.hermesnative.core.model.LegacyKanbanTasksResponse
 import com.dipandhali.hermesnative.core.model.LogsResponse
 import com.dipandhali.hermesnative.core.model.MemoryResponse
 import com.dipandhali.hermesnative.core.model.ModelsResponse
@@ -478,13 +477,6 @@ class HermesApi(private val client: OkHttpClient) {
             baseUrl,
             "api/logs?tail=$tail" + (file?.let { "&file=${it.urlEncoded()}" } ?: ""),
             LogsResponse.serializer(),
-        )
-
-    suspend fun kanbanTasks(baseUrl: String, board: String? = null): Result<LegacyKanbanTasksResponse> =
-        get(
-            baseUrl,
-            "api/kanban/tasks" + (board?.let { "?board=${it.urlEncoded()}" } ?: ""),
-            LegacyKanbanTasksResponse.serializer(),
         )
 
     suspend fun kanbanBoards(

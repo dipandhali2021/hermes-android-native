@@ -42,11 +42,11 @@ import com.dipandhali.hermesnative.core.model.InsightsResponse
 import java.util.Locale
 
 /**
- * The nine side panels, rendered from one state object.
+ * The eight side panels, rendered from one state object.
  *
- * They are one composable rather than nine because the differences are genuinely
+ * They are one composable rather than eight because the differences are genuinely
  * small — a title, a body shape, and whether the list is grouped. Splitting them
- * would duplicate the loading/empty/error handling nine times, which is where the
+ * would duplicate the loading/empty/error handling eight times, which is where the
  * inconsistencies would come from.
  */
 @Composable
@@ -78,7 +78,6 @@ fun PanelScreen(
             else -> when (kind) {
                 PanelKind.SKILLS -> SkillsPanel(state, contentModifier)
                 PanelKind.TASKS -> TasksPanel(state, contentModifier)
-                PanelKind.KANBAN -> KanbanPanel(state, contentModifier)
                 PanelKind.MEMORY -> MemoryPanel(state, contentModifier)
                 PanelKind.SPACES -> SpacesPanel(state, contentModifier)
                 PanelKind.PROFILES -> ProfilesPanel(state, contentModifier)
@@ -211,44 +210,6 @@ private fun TasksPanel(state: PanelsUiState, modifier: Modifier) {
                     }
                 },
             )
-        }
-    }
-}
-
-@Composable
-private fun KanbanPanel(state: PanelsUiState, modifier: Modifier) {
-    if (state.kanban.isEmpty()) {
-        PanelEmpty(
-            title = "No kanban tasks",
-            reason = state.unavailable ?: "This server has no kanban board configured.",
-            modifier = modifier,
-        )
-        return
-    }
-
-    val byStatus = state.kanban.groupBy { it.status?.takeIf { s -> s.isNotBlank() } ?: "Unassigned" }
-
-    LazyColumn(modifier = modifier, contentPadding = PaddingValues(vertical = 8.dp)) {
-        byStatus.forEach { (status, tasks) ->
-            item(key = "col-$status") {
-                Text(
-                    text = "$status · ${tasks.size}",
-                    style = MaterialTheme.typography.labelMedium,
-                    color = MaterialTheme.colorScheme.primary,
-                    modifier = Modifier.padding(start = 16.dp, top = 16.dp, bottom = 4.dp),
-                )
-            }
-            items(tasks, key = { it.id ?: it.hashCode().toString() }) { task ->
-                ListItem(
-                    headlineContent = { Text(task.label) },
-                    supportingContent = task.description
-                        ?.takeIf { it.isNotBlank() }
-                        ?.let { { Text(it, maxLines = 2, overflow = TextOverflow.Ellipsis) } },
-                    trailingContent = task.priority
-                        ?.takeIf { it.isNotBlank() }
-                        ?.let { { AssistChip(onClick = {}, label = { Text(it) }) } },
-                )
-            }
         }
     }
 }
@@ -581,4 +542,4 @@ private fun compactNumber(value: Long): String = when {
 
 private val PanelsUiState.isPanelEmpty: Boolean
     get() = skills.isEmpty() && jobs.isEmpty() && memory.isEmpty() && workspaces.isEmpty() &&
-        profiles.isEmpty() && kanban.isEmpty() && insights == null && logText == null
+        profiles.isEmpty() && insights == null && logText == null

@@ -3,7 +3,6 @@ package com.dipandhali.hermesnative.data.panels
 import com.dipandhali.hermesnative.core.error.DataError
 import com.dipandhali.hermesnative.core.model.CronJobDto
 import com.dipandhali.hermesnative.core.model.InsightsResponse
-import com.dipandhali.hermesnative.core.model.LegacyKanbanTaskDto
 import com.dipandhali.hermesnative.core.model.LogsResponse
 import com.dipandhali.hermesnative.core.model.MemoryResponse
 import com.dipandhali.hermesnative.core.model.ProfileDto
@@ -16,10 +15,10 @@ import javax.inject.Inject
 import javax.inject.Singleton
 
 /**
- * Reads for the nine side panels.
+ * Reads for the eight side panels.
  *
  * Each panel is fetched lazily on open rather than up front: several of them touch
- * the filesystem or shell out server-side, and loading all nine on launch would
+ * the filesystem or shell out server-side, and loading all eight on launch would
  * make the first screen wait on panels the user may never open.
  *
  * "Unavailable" is modelled as a *successful empty* result wherever the server
@@ -78,18 +77,6 @@ class PanelsRepository @Inject constructor(
         runCatching { baseUrl() }
             .mapCatching { api.logs(it, tail = tail) }
             .mapCatching { it.getOrThrow() }
-
-    suspend fun kanban(): Result<PanelResult<List<LegacyKanbanTaskDto>>> =
-        runCatching { baseUrl() }
-            .mapCatching { api.kanbanTasks(it) }
-            .mapCatching { response ->
-                val body = response.getOrThrow()
-                if (body.tasks.isEmpty()) {
-                    PanelResult.Unavailable("No kanban board is configured on this server.")
-                } else {
-                    PanelResult.Content(body.tasks)
-                }
-            }
 }
 
 /** A panel's payload, or an explanation of why it has none. */

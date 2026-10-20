@@ -34,6 +34,7 @@ import com.dipandhali.hermesnative.ui.files.FilesScreen
 import com.dipandhali.hermesnative.ui.panels.PanelKind
 import com.dipandhali.hermesnative.ui.panels.PanelScreen
 import com.dipandhali.hermesnative.ui.home.HomeScreen
+import com.dipandhali.hermesnative.ui.kanban.KanbanBoardScreen
 import com.dipandhali.hermesnative.ui.sessions.SessionsListScreen
 import com.dipandhali.hermesnative.ui.settings.SettingsScreen
 import com.dipandhali.hermesnative.ui.theme.HermesNativeTheme
@@ -56,6 +57,9 @@ object Routes {
     /** Panel routes double as the FAB-menu destination, one per panel kind. */
     const val PANEL = "panel"
     fun panel(kind: PanelKind): String = "$PANEL/${kind.name}"
+
+    /** The full-screen board. The ViewModel owns the remembered board slug. */
+    const val KANBAN = "kanban"
 
     const val CHAT = "chat"
 
@@ -152,9 +156,8 @@ fun HermesRoot(viewModel: RootViewModel = hiltViewModel()) {
  */
 @Composable
 private fun panelActions(navigate: (String) -> Unit): List<FabMenuAction> = remember {
-    listOf(
+    val panels = listOf(
         PanelKind.TASKS to Icons.Rounded.CalendarMonth,
-        PanelKind.KANBAN to Icons.Rounded.ViewKanban,
         PanelKind.SKILLS to Icons.Rounded.Psychology,
         PanelKind.MEMORY to Icons.Rounded.Dashboard,
         PanelKind.SPACES to Icons.Rounded.Folder,
@@ -162,12 +165,33 @@ private fun panelActions(navigate: (String) -> Unit): List<FabMenuAction> = reme
         PanelKind.TODOS to Icons.Rounded.Checklist,
         PanelKind.INSIGHTS to Icons.Rounded.Insights,
         PanelKind.LOGS to Icons.Rounded.Terminal,
-    ).map { (kind, icon) ->
-        FabMenuAction(
-            label = kind.title,
-            icon = icon,
-            onClick = { navigate(Routes.panel(kind)) },
+    )
+    buildList {
+        // Kanban now has a real destination, but it keeps the rail's second
+        // position because that is where a desktop user expects to find it.
+        add(
+            FabMenuAction(
+                label = "Tasks",
+                icon = Icons.Rounded.CalendarMonth,
+                onClick = { navigate(Routes.panel(PanelKind.TASKS)) },
+            ),
         )
+        add(
+            FabMenuAction(
+                label = "Kanban",
+                icon = Icons.Rounded.ViewKanban,
+                onClick = { navigate(Routes.KANBAN) },
+            ),
+        )
+        panels.drop(1).forEach { (kind, icon) ->
+            add(
+                FabMenuAction(
+                    label = kind.title,
+                    icon = icon,
+                    onClick = { navigate(Routes.panel(kind)) },
+                ),
+            )
+        }
     }
 }
 
@@ -199,6 +223,20 @@ private fun HermesNavHost(startDestination: String) {
                 onSeeAllSessions = { navController.navigate(Routes.SESSIONS) },
                 onOpenSettings = { navController.navigate(Routes.SETTINGS) },
                 fabActions = panelActions { route -> navController.navigate(route) },
+            )
+        }
+
+        composable(Routes.KANBAN) {
+            KanbanBoardScreen(
+                onBack = { navController.popBackStack() },
+                // Task 18 adds the detail route; until then this callback is
+                // intentionally a no-op rather than a half-built destination.
+                onOpenTask = { _, _, _ -> },
+                onOpenConnect = {
+                    navController.navigate(Routes.CONNECT) {
+                        popUpTo(0) { inclusive = true }
+                    }
+                },
             )
         }
 
