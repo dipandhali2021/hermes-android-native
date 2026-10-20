@@ -75,6 +75,7 @@ class KanbanDetailViewModel @Inject constructor(
     private var pollJob: Job? = null
     private var reloadJob: Job? = null
     private var pickerJob: Job? = null
+    private var logInfoJob: Job? = null
     private var liveRefresh = MutableSharedFlow<Unit>(
         extraBufferCapacity = 1,
         onBufferOverflow = BufferOverflow.DROP_OLDEST,
@@ -193,6 +194,26 @@ class KanbanDetailViewModel @Inject constructor(
             )
         }
         sendComment(key, body)
+    }
+
+    /** Fetch only the log metadata (a 1-byte tail) when the Runs tab opens. */
+    fun onRunsOpened() {
+        if (!argsValid || logInfoJob?.isActive == true) return
+        logInfoJob = viewModelScope.launch {
+            _state.update { it.copy(logLoading = true, logError = null) }
+            repository.log(board, taskId, tail = 1)
+                .onSuccess { response ->
+                    _state.update { it.copy(logLoading = false, log = response) }
+                }
+                .onFailure { error ->
+                    _state.update {
+                        it.copy(
+                            logLoading = false,
+                            logError = error.dataError().userMessage(),
+                        )
+                    }
+                }
+        }
     }
 
     fun onRetryComment(key: String) {

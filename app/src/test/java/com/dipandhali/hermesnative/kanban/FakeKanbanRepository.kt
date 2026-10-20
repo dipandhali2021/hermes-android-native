@@ -89,6 +89,10 @@ class FakeKanbanRepository : KanbanRepository {
     var profilesHandler: suspend () -> Result<List<ProfileDto>> = {
         Result.success(emptyList())
     }
+    var logHandler: suspend (String, String, Int) -> Result<KanbanLogResponse> = {
+            _, _, _ ->
+        error("log not configured")
+    }
     var taskIndexHandler: suspend (String) -> Result<List<KanbanTaskDto>> = {
         Result.success(emptyList())
     }
@@ -119,6 +123,7 @@ class FakeKanbanRepository : KanbanRepository {
     val eventCalls = mutableListOf<EventCall>()
     val pollCalls = mutableListOf<Long>()
     val profileCalls = mutableListOf<Unit>()
+    val logCalls = mutableListOf<LogCall>()
     val taskIndexCalls = mutableListOf<String>()
     val commentCalls = mutableListOf<CommentCall>()
     val linkCalls = mutableListOf<LinkCall>()
@@ -176,8 +181,11 @@ class FakeKanbanRepository : KanbanRepository {
         return taskIndexHandler(slug)
     }
 
-    override suspend fun log(slug: String, taskId: String, tail: Int): Result<KanbanLogResponse> =
-        error("log not used")
+    override suspend fun log(slug: String, taskId: String, tail: Int): Result<KanbanLogResponse> {
+        calls += "log:$taskId:$tail"
+        logCalls += LogCall(slug, taskId, tail)
+        return logHandler(slug, taskId, tail)
+    }
 
     override suspend fun createTask(
         slug: String,
@@ -332,3 +340,5 @@ object KanbanTestData {
         ),
     )
 }
+
+data class LogCall(val slug: String, val taskId: String, val tail: Int)

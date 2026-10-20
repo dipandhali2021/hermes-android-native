@@ -2,6 +2,7 @@ package com.dipandhali.hermesnative.ui.kanban
 
 import com.dipandhali.hermesnative.core.model.KanbanEventDto
 import com.dipandhali.hermesnative.core.model.KanbanLinksDto
+import com.dipandhali.hermesnative.core.model.KanbanLogResponse
 import com.dipandhali.hermesnative.core.model.KanbanRunDto
 import com.dipandhali.hermesnative.core.model.KanbanTaskDto
 import com.dipandhali.hermesnative.domain.kanban.KanbanAction
@@ -32,6 +33,9 @@ data class KanbanDetailUiState(
     val activity: List<KanbanActivityItem> = emptyList(),
     val links: KanbanLinksDto = KanbanLinksDto(),
     val runs: List<KanbanRunDto> = emptyList(),
+    val log: KanbanLogResponse? = null,
+    val logLoading: Boolean = false,
+    val logError: String? = null,
     val linkedTasks: Map<String, KanbanTaskDto> = emptyMap(),
     val readOnly: Boolean = false,
     val actions: List<KanbanAction> = emptyList(),

@@ -108,6 +108,7 @@ import com.dipandhali.hermesnative.ui.kanban.components.KanbanDependencyChip
 import com.dipandhali.hermesnative.ui.kanban.components.KanbanDetailHero
 import com.dipandhali.hermesnative.ui.kanban.components.KanbanMoveSheet
 import com.dipandhali.hermesnative.ui.kanban.components.KanbanReopenSheet
+import com.dipandhali.hermesnative.ui.kanban.components.KanbanRunsTab
 import com.dipandhali.hermesnative.ui.kanban.components.KanbanRestoreSheet
 import com.dipandhali.hermesnative.ui.kanban.components.KanbanTaskPickerSheet
 import com.dipandhali.hermesnative.ui.kanban.components.activityKey
@@ -133,6 +134,7 @@ fun KanbanDetailScreen(
     onOpenTask: (taskId: String, board: String, cursor: Long) -> Unit,
     onOpenConnect: () -> Unit,
     onEdit: ((taskId: String, board: String) -> Unit)? = null,
+    onOpenLog: ((taskId: String, board: String) -> Unit)? = null,
     viewModel: KanbanDetailViewModel = hiltViewModel(),
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
@@ -159,11 +161,15 @@ fun KanbanDetailScreen(
     }
     val pendingComments = state.comments.count { it.pending }
 
-    LifecycleEventEffect(Lifecycle.Event.ON_START) { viewModel.onScreenStarted() }
+    LifecycleEventEffect(Lifecycle.Event.ON_START) {
+        viewModel.onScreenStarted()
+        if (selectedTab == 2) viewModel.onRunsOpened()
+    }
     LifecycleEventEffect(Lifecycle.Event.ON_STOP) { viewModel.onScreenStopped() }
 
     LaunchedEffect(selectedTab) {
         if (selectedTab != 1) focusManager.clearFocus()
+        if (selectedTab == 2) viewModel.onRunsOpened()
     }
     LaunchedEffect(state.readOnly, gone, sessionExpired) {
         if (state.readOnly || gone || sessionExpired) focusManager.clearFocus()
@@ -353,6 +359,7 @@ fun KanbanDetailScreen(
                                 onClick = {
                                     menuOpen = false
                                     viewModel.onRefresh()
+                                    if (selectedTab == 2) viewModel.onRunsOpened()
                                 },
                             )
                             if (!task?.id.isNullOrBlank()) {
@@ -607,10 +614,15 @@ fun KanbanDetailScreen(
                             }
                         }
 
-                        else -> item(key = "runs-placeholder") {
-                            TabPlaceholder(
-                                title = "Runs",
-                                body = "Worker runs will appear here.",
+                        else -> item(key = "runs-tab") {
+                            KanbanRunsTab(
+                                runs = state.runs,
+                                log = state.log,
+                                logLoading = state.logLoading,
+                                logError = state.logError,
+                                onOpenLog = onOpenLog?.let { open ->
+                                    { open(current.id, boardSlug) }
+                                },
                             )
                         }
                     }
@@ -1203,29 +1215,6 @@ private fun BottomTaskAction(
                 }
             }
         }
-    }
-}
-
-@Composable
-private fun TabPlaceholder(title: String, body: String) {
-    Column(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(horizontal = 24.dp, vertical = 48.dp),
-        horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.spacedBy(8.dp),
-    ) {
-        Text(
-            text = title,
-            style = MaterialTheme.typography.titleMedium,
-            color = MaterialTheme.colorScheme.onSurface,
-        )
-        Text(
-            text = body,
-            style = MaterialTheme.typography.bodyMedium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            textAlign = TextAlign.Center,
-        )
     }
 }
 

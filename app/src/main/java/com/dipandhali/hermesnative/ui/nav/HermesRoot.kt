@@ -36,6 +36,7 @@ import com.dipandhali.hermesnative.ui.panels.PanelScreen
 import com.dipandhali.hermesnative.ui.home.HomeScreen
 import com.dipandhali.hermesnative.ui.kanban.KanbanBoardScreen
 import com.dipandhali.hermesnative.ui.kanban.KanbanDetailScreen
+import com.dipandhali.hermesnative.ui.kanban.KanbanLogScreen
 import com.dipandhali.hermesnative.ui.sessions.SessionsListScreen
 import com.dipandhali.hermesnative.ui.settings.SettingsScreen
 import com.dipandhali.hermesnative.ui.theme.HermesNativeTheme
@@ -66,6 +67,10 @@ object Routes {
     const val KANBAN_TASK = "kanban/task"
     fun kanbanTask(taskId: String, board: String, cursor: Long): String =
         "$KANBAN_TASK/${Uri.encode(taskId)}?board=${Uri.encode(board)}&cursor=$cursor"
+
+    /** The task-level worker log, pinned to the same board as the detail. */
+    fun kanbanLog(taskId: String, board: String): String =
+        "$KANBAN_TASK/${Uri.encode(taskId)}/log?board=${Uri.encode(board)}"
 
     const val CHAT = "chat"
 
@@ -271,7 +276,23 @@ private fun HermesNavHost(startDestination: String) {
                         popUpTo(0) { inclusive = true }
                     }
                 },
+                onOpenLog = { taskId, board ->
+                    navController.navigate(Routes.kanbanLog(taskId, board))
+                },
             )
+        }
+
+        composable(
+            route = "${Routes.KANBAN_TASK}/{taskId}/log?board={board}",
+            arguments = listOf(
+                navArgument("taskId") { type = NavType.StringType },
+                navArgument("board") {
+                    type = NavType.StringType
+                    defaultValue = ""
+                },
+            ),
+        ) {
+            KanbanLogScreen(onBack = { navController.popBackStack() })
         }
 
         composable(Routes.SESSIONS) {

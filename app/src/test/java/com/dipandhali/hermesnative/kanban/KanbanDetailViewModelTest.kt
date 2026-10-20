@@ -4,6 +4,7 @@ import com.dipandhali.hermesnative.core.error.DataError
 import com.dipandhali.hermesnative.core.model.KanbanEventDto
 import com.dipandhali.hermesnative.core.model.KanbanEventsPage
 import com.dipandhali.hermesnative.core.model.KanbanLinksDto
+import com.dipandhali.hermesnative.core.model.KanbanLogResponse
 import com.dipandhali.hermesnative.core.model.KanbanRunDto
 import com.dipandhali.hermesnative.core.model.KanbanTaskDto
 import com.dipandhali.hermesnative.core.net.ApiException
@@ -72,6 +73,30 @@ class KanbanDetailViewModelTest : KanbanDetailTestSupport() {
             assertFalse(state.loading)
             assertNull(state.error)
         }
+
+    @Test
+    fun `opening runs checks the log metadata with a one byte tail`() = runTest(dispatcher) {
+        val fake = FakeKanbanRepository()
+        fake.taskHandler = { _, _ -> Result.success(detail(task(status = KanbanStatus.READY))) }
+        fake.logHandler = { _, _, _ ->
+            Result.success(
+                KanbanLogResponse(
+                    taskId = "t1",
+                    exists = true,
+                    sizeBytes = 48_000,
+                    content = "x",
+                ),
+            )
+        }
+        val vm = started(fake)
+
+        vm.onRunsOpened()
+        advanceUntilIdle()
+
+        assertEquals(1, fake.logCalls.single().tail)
+        assertEquals(48_000L, vm.state.value.log?.sizeBytes)
+        assertNull(vm.state.value.logError)
+    }
 
     @Test
     fun `missing route args emit Gone without loading`() = runTest(dispatcher) {
