@@ -1,5 +1,6 @@
 package com.dipandhali.hermesnative.kanban
 
+import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.viewModelScope
 import com.dipandhali.hermesnative.core.error.DataError
 import com.dipandhali.hermesnative.core.model.KanbanBoardResponse
@@ -60,7 +61,7 @@ class KanbanBoardViewModelTest {
     }
 
     private fun viewModel(fake: FakeKanbanRepository): KanbanBoardViewModel =
-        KanbanBoardViewModel(fake).also { viewModels += it }
+        KanbanBoardViewModel(fake, SavedStateHandle()).also { viewModels += it }
 
     private fun TestScope.collectEffects(vm: KanbanBoardViewModel): List<KanbanBoardEffect> {
         val effects = mutableListOf<KanbanBoardEffect>()

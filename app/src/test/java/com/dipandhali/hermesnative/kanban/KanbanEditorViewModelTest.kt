@@ -268,6 +268,26 @@ class KanbanEditorViewModelTest {
         if (requested == KanbanStatus.READY) KanbanStatus.TODO else requested
 
     @Test
+    fun `unsupported create route status falls back to triage`() = runTest(dispatcher) {
+        val fake = baseFake()
+        fake.createHandler = { _, request ->
+            Result.success(
+                KanbanCreateOutcome(
+                    task = task(status = request.status),
+                    requestedStatus = request.status,
+                ),
+            )
+        }
+        val vm = started(fake, status = KanbanStatus.RUNNING)
+        assertEquals(KanbanStatus.TRIAGE, vm.state.value.status)
+
+        vm.onTitleChanged("Sanitized")
+        vm.onSave()
+        advanceUntilIdle()
+        assertEquals(KanbanStatus.TRIAGE, fake.createCalls.single().request.status)
+    }
+
+    @Test
     fun `todo follow-up failure emits Created with the triage task and follow-up error`() =
         runTest(dispatcher) {
             val fake = baseFake()

@@ -1,5 +1,6 @@
 package com.dipandhali.hermesnative.ui.kanban.components
 
+import androidx.compose.animation.animateColorAsState
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -46,6 +47,7 @@ import com.dipandhali.hermesnative.domain.kanban.KanbanStaleness
 import com.dipandhali.hermesnative.domain.kanban.KanbanStatus
 import com.dipandhali.hermesnative.domain.kanban.KanbanTransitions
 import com.dipandhali.hermesnative.domain.kanban.Staleness
+import com.dipandhali.hermesnative.ui.theme.HermesMotion
 
 /**
  * One board card. It owns no network calls: the overflow hands an action to the
@@ -61,6 +63,7 @@ fun KanbanTaskCard(
     onOpen: () -> Unit,
     onAction: (KanbanAction) -> Unit,
     modifier: Modifier = Modifier,
+    highlighted: Boolean = false,
 ) {
     var menuOpen by remember { mutableStateOf(false) }
     val terminal = task.status == KanbanStatus.DONE || task.status == KanbanStatus.ARCHIVED
@@ -74,10 +77,20 @@ fun KanbanTaskCard(
         actions
     }
 
+    val cardColor by animateColorAsState(
+        targetValue = if (highlighted) {
+            MaterialTheme.colorScheme.primaryContainer
+        } else {
+            MaterialTheme.colorScheme.surfaceContainerLow
+        },
+        animationSpec = HermesMotion.effects(),
+        label = "taskHighlight",
+    )
+
     Surface(
         modifier = modifier.fillMaxWidth(),
         shape = MaterialTheme.shapes.large,
-        color = MaterialTheme.colorScheme.surfaceContainerLow,
+        color = cardColor,
     ) {
         Box {
             Column(

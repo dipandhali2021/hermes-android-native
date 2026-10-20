@@ -1,5 +1,6 @@
 package com.dipandhali.hermesnative.ui.kanban
 
+import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.dipandhali.hermesnative.core.error.DataError
@@ -46,6 +47,7 @@ import kotlinx.serialization.json.JsonObject
 @HiltViewModel
 class KanbanBoardViewModel @Inject constructor(
     private val repository: KanbanRepository,
+    private val savedStateHandle: SavedStateHandle,
 ) : ViewModel() {
 
     private val _state = MutableStateFlow(KanbanBoardUiState())
@@ -75,6 +77,9 @@ class KanbanBoardViewModel @Inject constructor(
     private var foreground = false
     private var lastUndo: KanbanUndo? = null
     private var lastUndoTaskId: String? = null
+    private var pendingCreatedResult: CreatedResult? = null
+    private var pendingCreatedTaskId: String? = null
+    private var highlightJob: Job? = null
 
     init {
         viewModelScope.launch {
@@ -87,6 +92,7 @@ class KanbanBoardViewModel @Inject constructor(
 
     fun onScreenStarted() {
         foreground = true
+        pendingCreatedResult = pendingCreatedResult ?: takeCreatedResult()
         val first = !_state.value.started
         _state.update { it.copy(started = true) }
         if (first) {
@@ -96,6 +102,7 @@ class KanbanBoardViewModel @Inject constructor(
         refreshJob?.cancel()
         refreshJob = viewModelScope.launch {
             if (!resume()) startLive()
+            applyCreatedResult()
         }
     }
 
@@ -106,6 +113,9 @@ class KanbanBoardViewModel @Inject constructor(
         liveJob = null
         pollJob?.cancel()
         pollJob = null
+        highlightJob?.cancel()
+        highlightJob = null
+        pendingCreatedTaskId = null
         reloadJob?.cancel()
         reloadJob = null
         refreshJob?.cancel()
@@ -113,7 +123,12 @@ class KanbanBoardViewModel @Inject constructor(
         switchJob?.cancel()
         switchJob = null
         _state.update {
-            it.copy(live = KanbanLiveState.OFF, refreshing = false, switching = false)
+            it.copy(
+                live = KanbanLiveState.OFF,
+                refreshing = false,
+                switching = false,
+                highlightTaskId = null,
+            )
         }
     }
 
@@ -144,6 +159,7 @@ class KanbanBoardViewModel @Inject constructor(
                 .onSuccess { open ->
                     if (generation != loadGeneration) return@onSuccess
                     applyOpen(open, resetSearch = true)
+                    applyCreatedResult()
                     startLive()
                 }
                 .onFailure { error ->
@@ -220,6 +236,9 @@ class KanbanBoardViewModel @Inject constructor(
         liveJob = null
         pollJob?.cancel()
         pollJob = null
+        highlightJob?.cancel()
+        highlightJob = null
+        pendingCreatedTaskId = null
         reloadJob?.cancel()
         reloadJob = null
         _state.update {
@@ -407,6 +426,13 @@ class KanbanBoardViewModel @Inject constructor(
         val slug = _state.value.boardSlug ?: return
         selectedByBoard[slug] = status
         _state.update { it.copy(selectedStatus = status) }
+    }
+
+    /** The created-task snackbar's View action is deferred until it is tapped. */
+    fun onSnackbarAction() {
+        val taskId = pendingCreatedTaskId ?: return
+        pendingCreatedTaskId = null
+        _effects.trySend(KanbanBoardEffect.OpenTask(taskId))
     }
 
     fun onMove(taskId: String, target: KanbanMoveTarget) {
@@ -1054,6 +1080,9 @@ class KanbanBoardViewModel @Inject constructor(
         liveJob = null
         pollJob?.cancel()
         pollJob = null
+        highlightJob?.cancel()
+        highlightJob = null
+        pendingCreatedTaskId = null
         reloadJob?.cancel()
         reloadJob = null
         _state.update { it.copy(live = KanbanLiveState.OFFLINE) }
@@ -1103,6 +1132,73 @@ class KanbanBoardViewModel @Inject constructor(
                 switchError = null,
             )
         }
+    }
+
+    private fun takeCreatedResult(): CreatedResult? {
+        val taskId = savedStateHandle.get<String>("created_task_id")
+        val actualStatus = savedStateHandle.get<String>("created_task_status")
+        val requestedStatus = savedStateHandle.get<String>("created_requested_status")
+        val unreadable = savedStateHandle.get<Boolean>("created_unreadable") ?: false
+        val followUpError = savedStateHandle.get<String>("created_follow_up_error")
+        if (taskId.isNullOrBlank() && !unreadable && actualStatus.isNullOrBlank() &&
+            followUpError.isNullOrBlank()
+        ) {
+            return null
+        }
+        savedStateHandle.remove<String>("created_task_id")
+        savedStateHandle.remove<String>("created_task_status")
+        savedStateHandle.remove<String>("created_requested_status")
+        savedStateHandle.remove<Boolean>("created_unreadable")
+        savedStateHandle.remove<String>("created_follow_up_error")
+        return CreatedResult(
+            taskId = taskId?.takeIf { it.isNotBlank() },
+            actualStatus = actualStatus?.takeIf { it.isNotBlank() },
+            requestedStatus = requestedStatus?.takeIf { it.isNotBlank() },
+            unreadable = unreadable,
+            followUpError = followUpError?.takeIf { it.isNotBlank() },
+        )
+    }
+
+    private fun applyCreatedResult() {
+        val result = pendingCreatedResult ?: return
+        val slug = _state.value.boardSlug ?: return
+        pendingCreatedResult = null
+
+        val actual = result.actualStatus
+        if (actual != null && _state.value.columns.any { it.name == actual }) {
+            selectedByBoard[slug] = actual
+            _state.update { it.copy(selectedStatus = actual) }
+        }
+        val taskId = result.taskId
+        if (taskId != null) {
+            _state.update { it.copy(highlightTaskId = taskId) }
+            highlightJob?.cancel()
+            highlightJob = viewModelScope.launch {
+                delay(HIGHLIGHT_MS)
+                _state.update { state ->
+                    if (state.highlightTaskId == taskId) {
+                        state.copy(highlightTaskId = null)
+                    } else {
+                        state
+                    }
+                }
+            }
+        }
+
+        val fallback = result.unreadable || taskId == null
+        val text = when {
+            fallback -> "Task created — refreshing the board."
+            !result.followUpError.isNullOrBlank() ->
+                "Created in Triage — moving to Todo failed."
+            result.requestedStatus == KanbanStatus.READY &&
+                actual == KanbanStatus.TODO ->
+                "Created in Todo — waiting on its parents."
+            else -> "Task created."
+        }
+        val action = if (fallback) null else KanbanSnackbarAction.VIEW_CREATED
+        pendingCreatedTaskId = if (action != null) taskId else null
+        _effects.trySend(KanbanBoardEffect.Snackbar(text, action))
+        if (fallback) onRefresh()
     }
 
     private fun applyBoardResult(result: KanbanBoardResult) {
@@ -1226,3 +1322,13 @@ class KanbanBoardViewModel @Inject constructor(
         const val READ_ONLY_MESSAGE = "This board is read-only."
     }
 }
+
+private const val HIGHLIGHT_MS = 2_000L
+
+private data class CreatedResult(
+    val taskId: String?,
+    val actualStatus: String?,
+    val requestedStatus: String?,
+    val unreadable: Boolean,
+    val followUpError: String?,
+)

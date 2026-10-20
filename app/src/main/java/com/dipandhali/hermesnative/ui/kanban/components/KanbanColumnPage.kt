@@ -41,6 +41,7 @@ fun KanbanColumnPage(
     searchActive: Boolean,
     readOnly: Boolean,
     pendingTaskIds: Set<String>,
+    highlightTaskId: String?,
     scrollToTopTick: Int,
     onOpenTask: (KanbanTaskDto) -> Unit,
     onTaskAction: (KanbanTaskDto, KanbanAction) -> Unit,
@@ -51,6 +52,13 @@ fun KanbanColumnPage(
     val listState = rememberLazyListState()
     LaunchedEffect(scrollToTopTick) {
         if (scrollToTopTick > 0) listState.animateScrollToItem(0)
+    }
+    LaunchedEffect(highlightTaskId, column.tasks) {
+        val id = highlightTaskId ?: return@LaunchedEffect
+        val index = column.tasks.indexOfFirst { it.id == id }
+        if (index >= 0) {
+            listState.animateScrollToItem(index + if (hiddenBySearch > 0) 1 else 0)
+        }
     }
 
     val oldest = column.tasks
@@ -152,6 +160,7 @@ fun KanbanColumnPage(
             items(column.tasks, key = { it.id }) { task ->
                 KanbanTaskCard(
                     task = task,
+                    highlighted = task.id == highlightTaskId,
                     pending = task.id in pendingTaskIds,
                     readOnly = readOnly,
                     onOpen = { onOpenTask(task) },

@@ -36,6 +36,7 @@ import com.dipandhali.hermesnative.ui.panels.PanelScreen
 import com.dipandhali.hermesnative.ui.home.HomeScreen
 import com.dipandhali.hermesnative.ui.kanban.KanbanBoardScreen
 import com.dipandhali.hermesnative.ui.kanban.KanbanDetailScreen
+import com.dipandhali.hermesnative.ui.kanban.KanbanEditorScreen
 import com.dipandhali.hermesnative.ui.kanban.KanbanLogScreen
 import com.dipandhali.hermesnative.ui.sessions.SessionsListScreen
 import com.dipandhali.hermesnative.ui.settings.SettingsScreen
@@ -71,6 +72,15 @@ object Routes {
     /** The task-level worker log, pinned to the same board as the detail. */
     fun kanbanLog(taskId: String, board: String): String =
         "$KANBAN_TASK/${Uri.encode(taskId)}/log?board=${Uri.encode(board)}"
+
+    /** Create a task; the board and starting column ride in the query. */
+    const val KANBAN_NEW = "kanban/new"
+    fun kanbanNew(board: String, status: String): String =
+        "$KANBAN_NEW?board=${Uri.encode(board)}&status=${Uri.encode(status)}"
+
+    /** Edit a task without making status editable. */
+    fun kanbanEdit(taskId: String, board: String): String =
+        "$KANBAN_TASK/${Uri.encode(taskId)}/edit?board=${Uri.encode(board)}"
 
     const val CHAT = "chat"
 
@@ -248,6 +258,9 @@ private fun HermesNavHost(startDestination: String) {
                         popUpTo(0) { inclusive = true }
                     }
                 },
+                onCreateTask = { board, status ->
+                    navController.navigate(Routes.kanbanNew(board, status))
+                },
             )
         }
 
@@ -278,6 +291,68 @@ private fun HermesNavHost(startDestination: String) {
                 },
                 onOpenLog = { taskId, board ->
                     navController.navigate(Routes.kanbanLog(taskId, board))
+                },
+                onEdit = { taskId, board ->
+                    navController.navigate(Routes.kanbanEdit(taskId, board))
+                },
+            )
+        }
+
+        composable(
+            route = "${Routes.KANBAN_NEW}?board={board}&status={status}",
+            arguments = listOf(
+                navArgument("board") {
+                    type = NavType.StringType
+                    defaultValue = ""
+                },
+                navArgument("status") {
+                    type = NavType.StringType
+                    defaultValue = "ready"
+                },
+            ),
+        ) {
+            KanbanEditorScreen(
+                onClose = { navController.popBackStack() },
+                onCreated = { taskId, actualStatus, requestedStatus, followUpError ->
+                    val board = navController.previousBackStackEntry
+                    if (board?.destination?.route == Routes.KANBAN) {
+                        board.savedStateHandle["created_task_id"] = taskId
+                        board.savedStateHandle["created_task_status"] = actualStatus
+                        board.savedStateHandle["created_requested_status"] = requestedStatus
+                        board.savedStateHandle["created_unreadable"] = taskId == null
+                        board.savedStateHandle["created_follow_up_error"] = followUpError
+                    }
+                    if (!navController.popBackStack(Routes.KANBAN, inclusive = false)) {
+                        navController.popBackStack()
+                    }
+                },
+                onSaved = { navController.popBackStack() },
+                onOpenConnect = {
+                    navController.navigate(Routes.CONNECT) {
+                        popUpTo(0) { inclusive = true }
+                    }
+                },
+            )
+        }
+
+        composable(
+            route = "${Routes.KANBAN_TASK}/{taskId}/edit?board={board}",
+            arguments = listOf(
+                navArgument("taskId") { type = NavType.StringType },
+                navArgument("board") {
+                    type = NavType.StringType
+                    defaultValue = ""
+                },
+            ),
+        ) {
+            KanbanEditorScreen(
+                onClose = { navController.popBackStack() },
+                onCreated = { _, _, _, _ -> navController.popBackStack() },
+                onSaved = { navController.popBackStack() },
+                onOpenConnect = {
+                    navController.navigate(Routes.CONNECT) {
+                        popUpTo(0) { inclusive = true }
+                    }
                 },
             )
         }

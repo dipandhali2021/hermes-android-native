@@ -34,6 +34,7 @@ data class KanbanEditorUiState(
     val priority: String = "0",
     val workspaceKind: String = "scratch",
     val workspacePath: String = "",
+    val branchName: String? = null,
     val workspaces: List<WorkspaceDto> = emptyList(),
     val skills: List<String> = emptyList(),
     val maxRuntimeMinutes: String = "",

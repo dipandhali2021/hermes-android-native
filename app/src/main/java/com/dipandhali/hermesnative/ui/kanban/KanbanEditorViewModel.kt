@@ -125,6 +125,7 @@ class KanbanEditorViewModel @Inject constructor(
                     priority = task.priority.toString(),
                     workspaceKind = sanitizeWorkspaceKind(task.workspaceKind),
                     workspacePath = task.workspacePath.orEmpty(),
+                    branchName = task.branchName?.takeIf { it.isNotBlank() },
                     skills = task.skills.orEmpty(),
                     maxRuntimeMinutes = task.maxRuntimeSeconds
                         ?.takeIf { it > 0.0 }
@@ -626,8 +627,9 @@ class KanbanEditorViewModel @Inject constructor(
     }
 
     private fun sanitizeStatus(raw: String?): String = when (raw) {
+        null, "" -> KanbanStatus.READY
         KanbanStatus.TRIAGE, KanbanStatus.TODO, KanbanStatus.READY -> raw
-        else -> KanbanStatus.READY
+        else -> KanbanStatus.TRIAGE
     }
 
     private fun sanitizeWorkspaceKind(raw: String?): String =

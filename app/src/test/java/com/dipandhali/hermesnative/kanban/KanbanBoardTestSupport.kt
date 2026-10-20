@@ -1,5 +1,6 @@
 package com.dipandhali.hermesnative.kanban
 
+import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.viewModelScope
 import com.dipandhali.hermesnative.core.model.KanbanColumnDto
 import com.dipandhali.hermesnative.core.model.KanbanLinkCountsDto
@@ -41,8 +42,11 @@ abstract class KanbanBoardTestSupport {
         Dispatchers.resetMain()
     }
 
-    protected fun viewModel(fake: FakeKanbanRepository): KanbanBoardViewModel =
-        KanbanBoardViewModel(fake).also { viewModels += it }
+    protected fun viewModel(
+        fake: FakeKanbanRepository,
+        savedStateHandle: SavedStateHandle = SavedStateHandle(),
+    ): KanbanBoardViewModel =
+        KanbanBoardViewModel(fake, savedStateHandle).also { viewModels += it }
 
     protected fun TestScope.collectEffects(vm: KanbanBoardViewModel): List<KanbanBoardEffect> {
         val effects = mutableListOf<KanbanBoardEffect>()

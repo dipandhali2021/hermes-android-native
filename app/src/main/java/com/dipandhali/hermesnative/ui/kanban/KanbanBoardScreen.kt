@@ -163,10 +163,12 @@ fun KanbanBoardScreen(
                             SnackbarDuration.Long
                         },
                     )
-                    if (result == SnackbarResult.ActionPerformed &&
-                        effect.action == KanbanSnackbarAction.UNDO
-                    ) {
-                        viewModel.onUndo()
+                    if (result == SnackbarResult.ActionPerformed) {
+                        when (effect.action) {
+                            KanbanSnackbarAction.UNDO -> viewModel.onUndo()
+                            KanbanSnackbarAction.VIEW_CREATED -> viewModel.onSnackbarAction()
+                            null -> Unit
+                        }
                     }
                 }
 
@@ -182,18 +184,8 @@ fun KanbanBoardScreen(
 
                 is KanbanBoardEffect.OpenTask -> {
                     val board = viewModel.state.value.boardSlug
-                    if (board == null) {
-                        snackbarHostState.showSnackbar("Task created.")
-                    } else {
-                        val result = snackbarHostState.showSnackbar(
-                            message = "Task created.",
-                            actionLabel = "View",
-                            withDismissAction = true,
-                            duration = SnackbarDuration.Long,
-                        )
-                        if (result == SnackbarResult.ActionPerformed) {
-                            onOpenTask(effect.taskId, board, viewModel.state.value.lastEventId)
-                        }
+                    if (board != null) {
+                        onOpenTask(effect.taskId, board, viewModel.state.value.lastEventId)
                     }
                 }
             }
@@ -571,6 +563,7 @@ fun KanbanBoardScreen(
                                 searchActive = state.query.isNotBlank(),
                                 readOnly = state.readOnly,
                                 pendingTaskIds = state.pendingTaskIds,
+                                highlightTaskId = state.highlightTaskId,
                                 scrollToTopTick = if (page == pagerState.currentPage) {
                                     scrollToTopTick
                                 } else {
