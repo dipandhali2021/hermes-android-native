@@ -7,6 +7,13 @@ import com.dipandhali.hermesnative.core.model.ChatStartResponse
 import com.dipandhali.hermesnative.core.model.HealthResponse
 import com.dipandhali.hermesnative.core.model.CronsResponse
 import com.dipandhali.hermesnative.core.model.InsightsResponse
+import com.dipandhali.hermesnative.core.model.KanbanAssigneesResponse
+import com.dipandhali.hermesnative.core.model.KanbanBoardResponse
+import com.dipandhali.hermesnative.core.model.KanbanBoardsResponse
+import com.dipandhali.hermesnative.core.model.KanbanConfigDto
+import com.dipandhali.hermesnative.core.model.KanbanEventsPage
+import com.dipandhali.hermesnative.core.model.KanbanLogResponse
+import com.dipandhali.hermesnative.core.model.KanbanTaskDetailResponse
 import com.dipandhali.hermesnative.core.model.LegacyKanbanTasksResponse
 import com.dipandhali.hermesnative.core.model.LogsResponse
 import com.dipandhali.hermesnative.core.model.MemoryResponse
@@ -46,6 +53,7 @@ import com.dipandhali.hermesnative.core.model.SessionUpdateRequest
 import com.dipandhali.hermesnative.core.model.SteerRequest
 import com.dipandhali.hermesnative.core.model.TranscribeResponse
 import com.dipandhali.hermesnative.core.model.UploadResponse
+import com.dipandhali.hermesnative.domain.kanban.KanbanFilters
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.DeserializationStrategy
@@ -467,6 +475,73 @@ class HermesApi(private val client: OkHttpClient) {
             "api/kanban/tasks" + (board?.let { "?board=${it.urlEncoded()}" } ?: ""),
             LegacyKanbanTasksResponse.serializer(),
         )
+
+    suspend fun kanbanBoards(
+        baseUrl: String,
+        includeArchived: Boolean = false,
+    ): Result<KanbanBoardsResponse> = get(
+        baseUrl,
+        "api/kanban/boards" + if (includeArchived) "?include_archived=1" else "",
+        KanbanBoardsResponse.serializer(),
+    )
+
+    suspend fun kanbanBoard(
+        baseUrl: String,
+        slug: String,
+        filters: KanbanFilters,
+        since: Long? = null,
+    ): Result<KanbanBoardResponse> = get(
+        baseUrl,
+        "api/kanban/board?${filters.toQuery(slug, since)}",
+        KanbanBoardResponse.serializer(),
+    )
+
+    suspend fun kanbanConfig(baseUrl: String, slug: String): Result<KanbanConfigDto> =
+        get(
+            baseUrl,
+            "api/kanban/config?board=${slug.urlEncoded()}",
+            KanbanConfigDto.serializer(),
+        )
+
+    suspend fun kanbanAssignees(
+        baseUrl: String,
+        slug: String,
+    ): Result<KanbanAssigneesResponse> = get(
+        baseUrl,
+        "api/kanban/assignees?board=${slug.urlEncoded()}",
+        KanbanAssigneesResponse.serializer(),
+    )
+
+    suspend fun kanbanTask(
+        baseUrl: String,
+        slug: String,
+        taskId: String,
+    ): Result<KanbanTaskDetailResponse> = get(
+        baseUrl,
+        "api/kanban/tasks/${taskId.urlEncoded()}?board=${slug.urlEncoded()}",
+        KanbanTaskDetailResponse.serializer(),
+    )
+
+    suspend fun kanbanTaskLog(
+        baseUrl: String,
+        slug: String,
+        taskId: String,
+        tail: Int,
+    ): Result<KanbanLogResponse> = get(
+        baseUrl,
+        "api/kanban/tasks/${taskId.urlEncoded()}/log?board=${slug.urlEncoded()}&tail=$tail",
+        KanbanLogResponse.serializer(),
+    )
+
+    suspend fun kanbanEvents(
+        baseUrl: String,
+        slug: String,
+        since: Long,
+    ): Result<KanbanEventsPage> = get(
+        baseUrl,
+        "api/kanban/events?board=${slug.urlEncoded()}&since=$since",
+        KanbanEventsPage.serializer(),
+    )
 
     /** Absolute SSE URL for a stream id, opened by [SseClient]. */
     fun chatStreamUrl(baseUrl: String, streamId: String): String =
