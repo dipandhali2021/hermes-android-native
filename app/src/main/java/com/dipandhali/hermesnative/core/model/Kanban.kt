@@ -251,7 +251,7 @@ data class KanbanBoardPatch(
     val description: String? = null,
     val icon: String? = null,
     val color: String? = null,
-    val defaultWorkdir: String? = null,
+    @SerialName("default_workdir") val defaultWorkdir: String? = null,
 )
 
 @Serializable

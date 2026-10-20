@@ -8,12 +8,23 @@ import com.dipandhali.hermesnative.core.model.HealthResponse
 import com.dipandhali.hermesnative.core.model.CronsResponse
 import com.dipandhali.hermesnative.core.model.InsightsResponse
 import com.dipandhali.hermesnative.core.model.KanbanAssigneesResponse
+import com.dipandhali.hermesnative.core.model.KanbanBoardCreatedResponse
+import com.dipandhali.hermesnative.core.model.KanbanBoardDeletedResponse
+import com.dipandhali.hermesnative.core.model.KanbanBoardEnvelope
+import com.dipandhali.hermesnative.core.model.KanbanBoardPatch
+import com.dipandhali.hermesnative.core.model.KanbanBoardRequest
 import com.dipandhali.hermesnative.core.model.KanbanBoardResponse
 import com.dipandhali.hermesnative.core.model.KanbanBoardsResponse
+import com.dipandhali.hermesnative.core.model.KanbanCommentResponse
 import com.dipandhali.hermesnative.core.model.KanbanConfigDto
+import com.dipandhali.hermesnative.core.model.KanbanCreateResponse
+import com.dipandhali.hermesnative.core.model.KanbanCreateTaskBody
 import com.dipandhali.hermesnative.core.model.KanbanEventsPage
+import com.dipandhali.hermesnative.core.model.KanbanLinkResponse
 import com.dipandhali.hermesnative.core.model.KanbanLogResponse
+import com.dipandhali.hermesnative.core.model.KanbanSwitchResponse
 import com.dipandhali.hermesnative.core.model.KanbanTaskDetailResponse
+import com.dipandhali.hermesnative.core.model.KanbanTaskEnvelope
 import com.dipandhali.hermesnative.core.model.LegacyKanbanTasksResponse
 import com.dipandhali.hermesnative.core.model.LogsResponse
 import com.dipandhali.hermesnative.core.model.MemoryResponse
@@ -543,6 +554,151 @@ class HermesApi(private val client: OkHttpClient) {
         KanbanEventsPage.serializer(),
     )
 
+    suspend fun kanbanCreateTask(
+        baseUrl: String,
+        slug: String,
+        body: KanbanCreateTaskBody,
+    ): Result<KanbanCreateResponse> = post(
+        baseUrl,
+        "api/kanban/tasks?board=${slug.urlEncoded()}",
+        json.encodeToString(KanbanCreateTaskBody.serializer(), body),
+        KanbanCreateResponse.serializer(),
+    )
+
+    suspend fun kanbanUpdateTask(
+        baseUrl: String,
+        slug: String,
+        taskId: String,
+        patch: JsonObject,
+    ): Result<KanbanTaskEnvelope> = patchJson(
+        baseUrl,
+        "api/kanban/tasks/${taskId.urlEncoded()}?board=${slug.urlEncoded()}",
+        json.encodeToString(JsonObject.serializer(), patch),
+        KanbanTaskEnvelope.serializer(),
+    )
+
+    suspend fun kanbanBlock(
+        baseUrl: String,
+        slug: String,
+        taskId: String,
+        reason: String,
+    ): Result<KanbanTaskEnvelope> = post(
+        baseUrl,
+        "api/kanban/tasks/${taskId.urlEncoded()}/block?board=${slug.urlEncoded()}",
+        """{"reason":${reason.jsonString()}}""",
+        KanbanTaskEnvelope.serializer(),
+    )
+
+    suspend fun kanbanUnblock(
+        baseUrl: String,
+        slug: String,
+        taskId: String,
+    ): Result<KanbanTaskEnvelope> = post(
+        baseUrl,
+        "api/kanban/tasks/${taskId.urlEncoded()}/unblock?board=${slug.urlEncoded()}",
+        "{}",
+        KanbanTaskEnvelope.serializer(),
+    )
+
+    suspend fun kanbanComment(
+        baseUrl: String,
+        slug: String,
+        taskId: String,
+        body: String,
+        author: String?,
+    ): Result<KanbanCommentResponse> {
+        val authorPart = author
+            ?.takeIf { it.isNotBlank() }
+            ?.let { ""","author":${it.jsonString()}""" }
+            .orEmpty()
+        return post(
+            baseUrl,
+            "api/kanban/tasks/${taskId.urlEncoded()}/comments?board=${slug.urlEncoded()}",
+            """{"body":${body.jsonString()}$authorPart}""",
+            KanbanCommentResponse.serializer(),
+        )
+    }
+
+    suspend fun kanbanLink(
+        baseUrl: String,
+        slug: String,
+        parentId: String,
+        childId: String,
+    ): Result<KanbanLinkResponse> = post(
+        baseUrl,
+        "api/kanban/links/add?board=${slug.urlEncoded()}",
+        linkBody(parentId, childId),
+        KanbanLinkResponse.serializer(),
+    )
+
+    suspend fun kanbanUnlink(
+        baseUrl: String,
+        slug: String,
+        parentId: String,
+        childId: String,
+    ): Result<KanbanLinkResponse> = post(
+        baseUrl,
+        "api/kanban/links/delete?board=${slug.urlEncoded()}",
+        linkBody(parentId, childId),
+        KanbanLinkResponse.serializer(),
+    )
+
+    suspend fun kanbanDispatch(
+        baseUrl: String,
+        slug: String,
+        dryRun: Boolean,
+        max: Int,
+    ): Result<JsonObject> = post(
+        baseUrl,
+        "api/kanban/dispatch?board=${slug.urlEncoded()}" +
+            "&dry_run=${if (dryRun) 1 else 0}&max=$max",
+        "{}",
+        JsonObject.serializer(),
+    )
+
+    suspend fun kanbanCreateBoard(
+        baseUrl: String,
+        request: KanbanBoardRequest,
+    ): Result<KanbanBoardCreatedResponse> = post(
+        baseUrl,
+        "api/kanban/boards",
+        json.encodeToString(KanbanBoardRequest.serializer(), request),
+        KanbanBoardCreatedResponse.serializer(),
+    )
+
+    suspend fun kanbanUpdateBoard(
+        baseUrl: String,
+        slug: String,
+        patch: KanbanBoardPatch,
+    ): Result<KanbanBoardEnvelope> = patchJson(
+        baseUrl,
+        "api/kanban/boards/${slug.urlEncoded()}",
+        json.encodeToString(KanbanBoardPatch.serializer(), patch),
+        KanbanBoardEnvelope.serializer(),
+    )
+
+    suspend fun kanbanArchiveBoard(
+        baseUrl: String,
+        slug: String,
+    ): Result<KanbanBoardDeletedResponse> = deleteJson(
+        baseUrl,
+        "api/kanban/boards/${slug.urlEncoded()}",
+        KanbanBoardDeletedResponse.serializer(),
+    )
+
+    suspend fun kanbanSwitchBoard(
+        baseUrl: String,
+        slug: String,
+    ): Result<KanbanSwitchResponse> = post(
+        baseUrl,
+        "api/kanban/boards/${slug.urlEncoded()}/switch",
+        "{}",
+        KanbanSwitchResponse.serializer(),
+    )
+
+    private fun linkBody(parentId: String, childId: String): String =
+        """{"parent_id":${parentId.jsonString()},"child_id":${childId.jsonString()}}"""
+
     /** Absolute SSE URL for a stream id, opened by [SseClient]. */
     fun chatStreamUrl(baseUrl: String, streamId: String): String =
         "${baseUrl.trimEnd('/')}/api/chat/stream?stream_id=${streamId.urlEncoded()}"
@@ -600,6 +756,23 @@ class HermesApi(private val client: OkHttpClient) {
         deserializer: DeserializationStrategy<T>,
     ): Result<T> = execute(baseUrl, path, deserializer) {
         Request.Builder().url(it).post(body.toRequestBody(jsonMedia))
+    }
+
+    private suspend fun <T> patchJson(
+        baseUrl: String,
+        path: String,
+        body: String,
+        deserializer: DeserializationStrategy<T>,
+    ): Result<T> = execute(baseUrl, path, deserializer) {
+        Request.Builder().url(it).patch(body.toRequestBody(jsonMedia))
+    }
+
+    private suspend fun <T> deleteJson(
+        baseUrl: String,
+        path: String,
+        deserializer: DeserializationStrategy<T>,
+    ): Result<T> = execute(baseUrl, path, deserializer) {
+        Request.Builder().url(it).delete()
     }
 
     /** For endpoints whose response body is empty or not worth decoding. */
