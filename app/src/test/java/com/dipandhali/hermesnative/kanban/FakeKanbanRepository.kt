@@ -86,6 +86,24 @@ class FakeKanbanRepository : KanbanRepository {
             _, _, _ ->
         error("dispatch not configured")
     }
+    var profilesHandler: suspend () -> Result<List<ProfileDto>> = {
+        Result.success(emptyList())
+    }
+    var taskIndexHandler: suspend (String) -> Result<List<KanbanTaskDto>> = {
+        Result.success(emptyList())
+    }
+    var addCommentHandler: suspend (String, String, String, String?) -> Result<Long?> = {
+            _, _, _, _ ->
+        error("addComment not configured")
+    }
+    var addLinkHandler: suspend (String, String, String) -> Result<Unit> = {
+            _, _, _ ->
+        error("addLink not configured")
+    }
+    var removeLinkHandler: suspend (String, String, String) -> Result<Boolean> = {
+            _, _, _ ->
+        error("removeLink not configured")
+    }
     var cachedTaskMap: Map<String, KanbanTaskDto> = emptyMap()
 
     val calls = mutableListOf<String>()
@@ -100,6 +118,11 @@ class FakeKanbanRepository : KanbanRepository {
     val dispatchCalls = mutableListOf<DispatchCall>()
     val eventCalls = mutableListOf<EventCall>()
     val pollCalls = mutableListOf<Long>()
+    val profileCalls = mutableListOf<Unit>()
+    val taskIndexCalls = mutableListOf<String>()
+    val commentCalls = mutableListOf<CommentCall>()
+    val linkCalls = mutableListOf<LinkCall>()
+    val unlinkCalls = mutableListOf<LinkCall>()
 
     override suspend fun openBoard(preferredSlug: String?): Result<KanbanOpen> {
         calls += "open:${preferredSlug ?: "current"}"
@@ -133,7 +156,11 @@ class FakeKanbanRepository : KanbanRepository {
         return assigneesHandler(slug)
     }
 
-    override suspend fun profiles(): Result<List<ProfileDto>> = error("profiles not used")
+    override suspend fun profiles(): Result<List<ProfileDto>> {
+        calls += "profiles"
+        profileCalls += Unit
+        return profilesHandler()
+    }
 
     override suspend fun workspaces(): Result<List<WorkspaceDto>> = error("workspaces not used")
 
@@ -143,8 +170,11 @@ class FakeKanbanRepository : KanbanRepository {
         return taskHandler(slug, taskId)
     }
 
-    override suspend fun taskIndex(slug: String): Result<List<KanbanTaskDto>> =
-        error("taskIndex not used")
+    override suspend fun taskIndex(slug: String): Result<List<KanbanTaskDto>> {
+        calls += "taskIndex:$slug"
+        taskIndexCalls += slug
+        return taskIndexHandler(slug)
+    }
 
     override suspend fun log(slug: String, taskId: String, tail: Int): Result<KanbanLogResponse> =
         error("log not used")
@@ -185,19 +215,31 @@ class FakeKanbanRepository : KanbanRepository {
         taskId: String,
         body: String,
         author: String?,
-    ): Result<Long?> = error("addComment not used")
+    ): Result<Long?> {
+        calls += "comment:$taskId"
+        commentCalls += CommentCall(taskId, body, author)
+        return addCommentHandler(slug, taskId, body, author)
+    }
 
     override suspend fun addLink(
         slug: String,
         parentId: String,
         childId: String,
-    ): Result<Unit> = error("addLink not used")
+    ): Result<Unit> {
+        calls += "link:$parentId->$childId"
+        linkCalls += LinkCall(parentId, childId)
+        return addLinkHandler(slug, parentId, childId)
+    }
 
     override suspend fun removeLink(
         slug: String,
         parentId: String,
         childId: String,
-    ): Result<Boolean> = error("removeLink not used")
+    ): Result<Boolean> {
+        calls += "unlink:$parentId->$childId"
+        unlinkCalls += LinkCall(parentId, childId)
+        return removeLinkHandler(slug, parentId, childId)
+    }
 
     override suspend fun createBoard(request: KanbanBoardRequest): Result<KanbanBoardSummary> =
         error("createBoard not used")
@@ -250,6 +292,10 @@ data class BlockCall(val taskId: String, val reason: String)
 data class DispatchCall(val slug: String, val dryRun: Boolean, val max: Int)
 
 data class EventCall(val slug: String, val since: Long)
+
+data class CommentCall(val taskId: String, val body: String, val author: String?)
+
+data class LinkCall(val parentId: String, val childId: String)
 
 object KanbanTestData {
     fun boardSummary(slug: String, current: Boolean = true): KanbanBoardSummary =
