@@ -62,6 +62,7 @@ class KanbanBoardViewModel @Inject constructor(
     private var initialJob: Job? = null
     private var refreshJob: Job? = null
     private var switchJob: Job? = null
+    private var boardsJob: Job? = null
     private var liveJob: Job? = null
     private var pollJob: Job? = null
     private var reloadJob: Job? = null
@@ -122,6 +123,8 @@ class KanbanBoardViewModel @Inject constructor(
         refreshJob = null
         switchJob?.cancel()
         switchJob = null
+        boardsJob?.cancel()
+        boardsJob = null
         _state.update {
             it.copy(
                 live = KanbanLiveState.OFF,
@@ -133,12 +136,13 @@ class KanbanBoardViewModel @Inject constructor(
     }
 
     fun onRetry() {
-        if (_state.value.boardSlug == null) {
+        if (_state.value.boardSlug == null || _state.value.config == null) {
             _state.update {
                 it.copy(
                     loading = true,
                     refreshing = false,
                     error = null,
+                    boardSlug = null,
                     columns = emptyList(),
                 )
             }
@@ -205,6 +209,14 @@ class KanbanBoardViewModel @Inject constructor(
      */
     private suspend fun resume(): Boolean {
         val slug = _state.value.boardSlug ?: return false
+        if (_state.value.config == null) {
+            // A previous switch adopted the server's slug but could not load
+            // its config/columns. Re-open it rather than requesting lanes with
+            // half a board state.
+            _state.update { it.copy(boardSlug = null) }
+            start()
+            return true
+        }
         val boards = repository.boards().getOrElse {
             _state.update { it.copy(live = KanbanLiveState.OFFLINE) }
             return false
@@ -263,11 +275,16 @@ class KanbanBoardViewModel @Inject constructor(
                         )
                     }
                     maybeSessionExpired(error)
+                    // The switch failed, so the server is still on the old
+                    // board. Reconcile the switcher's current marker without
+                    // changing what is on screen.
+                    reconcileBoards()
                     startLive()
                 }
-                .onSuccess {
+                .onSuccess { current ->
                     if (generation != loadGeneration) return@onSuccess
-                    repository.openBoard(slug)
+                    val target = current.takeIf { it.isNotBlank() } ?: slug
+                    repository.openBoard(target)
                         .onSuccess { open ->
                             if (generation != loadGeneration) return@onSuccess
                             applyOpen(open, resetSearch = true)
@@ -282,17 +299,23 @@ class KanbanBoardViewModel @Inject constructor(
                                     switching = false,
                                     loading = false,
                                     refreshing = false,
-                                    boardSlug = slug,
+                                    boardSlug = target,
                                     columns = emptyList(),
+                                    config = null,
+                                    filters = KanbanFilters(),
+                                    filterOptions = KanbanFilterOptions(),
                                     queryInput = "",
                                     query = "",
+                                    selectedStatus = KanbanStatus.READY,
+                                    lastEventId = 0,
+                                    readOnly = false,
                                     assigneesLoading = false,
                                     pendingTaskIds = emptySet(),
                                     moveParents = emptyMap(),
                                     highlightTaskId = null,
                                     dispatcher = KanbanDispatcherState.Idle,
                                     boards = it.boards.map { board ->
-                                        board.copy(isCurrent = board.slug == slug)
+                                        board.copy(isCurrent = board.slug == target)
                                     },
                                     error = mapped,
                                     switchError = null,
@@ -303,17 +326,56 @@ class KanbanBoardViewModel @Inject constructor(
         }
     }
 
-    fun onShowArchivedBoards() {
-        viewModelScope.launch {
-            repository.boards(includeArchived = true)
+    private suspend fun reconcileBoards() {
+        val includeArchived = _state.value.boardsIncludeArchived
+        repository.boards(includeArchived)
+            .onSuccess { response ->
+                _state.update {
+                    it.copy(
+                        boards = response.boards,
+                        boardsIncludeArchived = includeArchived,
+                    )
+                }
+            }
+    }
+
+    /** Fetch the switcher list; archived boards stay out unless asked for. */
+    fun onBoardsOpened(includeArchived: Boolean = false) {
+        boardsJob?.cancel()
+        _state.update {
+            it.copy(
+                boardsLoading = true,
+                boardsError = null,
+                boardsIncludeArchived = includeArchived,
+                switchError = null,
+            )
+        }
+        boardsJob = viewModelScope.launch {
+            repository.boards(includeArchived)
                 .onSuccess { response ->
-                    _state.update { it.copy(boards = response.boards) }
+                    _state.update {
+                        it.copy(
+                            boards = response.boards,
+                            boardsLoading = false,
+                            boardsError = null,
+                            boardsIncludeArchived = includeArchived,
+                        )
+                    }
                 }
                 .onFailure { error ->
+                    _state.update {
+                        it.copy(
+                            boardsLoading = false,
+                            boardsError = loadErrorText(error),
+                        )
+                    }
                     maybeSessionExpired(error)
-                    _effects.trySend(KanbanBoardEffect.Snackbar(loadErrorText(error)))
                 }
         }
+    }
+
+    fun onShowArchivedBoards() {
+        onBoardsOpened(includeArchived = true)
     }
 
     fun onQueryChange(text: String) {
@@ -1114,6 +1176,9 @@ class KanbanBoardViewModel @Inject constructor(
                 switching = false,
                 boardSlug = open.current,
                 boards = open.boards,
+                boardsLoading = false,
+                boardsError = null,
+                boardsIncludeArchived = false,
                 columns = open.board.columns,
                 config = open.config,
                 filters = open.filters,
@@ -1141,7 +1206,7 @@ class KanbanBoardViewModel @Inject constructor(
         val unreadable = savedStateHandle.get<Boolean>("created_unreadable") ?: false
         val followUpError = savedStateHandle.get<String>("created_follow_up_error")
         if (taskId.isNullOrBlank() && !unreadable && actualStatus.isNullOrBlank() &&
-            followUpError.isNullOrBlank()
+            requestedStatus.isNullOrBlank() && followUpError.isNullOrBlank()
         ) {
             return null
         }

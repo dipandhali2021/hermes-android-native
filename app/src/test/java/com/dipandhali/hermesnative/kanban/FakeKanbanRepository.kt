@@ -59,6 +59,12 @@ class FakeKanbanRepository : KanbanRepository {
     }
 
     var switchHandler: suspend (String) -> Result<String> = { Result.success(it) }
+    var createBoardHandler: suspend (KanbanBoardRequest) -> Result<KanbanBoardSummary> =
+        { error("createBoard not used") }
+    var updateBoardHandler: suspend (String, KanbanBoardPatch) -> Result<KanbanBoardSummary> =
+        { _, _ -> error("updateBoard not used") }
+    var archiveBoardHandler: suspend (String) -> Result<String> =
+        { error("archiveBoard not used") }
     var assigneesHandler: suspend (String) -> Result<List<String>> = { Result.success(emptyList()) }
     var pollHandler: suspend (String, Long) -> Result<KanbanEventsPage> = {
             _, _ ->
@@ -121,6 +127,9 @@ class FakeKanbanRepository : KanbanRepository {
     val openCalls = mutableListOf<String?>()
     val boardCalls = mutableListOf<Pair<String, KanbanFilters>>()
     val switchCalls = mutableListOf<String>()
+    val createBoardCalls = mutableListOf<KanbanBoardRequest>()
+    val updateBoardCalls = mutableListOf<Pair<String, KanbanBoardPatch>>()
+    val archiveBoardCalls = mutableListOf<String>()
     val activeEvents = mutableMapOf<String, Int>()
     val updateCalls = mutableListOf<UpdateCall>()
     val blockCalls = mutableListOf<BlockCall>()
@@ -266,15 +275,26 @@ class FakeKanbanRepository : KanbanRepository {
         return removeLinkHandler(slug, parentId, childId)
     }
 
-    override suspend fun createBoard(request: KanbanBoardRequest): Result<KanbanBoardSummary> =
-        error("createBoard not used")
+    override suspend fun createBoard(request: KanbanBoardRequest): Result<KanbanBoardSummary> {
+        calls += "createBoard:${request.slug}"
+        createBoardCalls += request
+        return createBoardHandler(request)
+    }
 
     override suspend fun updateBoard(
         slug: String,
         patch: KanbanBoardPatch,
-    ): Result<KanbanBoardSummary> = error("updateBoard not used")
+    ): Result<KanbanBoardSummary> {
+        calls += "updateBoard:$slug"
+        updateBoardCalls += slug to patch
+        return updateBoardHandler(slug, patch)
+    }
 
-    override suspend fun archiveBoard(slug: String): Result<String> = error("archiveBoard not used")
+    override suspend fun archiveBoard(slug: String): Result<String> {
+        calls += "archiveBoard:$slug"
+        archiveBoardCalls += slug
+        return archiveBoardHandler(slug)
+    }
 
     override suspend fun dispatch(
         slug: String,

@@ -35,6 +35,7 @@ import com.dipandhali.hermesnative.ui.panels.PanelKind
 import com.dipandhali.hermesnative.ui.panels.PanelScreen
 import com.dipandhali.hermesnative.ui.home.HomeScreen
 import com.dipandhali.hermesnative.ui.kanban.KanbanBoardScreen
+import com.dipandhali.hermesnative.ui.kanban.KanbanBoardsScreen
 import com.dipandhali.hermesnative.ui.kanban.KanbanDetailScreen
 import com.dipandhali.hermesnative.ui.kanban.KanbanEditorScreen
 import com.dipandhali.hermesnative.ui.kanban.KanbanLogScreen
@@ -81,6 +82,11 @@ object Routes {
     /** Edit a task without making status editable. */
     fun kanbanEdit(taskId: String, board: String): String =
         "$KANBAN_TASK/${Uri.encode(taskId)}/edit?board=${Uri.encode(board)}"
+
+    /** Board management lives outside the board-scoped task routes. */
+    const val KANBAN_BOARD_NEW = "kanban/board/new"
+    fun kanbanBoardSettings(slug: String): String =
+        "kanban/board/${Uri.encode(slug)}/settings"
 
     const val CHAT = "chat"
 
@@ -260,6 +266,49 @@ private fun HermesNavHost(startDestination: String) {
                 },
                 onCreateTask = { board, status ->
                     navController.navigate(Routes.kanbanNew(board, status))
+                },
+                onOpenNewBoard = {
+                    navController.navigate(Routes.KANBAN_BOARD_NEW)
+                },
+                onOpenBoardSettings = { board ->
+                    navController.navigate(Routes.kanbanBoardSettings(board.slug))
+                },
+            )
+        }
+
+        composable(Routes.KANBAN_BOARD_NEW) {
+            KanbanBoardsScreen(
+                onClose = { navController.popBackStack() },
+                onDone = {
+                    if (!navController.popBackStack(Routes.KANBAN, inclusive = false)) {
+                        navController.popBackStack()
+                    }
+                },
+                onOpenConnect = {
+                    navController.navigate(Routes.CONNECT) {
+                        popUpTo(0) { inclusive = true }
+                    }
+                },
+            )
+        }
+
+        composable(
+            route = "kanban/board/{slug}/settings",
+            arguments = listOf(
+                navArgument("slug") { type = NavType.StringType },
+            ),
+        ) {
+            KanbanBoardsScreen(
+                onClose = { navController.popBackStack() },
+                onDone = {
+                    if (!navController.popBackStack(Routes.KANBAN, inclusive = false)) {
+                        navController.popBackStack()
+                    }
+                },
+                onOpenConnect = {
+                    navController.navigate(Routes.CONNECT) {
+                        popUpTo(0) { inclusive = true }
+                    }
                 },
             )
         }

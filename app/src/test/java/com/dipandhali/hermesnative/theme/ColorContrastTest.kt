@@ -3,6 +3,8 @@ package com.dipandhali.hermesnative.theme
 import androidx.compose.material3.ColorScheme
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.toArgb
+import com.dipandhali.hermesnative.ui.theme.KanbanBoardSwatches
+import com.dipandhali.hermesnative.ui.theme.boardOnColor
 import com.dipandhali.hermesnative.ui.theme.hermesFallbackScheme
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -71,6 +73,19 @@ class ColorContrastTest {
 
     @Test
     fun darkSchemeIsReadable() = assertSchemeIsReadable(hermesFallbackScheme(dark = true), "dark")
+
+    @Test
+    fun boardSwatchesAreReadable() {
+        assertTrue("expected 8 board swatches", KanbanBoardSwatches.size == 8)
+        KanbanBoardSwatches.forEach { swatch ->
+            val ratio = contrast(boardOnColor(swatch.color), swatch.color)
+            assertTrue(
+                "${swatch.label} board swatch contrast was " +
+                    "${"%.2f".format(ratio)}:1, needs >= 4.5:1",
+                ratio >= 4.5,
+            )
+        }
+    }
 
     @Test
     fun darkSurfaceMatchesWebUiBackground() {

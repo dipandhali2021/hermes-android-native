@@ -3,6 +3,7 @@ package com.dipandhali.hermesnative.ui.theme
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.luminance
 
 /**
  * Seed taken from hermes-webui's default skin: `--accent: #B8860B` (see its
@@ -114,3 +115,47 @@ private val DarkScheme = darkColorScheme(
 )
 
 internal fun hermesFallbackScheme(dark: Boolean) = if (dark) DarkScheme else LightScheme
+
+/** One of the eight board colours offered by the create/settings form. */
+data class KanbanBoardSwatch(
+    val label: String,
+    val hex: String,
+    val color: Color,
+)
+
+/**
+ * Deliberately fixed rather than derived from the dynamic scheme: board colour
+ * is server metadata shown next to every board in the switcher, so it must stay
+ * stable when the device palette changes. Every swatch takes either white or
+ * near-black text at a contrast ratio above 4.5:1.
+ */
+val KanbanBoardSwatches: List<KanbanBoardSwatch> = listOf(
+    KanbanBoardSwatch("Gold", "#8A6500", Color(0xFF8A6500)),
+    KanbanBoardSwatch("Slate", "#455A64", Color(0xFF455A64)),
+    KanbanBoardSwatch("Teal", "#00695C", Color(0xFF00695C)),
+    KanbanBoardSwatch("Indigo", "#3949AB", Color(0xFF3949AB)),
+    KanbanBoardSwatch("Rust", "#A63D22", Color(0xFFA63D22)),
+    KanbanBoardSwatch("Plum", "#7B1FA2", Color(0xFF7B1FA2)),
+    KanbanBoardSwatch("Olive", "#4E5D1A", Color(0xFF4E5D1A)),
+    KanbanBoardSwatch("Ink", "#263238", Color(0xFF263238)),
+)
+
+/**
+ * Parse the server's board `color` metadata. Returns null for absent or invalid
+ * values; callers fall back to their theme's primary colour.
+ */
+fun boardColor(raw: String?): Color? {
+    val value = raw?.trim()?.takeIf { it.isNotEmpty() } ?: return null
+    return runCatching { Color(android.graphics.Color.parseColor(value)) }.getOrNull()
+}
+
+/** As above, with the caller's theme primary as the fallback. */
+fun boardColor(raw: String?, fallback: Color): Color = boardColor(raw) ?: fallback
+
+/** White or near-black, whichever has more contrast against [background]. */
+fun boardOnColor(background: Color): Color {
+    val luminance = background.luminance()
+    val whiteContrast = 1.05f / (luminance + 0.05f)
+    val blackContrast = (luminance + 0.05f) / 0.05f
+    return if (whiteContrast >= blackContrast) Color.White else Color(0xFF1B1B1B)
+}

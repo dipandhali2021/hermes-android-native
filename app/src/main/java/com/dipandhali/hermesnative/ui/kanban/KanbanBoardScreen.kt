@@ -1,6 +1,7 @@
 package com.dipandhali.hermesnative.ui.kanban
 
 import androidx.activity.compose.BackHandler
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -23,7 +24,9 @@ import androidx.compose.material.icons.automirrored.rounded.ArrowBack
 import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.rounded.CloudOff
 import androidx.compose.material.icons.rounded.Close
+import androidx.compose.material.icons.rounded.ExpandMore
 import androidx.compose.material.icons.rounded.FilterList
+import androidx.compose.material.icons.rounded.HelpOutline
 import androidx.compose.material.icons.rounded.MoreVert
 import androidx.compose.material.icons.rounded.PlayArrow
 import androidx.compose.material.icons.rounded.Refresh
@@ -87,6 +90,8 @@ import com.dipandhali.hermesnative.domain.kanban.KanbanTransitions
 import com.dipandhali.hermesnative.ui.kanban.components.KanbanActiveFilters
 import com.dipandhali.hermesnative.ui.kanban.components.KanbanArchiveSheet
 import com.dipandhali.hermesnative.ui.kanban.components.KanbanBlockSheet
+import com.dipandhali.hermesnative.ui.kanban.components.KanbanBoardSwitcherSheet
+import com.dipandhali.hermesnative.ui.kanban.components.KanbanHelpSheet
 import com.dipandhali.hermesnative.ui.kanban.components.KanbanColumnPage
 import com.dipandhali.hermesnative.ui.kanban.components.KanbanCompleteSheet
 import com.dipandhali.hermesnative.ui.kanban.components.KanbanEmptyState
@@ -96,6 +101,7 @@ import com.dipandhali.hermesnative.ui.kanban.components.KanbanMoveSheet
 import com.dipandhali.hermesnative.ui.kanban.components.KanbanReopenSheet
 import com.dipandhali.hermesnative.ui.kanban.components.KanbanRestoreSheet
 import com.dipandhali.hermesnative.ui.kanban.components.KanbanStatusRail
+import com.dipandhali.hermesnative.ui.theme.boardColor
 import kotlinx.coroutines.launch
 
 /**
@@ -111,8 +117,8 @@ fun KanbanBoardScreen(
     onOpenTask: (taskId: String, board: String, cursor: Long) -> Unit,
     onOpenConnect: () -> Unit,
     onCreateTask: ((board: String, status: String) -> Unit)? = null,
-    onOpenNewBoard: (() -> Unit)? = null,
-    onOpenBoardSettings: ((KanbanBoardSummary) -> Unit)? = null,
+    onOpenNewBoard: () -> Unit,
+    onOpenBoardSettings: (KanbanBoardSummary) -> Unit,
     onRunDispatcher: (() -> Unit)? = null,
     viewModel: KanbanBoardViewModel = hiltViewModel(),
 ) {
@@ -128,6 +134,8 @@ fun KanbanBoardScreen(
     var filterOpen by rememberSaveable { mutableStateOf(false) }
     var sheet by remember { mutableStateOf<KanbanSheet?>(null) }
     var menuOpen by remember { mutableStateOf(false) }
+    var switcherOpen by rememberSaveable { mutableStateOf(false) }
+    var helpOpen by rememberSaveable { mutableStateOf(false) }
     var scrollToTopTick by remember { mutableIntStateOf(0) }
 
     LifecycleEventEffect(Lifecycle.Event.ON_START) { viewModel.onScreenStarted() }
@@ -337,12 +345,36 @@ fun KanbanBoardScreen(
                         )
                     } else {
                         Column {
-                            Text(
-                                text = boardName,
-                                style = MaterialTheme.typography.titleLarge,
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis,
-                            )
+                            Row(
+                                modifier = Modifier.clickable(enabled = !state.switching) {
+                                    switcherOpen = true
+                                    viewModel.onBoardsOpened()
+                                },
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            ) {
+                                Surface(
+                                    shape = CircleShape,
+                                    color = boardColor(
+                                        summary?.color,
+                                        MaterialTheme.colorScheme.primary,
+                                    ),
+                                    modifier = Modifier.size(10.dp),
+                                ) {}
+                                Text(
+                                    text = boardName,
+                                    style = MaterialTheme.typography.titleLarge,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis,
+                                    modifier = Modifier.weight(1f, fill = false),
+                                )
+                                Icon(
+                                    imageVector = Icons.Rounded.ExpandMore,
+                                    contentDescription = "Switch board",
+                                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    modifier = Modifier.size(18.dp),
+                                )
+                            }
                             Row(
                                 verticalAlignment = Alignment.CenterVertically,
                                 horizontalArrangement = Arrangement.spacedBy(8.dp),
@@ -388,6 +420,18 @@ fun KanbanBoardScreen(
                             expanded = menuOpen,
                             onDismissRequest = { menuOpen = false },
                         ) {
+                            DropdownMenuItem(
+                                text = { Text("Boards") },
+                                leadingIcon = {
+                                    Icon(Icons.Rounded.ViewKanban, contentDescription = null)
+                                },
+                                enabled = !state.switching,
+                                onClick = {
+                                    menuOpen = false
+                                    switcherOpen = true
+                                    viewModel.onBoardsOpened()
+                                },
+                            )
                             if (onRunDispatcher != null) {
                                 DropdownMenuItem(
                                     text = { Text("Run dispatcher") },
@@ -412,7 +456,17 @@ fun KanbanBoardScreen(
                                     viewModel.onRefresh()
                                 },
                             )
-                            if (onOpenBoardSettings != null && summary != null) {
+                            DropdownMenuItem(
+                                text = { Text("How this board works") },
+                                leadingIcon = {
+                                    Icon(Icons.Rounded.HelpOutline, contentDescription = null)
+                                },
+                                onClick = {
+                                    menuOpen = false
+                                    helpOpen = true
+                                },
+                            )
+                            if (summary != null) {
                                 DropdownMenuItem(
                                     text = { Text("Board settings") },
                                     leadingIcon = {
@@ -424,18 +478,16 @@ fun KanbanBoardScreen(
                                     },
                                 )
                             }
-                            if (onOpenNewBoard != null) {
-                                DropdownMenuItem(
-                                    text = { Text("New board") },
-                                    leadingIcon = {
-                                        Icon(Icons.Rounded.Add, contentDescription = null)
-                                    },
-                                    onClick = {
-                                        menuOpen = false
-                                        onOpenNewBoard()
-                                    },
-                                )
-                            }
+                            DropdownMenuItem(
+                                text = { Text("New board") },
+                                leadingIcon = {
+                                    Icon(Icons.Rounded.Add, contentDescription = null)
+                                },
+                                onClick = {
+                                    menuOpen = false
+                                    onOpenNewBoard()
+                                },
+                            )
                         }
                     }
                 },
@@ -677,6 +729,39 @@ fun KanbanBoardScreen(
                 viewModel.onApplyFilters(draft)
             },
         )
+    }
+
+    if (switcherOpen) {
+        KanbanBoardSwitcherSheet(
+            boards = state.boards,
+            current = state.boardSlug,
+            currentBoard = summary,
+            includeArchived = state.boardsIncludeArchived,
+            loading = state.boardsLoading,
+            error = state.boardsError,
+            switching = state.switching,
+            switchError = state.switchError,
+            onShowArchived = viewModel::onBoardsOpened,
+            onRetry = { viewModel.onBoardsOpened(state.boardsIncludeArchived) },
+            onSwitch = viewModel::onSwitchBoard,
+            onDismiss = { switcherOpen = false },
+            onNewBoard = {
+                switcherOpen = false
+                onOpenNewBoard()
+            },
+            onSettings = { board ->
+                switcherOpen = false
+                onOpenBoardSettings(board)
+            },
+            onHelp = {
+                switcherOpen = false
+                helpOpen = true
+            },
+        )
+    }
+
+    if (helpOpen) {
+        KanbanHelpSheet(onDismiss = { helpOpen = false })
     }
 }
 
