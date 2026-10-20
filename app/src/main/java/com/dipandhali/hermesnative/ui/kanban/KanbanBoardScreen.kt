@@ -1,0 +1,606 @@
+package com.dipandhali.hermesnative.ui.kanban
+
+import androidx.activity.compose.BackHandler
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.safeDrawing
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.pager.HorizontalPager
+import androidx.compose.foundation.pager.rememberPagerState
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.rounded.ArrowBack
+import androidx.compose.material.icons.rounded.Add
+import androidx.compose.material.icons.rounded.CloudOff
+import androidx.compose.material.icons.rounded.Close
+import androidx.compose.material.icons.rounded.FilterList
+import androidx.compose.material.icons.rounded.MoreVert
+import androidx.compose.material.icons.rounded.PlayArrow
+import androidx.compose.material.icons.rounded.Refresh
+import androidx.compose.material.icons.rounded.Search
+import androidx.compose.material.icons.rounded.Settings
+import androidx.compose.material.icons.rounded.ViewKanban
+import androidx.compose.material3.Badge
+import androidx.compose.material3.BadgedBox
+import androidx.compose.material3.Button
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.ExtendedFloatingActionButton
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.LinearProgressIndicator
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Scaffold
+import androidx.compose.material3.SnackbarDuration
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
+import androidx.compose.material3.SnackbarResult
+import androidx.compose.material3.Surface
+import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
+import androidx.compose.material3.TopAppBar
+import androidx.compose.material3.pulltorefresh.PullToRefreshBox
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
+import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.dp
+import androidx.hilt.navigation.compose.hiltViewModel
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.compose.LifecycleEventEffect
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.dipandhali.hermesnative.core.model.KanbanBoardSummary
+import com.dipandhali.hermesnative.domain.kanban.KanbanSearch
+import com.dipandhali.hermesnative.domain.kanban.KanbanStatus
+import com.dipandhali.hermesnative.ui.kanban.components.KanbanColumnPage
+import com.dipandhali.hermesnative.ui.kanban.components.KanbanEmptyState
+import com.dipandhali.hermesnative.ui.kanban.components.KanbanLiveBadge
+import com.dipandhali.hermesnative.ui.kanban.components.KanbanStatusRail
+import kotlinx.coroutines.launch
+
+/**
+ * The full-screen board. The phone gets one column at a time; the rail is the
+ * map, the pager is the workspace, and the app bar keeps the live state honest.
+ * Mutations and filters live in the ViewModel; this screen only routes taps to
+ * sheets and destinations owned by the surrounding navigation graph.
+ */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun KanbanBoardScreen(
+    onBack: () -> Unit,
+    onOpenTask: (taskId: String, board: String, cursor: Long) -> Unit,
+    onOpenConnect: () -> Unit,
+    onCreateTask: ((board: String, status: String) -> Unit)? = null,
+    onOpenNewBoard: (() -> Unit)? = null,
+    onOpenBoardSettings: ((KanbanBoardSummary) -> Unit)? = null,
+    onOpenFilters: (() -> Unit)? = null,
+    onRunDispatcher: (() -> Unit)? = null,
+    viewModel: KanbanBoardViewModel = hiltViewModel(),
+) {
+    val state by viewModel.state.collectAsStateWithLifecycle()
+    val snackbarHostState = remember { SnackbarHostState() }
+    val scope = rememberCoroutineScope()
+    val focusManager = LocalFocusManager.current
+    val keyboard = LocalSoftwareKeyboardController.current
+    val searchFocus = remember { FocusRequester() }
+
+    var searchOpen by rememberSaveable { mutableStateOf(false) }
+    var menuOpen by remember { mutableStateOf(false) }
+    var scrollToTopTick by remember { mutableIntStateOf(0) }
+
+    LifecycleEventEffect(Lifecycle.Event.ON_START) { viewModel.onScreenStarted() }
+    LifecycleEventEffect(Lifecycle.Event.ON_STOP) { viewModel.onScreenStopped() }
+
+    val closeSearch = {
+        searchOpen = false
+        viewModel.onQueryChange("")
+        focusManager.clearFocus()
+        keyboard?.hide()
+    }
+    BackHandler(enabled = searchOpen) { closeSearch() }
+    LaunchedEffect(searchOpen) {
+        if (searchOpen) searchFocus.requestFocus()
+    }
+
+    LaunchedEffect(Unit) {
+        viewModel.effects.collect { effect ->
+            when (effect) {
+                is KanbanBoardEffect.Snackbar -> {
+                    val actionLabel = when (effect.action) {
+                        KanbanSnackbarAction.UNDO -> "Undo"
+                        KanbanSnackbarAction.VIEW_CREATED -> "View"
+                        null -> null
+                    }
+                    val result = snackbarHostState.showSnackbar(
+                        message = effect.text,
+                        actionLabel = actionLabel,
+                        withDismissAction = effect.action != null,
+                        duration = if (effect.action == null) {
+                            SnackbarDuration.Short
+                        } else {
+                            SnackbarDuration.Long
+                        },
+                    )
+                    if (result == SnackbarResult.ActionPerformed &&
+                        effect.action == KanbanSnackbarAction.UNDO
+                    ) {
+                        viewModel.onUndo()
+                    }
+                }
+
+                KanbanBoardEffect.SessionExpired -> {
+                    val result = snackbarHostState.showSnackbar(
+                        message = "Session expired. Reconnect to continue.",
+                        actionLabel = "Connect",
+                        withDismissAction = true,
+                        duration = SnackbarDuration.Long,
+                    )
+                    if (result == SnackbarResult.ActionPerformed) onOpenConnect()
+                }
+
+                is KanbanBoardEffect.OpenTask -> {
+                    val board = viewModel.state.value.boardSlug
+                    if (board == null) {
+                        snackbarHostState.showSnackbar("Task created.")
+                    } else {
+                        val result = snackbarHostState.showSnackbar(
+                            message = "Task created.",
+                            actionLabel = "View",
+                            withDismissAction = true,
+                            duration = SnackbarDuration.Long,
+                        )
+                        if (result == SnackbarResult.ActionPerformed) {
+                            onOpenTask(effect.taskId, board, viewModel.state.value.lastEventId)
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    val visibleColumns = remember(state.columns, state.query) {
+        KanbanSearch.filter(state.columns, state.query)
+    }
+    val totalTasks = KanbanSearch.total(state.columns)
+    val shownTasks = KanbanSearch.total(visibleColumns)
+    val readyTasks = state.columns.firstOrNull { it.name == KanbanStatus.READY }?.tasks?.size ?: 0
+    val activeFilters = state.filters.isActive || state.queryInput.isNotBlank()
+    val summary = state.boards.firstOrNull { it.slug == state.boardSlug }
+    val boardName = summary?.name?.takeIf { it.isNotBlank() }
+        ?: state.boardSlug
+        ?: "Kanban"
+    val subtitle = if (state.filters.isActive || state.query.isNotBlank()) {
+        "$shownTasks of $totalTasks tasks"
+    } else {
+        "$totalTasks tasks · $readyTasks ready"
+    }
+    val pagerState = rememberPagerState { visibleColumns.size }
+    val selectedPage = visibleColumns.indexOfFirst { it.name == state.selectedStatus }
+
+    LaunchedEffect(state.selectedStatus, visibleColumns) {
+        if (selectedPage >= 0 && pagerState.currentPage != selectedPage) {
+            pagerState.animateScrollToPage(selectedPage)
+        }
+    }
+    LaunchedEffect(pagerState.settledPage, visibleColumns) {
+        val page = pagerState.settledPage
+        if (page in visibleColumns.indices) {
+            val status = visibleColumns[page].name
+            if (status != state.selectedStatus) viewModel.onStatusSelected(status)
+        }
+    }
+
+    Scaffold(
+        contentWindowInsets = WindowInsets.safeDrawing,
+        snackbarHost = { SnackbarHost(snackbarHostState) },
+        topBar = {
+            TopAppBar(
+                navigationIcon = {
+                    IconButton(onClick = onBack) {
+                        Icon(
+                            imageVector = Icons.AutoMirrored.Rounded.ArrowBack,
+                            contentDescription = "Back",
+                        )
+                    }
+                },
+                title = {
+                    if (searchOpen) {
+                        OutlinedTextField(
+                            value = state.queryInput,
+                            onValueChange = viewModel::onQueryChange,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .focusRequester(searchFocus),
+                            placeholder = { Text("Search this board") },
+                            leadingIcon = {
+                                Icon(Icons.Rounded.Search, contentDescription = null)
+                            },
+                            trailingIcon = {
+                                IconButton(
+                                    onClick = {
+                                        if (state.queryInput.isNotBlank()) {
+                                            viewModel.onQueryChange("")
+                                        } else {
+                                            closeSearch()
+                                        }
+                                    },
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Rounded.Close,
+                                        contentDescription = if (state.queryInput.isNotBlank()) {
+                                            "Clear search"
+                                        } else {
+                                            "Close search"
+                                        },
+                                    )
+                                }
+                            },
+                            singleLine = true,
+                            shape = MaterialTheme.shapes.extraLarge,
+                            keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
+                            keyboardActions = KeyboardActions(
+                                onSearch = { focusManager.clearFocus() },
+                            ),
+                        )
+                    } else {
+                        Column {
+                            Text(
+                                text = boardName,
+                                style = MaterialTheme.typography.titleLarge,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                            )
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            ) {
+                                Text(
+                                    text = subtitle,
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis,
+                                    modifier = Modifier.weight(1f),
+                                )
+                                KanbanLiveBadge(live = state.live)
+                            }
+                        }
+                    }
+                },
+                actions = {
+                    if (!searchOpen) {
+                        IconButton(onClick = { searchOpen = true }) {
+                            Icon(Icons.Rounded.Search, contentDescription = "Search")
+                        }
+                    }
+                    if (onOpenFilters != null) {
+                        IconButton(onClick = onOpenFilters) {
+                            BadgedBox(
+                                badge = {
+                                    if (activeFilters) Badge()
+                                },
+                            ) {
+                                Icon(Icons.Rounded.FilterList, contentDescription = "Filters")
+                            }
+                        }
+                    }
+                    Box {
+                        IconButton(onClick = { menuOpen = true }) {
+                            Icon(Icons.Rounded.MoreVert, contentDescription = "Board menu")
+                        }
+                        DropdownMenu(
+                            expanded = menuOpen,
+                            onDismissRequest = { menuOpen = false },
+                        ) {
+                            if (onRunDispatcher != null) {
+                                DropdownMenuItem(
+                                    text = { Text("Run dispatcher") },
+                                    leadingIcon = {
+                                        Icon(Icons.Rounded.PlayArrow, contentDescription = null)
+                                    },
+                                    enabled = !state.readOnly,
+                                    onClick = {
+                                        menuOpen = false
+                                        onRunDispatcher()
+                                    },
+                                )
+                            }
+                            DropdownMenuItem(
+                                text = { Text("Refresh") },
+                                leadingIcon = {
+                                    Icon(Icons.Rounded.Refresh, contentDescription = null)
+                                },
+                                enabled = !state.loading,
+                                onClick = {
+                                    menuOpen = false
+                                    viewModel.onRefresh()
+                                },
+                            )
+                            if (onOpenBoardSettings != null && summary != null) {
+                                DropdownMenuItem(
+                                    text = { Text("Board settings") },
+                                    leadingIcon = {
+                                        Icon(Icons.Rounded.Settings, contentDescription = null)
+                                    },
+                                    onClick = {
+                                        menuOpen = false
+                                        onOpenBoardSettings(summary)
+                                    },
+                                )
+                            }
+                            if (onOpenNewBoard != null) {
+                                DropdownMenuItem(
+                                    text = { Text("New board") },
+                                    leadingIcon = {
+                                        Icon(Icons.Rounded.Add, contentDescription = null)
+                                    },
+                                    onClick = {
+                                        menuOpen = false
+                                        onOpenNewBoard()
+                                    },
+                                )
+                            }
+                        }
+                    }
+                },
+            )
+        },
+        floatingActionButton = {
+            val slug = state.boardSlug
+            if (onCreateTask != null && slug != null && !state.readOnly) {
+                ExtendedFloatingActionButton(
+                    onClick = {
+                        onCreateTask(slug, createStatus(state.selectedStatus))
+                    },
+                    icon = { Icon(Icons.Rounded.Add, contentDescription = null) },
+                    text = { Text("New task") },
+                )
+            }
+        },
+    ) { inner ->
+        Box(
+            Modifier
+                .fillMaxSize()
+                .padding(inner),
+        ) {
+            when {
+                state.loading && state.columns.isEmpty() -> KanbanLoadingColumn()
+
+                state.error != null && state.columns.isEmpty() -> KanbanBoardErrorState(
+                    error = state.error!!,
+                    onRetry = viewModel::onRetry,
+                    onOpenConnect = onOpenConnect,
+                )
+
+                state.columns.isEmpty() -> KanbanEmptyState(
+                    title = "This board is empty",
+                    body = "Create a task to get started.",
+                    icon = Icons.Rounded.ViewKanban,
+                    actionLabel = if (onCreateTask != null && !state.readOnly) "New task" else null,
+                    onAction = if (onCreateTask != null && state.boardSlug != null && !state.readOnly) {
+                        {
+                            onCreateTask(
+                                state.boardSlug!!,
+                                createStatus(state.selectedStatus),
+                            )
+                        }
+                    } else {
+                        null
+                    },
+                    modifier = Modifier.fillMaxSize(),
+                )
+
+                else -> Column(Modifier.fillMaxSize()) {
+                    if (state.switching) {
+                        LinearProgressIndicator(Modifier.fillMaxWidth())
+                    }
+                    KanbanStatusRail(
+                        columns = visibleColumns,
+                        selectedStatus = state.selectedStatus,
+                        onSelectStatus = { status ->
+                            val index = visibleColumns.indexOfFirst { it.name == status }
+                            viewModel.onStatusSelected(status)
+                            if (index >= 0) {
+                                scope.launch { pagerState.animateScrollToPage(index) }
+                            }
+                        },
+                        onReselectStatus = { scrollToTopTick += 1 },
+                        modifier = Modifier.padding(vertical = 4.dp),
+                    )
+                    PullToRefreshBox(
+                        isRefreshing = state.refreshing,
+                        onRefresh = viewModel::onRefresh,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .weight(1f),
+                    ) {
+                        HorizontalPager(
+                            state = pagerState,
+                            modifier = Modifier.fillMaxSize(),
+                            pageSpacing = 8.dp,
+                            key = { page -> visibleColumns[page].name },
+                        ) { page ->
+                            val column = visibleColumns[page]
+                            val originalCount = state.columns
+                                .firstOrNull { it.name == column.name }
+                                ?.tasks
+                                ?.size
+                                ?: column.tasks.size
+                            val slug = state.boardSlug ?: return@HorizontalPager
+                            KanbanColumnPage(
+                                column = column,
+                                hiddenBySearch = originalCount - column.tasks.size,
+                                searchActive = state.query.isNotBlank(),
+                                pendingTaskIds = state.pendingTaskIds,
+                                scrollToTopTick = if (page == pagerState.currentPage) {
+                                    scrollToTopTick
+                                } else {
+                                    0
+                                },
+                                onOpenTask = { task ->
+                                    onOpenTask(task.id, slug, state.lastEventId)
+                                },
+                                onCreateTask = if (onCreateTask != null && !state.readOnly) {
+                                    {
+                                        onCreateTask(
+                                            slug,
+                                            createStatus(column.name),
+                                        )
+                                    }
+                                } else {
+                                    null
+                                },
+                                onRunDispatcher = onRunDispatcher,
+                                modifier = Modifier.fillMaxSize(),
+                            )
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+private fun createStatus(status: String): String = when (status) {
+    KanbanStatus.TRIAGE, KanbanStatus.TODO, KanbanStatus.READY -> status
+    else -> KanbanStatus.TRIAGE
+}
+
+@Composable
+private fun KanbanLoadingColumn() {
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(horizontal = 16.dp, vertical = 20.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
+        LinearProgressIndicator(Modifier.fillMaxWidth())
+        Text(
+            text = "Loading board…",
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        repeat(3) {
+            Surface(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(92.dp),
+                shape = MaterialTheme.shapes.large,
+                color = MaterialTheme.colorScheme.surfaceContainerLow,
+            ) {
+                Column(
+                    modifier = Modifier.padding(16.dp),
+                    verticalArrangement = Arrangement.spacedBy(10.dp),
+                ) {
+                    Box(
+                        Modifier
+                            .fillMaxWidth(0.28f)
+                            .height(10.dp)
+                            .padding(end = 8.dp),
+                    ) {
+                        Surface(
+                            modifier = Modifier.fillMaxSize(),
+                            shape = CircleShape,
+                            color = MaterialTheme.colorScheme.surfaceContainerHigh,
+                        ) {}
+                    }
+                    Box(
+                        Modifier
+                            .fillMaxWidth(0.72f)
+                            .height(14.dp),
+                    ) {
+                        Surface(
+                            modifier = Modifier.fillMaxSize(),
+                            shape = CircleShape,
+                            color = MaterialTheme.colorScheme.surfaceContainerHigh,
+                        ) {}
+                    }
+                    Box(
+                        Modifier
+                            .fillMaxWidth(0.5f)
+                            .height(10.dp),
+                    ) {
+                        Surface(
+                            modifier = Modifier.fillMaxSize(),
+                            shape = CircleShape,
+                            color = MaterialTheme.colorScheme.surfaceContainerHigh,
+                        ) {}
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun KanbanBoardErrorState(
+    error: KanbanBoardError,
+    onRetry: () -> Unit,
+    onOpenConnect: () -> Unit,
+) {
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(horizontal = 28.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.Center,
+    ) {
+        Icon(
+            imageVector = Icons.Rounded.CloudOff,
+            contentDescription = null,
+            modifier = Modifier.size(44.dp),
+            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        Spacer(Modifier.height(14.dp))
+        Text(
+            text = if (error.unsupported) "Update Hermes WebUI" else "Couldn't load the board",
+            style = MaterialTheme.typography.titleLarge,
+            color = MaterialTheme.colorScheme.onSurface,
+        )
+        Spacer(Modifier.height(8.dp))
+        Text(
+            text = error.message,
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+        )
+        Spacer(Modifier.height(20.dp))
+        Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+            if (error.retryable) {
+                Button(onClick = onRetry) {
+                    Text("Retry")
+                }
+            }
+            if (error.unsupported || !error.retryable) {
+                TextButton(onClick = onOpenConnect) {
+                    Text("Check server")
+                }
+            }
+        }
+    }
+}
