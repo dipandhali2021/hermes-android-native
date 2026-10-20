@@ -481,6 +481,7 @@ class KanbanBoardViewModel @Inject constructor(
 
         mutationGeneration += 1
         addPending(task.id)
+        _state.update { it.copy(sheetError = null) }
         viewModelScope.launch {
             repository.updateTask(
                 slug,
@@ -490,14 +491,42 @@ class KanbanBoardViewModel @Inject constructor(
                 .onSuccess { returned ->
                     clearPending(task.id)
                     if (!stillOn(slug)) return@onSuccess
+                    _state.update { current ->
+                        if (current.sheetError?.taskId == task.id) {
+                            current.copy(sheetError = null)
+                        } else {
+                            current
+                        }
+                    }
                     placeTask(returned)
                     offerUndo(task.id, KanbanUndo.Complete, "Task completed")
                 }
                 .onFailure { error ->
                     clearPending(task.id)
                     if (!stillOn(slug)) return@onFailure
-                    handleMutationFailure(error)
+                    val data = error.dataError()
+                    if (data is DataError.Unauthorized ||
+                        data is DataError.NotFound ||
+                        (data is DataError.Server && data.status == 404)
+                    ) {
+                        handleMutationFailure(error)
+                    } else {
+                        _state.update {
+                            it.copy(
+                                sheetError = KanbanSheetError(
+                                    taskId = task.id,
+                                    message = data.userMessage(),
+                                ),
+                            )
+                        }
+                    }
                 }
+        }
+    }
+
+    fun onSheetClosed() {
+        if (_state.value.sheetError != null) {
+            _state.update { it.copy(sheetError = null) }
         }
     }
 

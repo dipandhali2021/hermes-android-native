@@ -65,8 +65,10 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
+import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -75,11 +77,21 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LifecycleEventEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.dipandhali.hermesnative.core.model.KanbanBoardSummary
+import com.dipandhali.hermesnative.core.model.KanbanTaskDto
+import com.dipandhali.hermesnative.domain.kanban.KanbanAction
+import com.dipandhali.hermesnative.domain.kanban.KanbanMoveVia
 import com.dipandhali.hermesnative.domain.kanban.KanbanSearch
 import com.dipandhali.hermesnative.domain.kanban.KanbanStatus
+import com.dipandhali.hermesnative.domain.kanban.KanbanTransitions
+import com.dipandhali.hermesnative.ui.kanban.components.KanbanArchiveSheet
+import com.dipandhali.hermesnative.ui.kanban.components.KanbanBlockSheet
 import com.dipandhali.hermesnative.ui.kanban.components.KanbanColumnPage
+import com.dipandhali.hermesnative.ui.kanban.components.KanbanCompleteSheet
 import com.dipandhali.hermesnative.ui.kanban.components.KanbanEmptyState
 import com.dipandhali.hermesnative.ui.kanban.components.KanbanLiveBadge
+import com.dipandhali.hermesnative.ui.kanban.components.KanbanMoveSheet
+import com.dipandhali.hermesnative.ui.kanban.components.KanbanReopenSheet
+import com.dipandhali.hermesnative.ui.kanban.components.KanbanRestoreSheet
 import com.dipandhali.hermesnative.ui.kanban.components.KanbanStatusRail
 import kotlinx.coroutines.launch
 
@@ -107,9 +119,11 @@ fun KanbanBoardScreen(
     val scope = rememberCoroutineScope()
     val focusManager = LocalFocusManager.current
     val keyboard = LocalSoftwareKeyboardController.current
+    val clipboard = LocalClipboardManager.current
     val searchFocus = remember { FocusRequester() }
 
     var searchOpen by rememberSaveable { mutableStateOf(false) }
+    var sheet by remember { mutableStateOf<KanbanSheet?>(null) }
     var menuOpen by remember { mutableStateOf(false) }
     var scrollToTopTick by remember { mutableIntStateOf(0) }
 
@@ -212,6 +226,64 @@ fun KanbanBoardScreen(
         if (page in visibleColumns.indices) {
             val status = visibleColumns[page].name
             if (status != state.selectedStatus) viewModel.onStatusSelected(status)
+        }
+    }
+
+    LaunchedEffect(state.boardSlug) {
+        if (sheet != null) {
+            sheet = null
+            viewModel.onSheetClosed()
+        }
+    }
+    LaunchedEffect(sheet, state.columns) {
+        val open = sheet ?: return@LaunchedEffect
+        val live = state.columns
+            .asSequence()
+            .flatMap { it.tasks.asSequence() }
+            .firstOrNull { it.id == open.task.id }
+        if (live == null || live.status != open.task.status) {
+            sheet = null
+            viewModel.onSheetClosed()
+        }
+    }
+
+    val dismissSheet: () -> Unit = {
+        sheet = null
+        viewModel.onSheetClosed()
+    }
+    val onTaskAction: (KanbanTaskDto, KanbanAction) -> Unit = { task, action ->
+        if (action != KanbanAction.COPY_ID) viewModel.onSheetClosed()
+        when (action) {
+            KanbanAction.MOVE -> {
+                viewModel.onMoveSheetOpened(task.id)
+                sheet = KanbanSheet.Move(task)
+            }
+
+            KanbanAction.COMPLETE -> {
+                viewModel.onMoveSheetOpened(task.id)
+                sheet = KanbanSheet.Complete(task)
+            }
+            KanbanAction.BLOCK -> sheet = KanbanSheet.Block(task)
+            KanbanAction.UNBLOCK -> viewModel.onUnblock(task)
+            KanbanAction.RESUME -> viewModel.onUnblock(task, resumed = true)
+            KanbanAction.ARCHIVE -> {
+                if (KanbanTransitions.archiveConfirmationNeeded(task)) {
+                    sheet = KanbanSheet.Archive(task)
+                } else {
+                    viewModel.onArchive(task)
+                }
+            }
+
+            KanbanAction.RESTORE -> sheet = KanbanSheet.Restore(task)
+            KanbanAction.REOPEN -> sheet = KanbanSheet.Reopen(task)
+            KanbanAction.COPY_ID -> {
+                if (task.id.isNotBlank()) {
+                    clipboard.setText(AnnotatedString(task.id))
+                    scope.launch {
+                        snackbarHostState.showSnackbar("Task ID copied.")
+                    }
+                }
+            }
         }
     }
 
@@ -456,6 +528,7 @@ fun KanbanBoardScreen(
                                 column = column,
                                 hiddenBySearch = originalCount - column.tasks.size,
                                 searchActive = state.query.isNotBlank(),
+                                readOnly = state.readOnly,
                                 pendingTaskIds = state.pendingTaskIds,
                                 scrollToTopTick = if (page == pagerState.currentPage) {
                                     scrollToTopTick
@@ -465,6 +538,7 @@ fun KanbanBoardScreen(
                                 onOpenTask = { task ->
                                     onOpenTask(task.id, slug, state.lastEventId)
                                 },
+                                onTaskAction = onTaskAction,
                                 onCreateTask = if (onCreateTask != null && !state.readOnly) {
                                     {
                                         onCreateTask(
@@ -484,6 +558,90 @@ fun KanbanBoardScreen(
             }
         }
     }
+
+    when (val open = sheet) {
+        is KanbanSheet.Move -> KanbanMoveSheet(
+            task = open.task,
+            parents = state.moveParents[open.task.id],
+            onDismiss = dismissSheet,
+            onTarget = { target ->
+                sheet = null
+                if (target.viaSheet == null) {
+                    viewModel.onMove(open.task.id, target)
+                } else {
+                    viewModel.onSheetClosed()
+                    sheet = when (target.viaSheet) {
+                        KanbanMoveVia.BLOCK -> KanbanSheet.Block(open.task)
+                        KanbanMoveVia.COMPLETE -> KanbanSheet.Complete(open.task)
+                        KanbanMoveVia.REOPEN -> KanbanSheet.Reopen(open.task)
+                        KanbanMoveVia.RESTORE -> KanbanSheet.Restore(open.task)
+                    }
+                }
+            },
+        )
+
+        is KanbanSheet.Complete -> KanbanCompleteSheet(
+            task = open.task,
+            parents = state.moveParents[open.task.id],
+            pending = open.task.id in state.pendingTaskIds,
+            serverError = state.sheetError
+                ?.takeIf { it.taskId == open.task.id }
+                ?.message,
+            onDismiss = dismissSheet,
+            onComplete = { result -> viewModel.onComplete(open.task, result) },
+        )
+
+        is KanbanSheet.Block -> KanbanBlockSheet(
+            task = open.task,
+            pending = open.task.id in state.pendingTaskIds,
+            onDismiss = dismissSheet,
+            onBlock = { reason ->
+                dismissSheet()
+                viewModel.onBlock(open.task, reason)
+            },
+        )
+
+        is KanbanSheet.Archive -> KanbanArchiveSheet(
+            task = open.task,
+            pending = open.task.id in state.pendingTaskIds,
+            onDismiss = dismissSheet,
+            onArchive = {
+                dismissSheet()
+                viewModel.onArchive(open.task)
+            },
+        )
+
+        is KanbanSheet.Reopen -> KanbanReopenSheet(
+            task = open.task,
+            onDismiss = dismissSheet,
+            onReopen = { status ->
+                dismissSheet()
+                viewModel.onReopen(open.task, status)
+            },
+        )
+
+        is KanbanSheet.Restore -> KanbanRestoreSheet(
+            task = open.task,
+            onDismiss = dismissSheet,
+            onRestore = { status ->
+                dismissSheet()
+                viewModel.onRestore(open.task, status)
+            },
+        )
+
+        null -> Unit
+    }
+}
+
+private sealed interface KanbanSheet {
+    val task: KanbanTaskDto
+
+    data class Move(override val task: KanbanTaskDto) : KanbanSheet
+    data class Complete(override val task: KanbanTaskDto) : KanbanSheet
+    data class Block(override val task: KanbanTaskDto) : KanbanSheet
+    data class Archive(override val task: KanbanTaskDto) : KanbanSheet
+    data class Reopen(override val task: KanbanTaskDto) : KanbanSheet
+    data class Restore(override val task: KanbanTaskDto) : KanbanSheet
 }
 
 private fun createStatus(status: String): String = when (status) {

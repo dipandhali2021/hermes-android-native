@@ -157,6 +157,28 @@ class KanbanBoardMutationsTest : KanbanBoardTestSupport() {
     }
 
     @Test
+    fun `complete refusal stays inline on the sheet instead of a snackbar`() =
+        runTest(dispatcher) {
+            val task = task("t1", KanbanStatus.READY)
+            val fake = FakeKanbanRepository()
+            val vm = started(fake, board(column(KanbanStatus.READY, task)))
+            val effects = collectEffects(vm)
+            fake.updateHandler = { _, _, _ ->
+                Result.failure(ApiException(DataError.Server(409, "A parent task is still open.")))
+            }
+
+            vm.onComplete(task, "Done")
+            advanceUntilIdle()
+
+            assertEquals(task.id, vm.state.value.sheetError?.taskId)
+            assertEquals("A parent task is still open.", vm.state.value.sheetError?.message)
+            assertFalse(effects.any { it is KanbanBoardEffect.Snackbar })
+
+            vm.onSheetClosed()
+            assertNull(vm.state.value.sheetError)
+        }
+
+    @Test
     fun `complete success shows Undo and undo PATCHes ready`() = runTest(dispatcher) {
         val task = task("t1", KanbanStatus.READY)
         val fake = FakeKanbanRepository()

@@ -14,6 +14,12 @@ data class KanbanBoardError(
     val unsupported: Boolean = false,
 )
 
+/** An inline refusal owned by an action sheet, not a transient snackbar. */
+data class KanbanSheetError(
+    val taskId: String,
+    val message: String,
+)
+
 enum class KanbanLiveState { OFF, CONNECTING, LIVE, POLLING, OFFLINE }
 
 data class KanbanFilterOptions(
@@ -45,6 +51,7 @@ data class KanbanBoardUiState(
     val pendingTaskIds: Set<String> = emptySet(),
     val highlightTaskId: String? = null,
     val moveParents: Map<String, KanbanParents> = emptyMap(),
+    val sheetError: KanbanSheetError? = null,
     val assigneesLoading: Boolean = false,
     val dispatcher: KanbanDispatcherState = KanbanDispatcherState.Idle,
 )
