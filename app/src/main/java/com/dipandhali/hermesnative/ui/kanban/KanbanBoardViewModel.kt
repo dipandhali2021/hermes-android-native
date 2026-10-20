@@ -8,13 +8,19 @@ import com.dipandhali.hermesnative.core.error.userMessage
 import com.dipandhali.hermesnative.core.model.KanbanBoardResponse
 import com.dipandhali.hermesnative.core.model.KanbanColumnDto
 import com.dipandhali.hermesnative.core.model.KanbanConfigDto
+import com.dipandhali.hermesnative.core.model.KanbanTaskDto
 import com.dipandhali.hermesnative.core.net.ApiException
 import com.dipandhali.hermesnative.data.kanban.KanbanRepository
 import com.dipandhali.hermesnative.domain.kanban.KanbanBoardResult
+import com.dipandhali.hermesnative.domain.kanban.KanbanDispatch
 import com.dipandhali.hermesnative.domain.kanban.KanbanFilters
+import com.dipandhali.hermesnative.domain.kanban.KanbanMoveTarget
 import com.dipandhali.hermesnative.domain.kanban.KanbanOpen
+import com.dipandhali.hermesnative.domain.kanban.KanbanParents
 import com.dipandhali.hermesnative.domain.kanban.KanbanSearch
+import com.dipandhali.hermesnative.domain.kanban.KanbanStatus
 import com.dipandhali.hermesnative.domain.kanban.KanbanStreamFrame
+import com.dipandhali.hermesnative.domain.kanban.KanbanTaskPatch
 import dagger.hilt.android.lifecycle.HiltViewModel
 import javax.inject.Inject
 import kotlinx.coroutines.FlowPreview
@@ -29,6 +35,7 @@ import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.receiveAsFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import kotlinx.serialization.json.JsonObject
 
 @OptIn(FlowPreview::class)
 @HiltViewModel
@@ -50,9 +57,13 @@ class KanbanBoardViewModel @Inject constructor(
     private var switchJob: Job? = null
     private var liveJob: Job? = null
     private var pollJob: Job? = null
+    private var dispatcherJob: Job? = null
 
     private var loadGeneration = 0
+    private var mutationGeneration = 0
     private var foreground = false
+    private var lastUndo: KanbanUndo? = null
+    private var lastUndoTaskId: String? = null
 
     init {
         viewModelScope.launch {
@@ -188,6 +199,8 @@ class KanbanBoardViewModel @Inject constructor(
 
     fun onSwitchBoard(slug: String) {
         if (slug.isBlank()) return
+        lastUndo = null
+        lastUndoTaskId = null
         liveJob?.cancel()
         liveJob = null
         pollJob?.cancel()
@@ -238,6 +251,10 @@ class KanbanBoardViewModel @Inject constructor(
                                     queryInput = "",
                                     query = "",
                                     assigneesLoading = false,
+                                    pendingTaskIds = emptySet(),
+                                    moveParents = emptyMap(),
+                                    highlightTaskId = null,
+                                    dispatcher = KanbanDispatcherState.Idle,
                                     boards = it.boards.map { board ->
                                         board.copy(isCurrent = board.slug == slug)
                                     },
@@ -375,6 +392,475 @@ class KanbanBoardViewModel @Inject constructor(
         _state.update { it.copy(selectedStatus = status) }
     }
 
+    fun onMove(taskId: String, target: KanbanMoveTarget) {
+        // Blocked/Done/Reopen/Restore rows open their dedicated sheet; the
+        // sheet calls onBlock/onComplete/onReopen/onRestore.
+        if (target.viaSheet != null) return
+        val slug = mutationSlug() ?: return
+        val task = taskById(taskId) ?: return
+        if (taskId in _state.value.pendingTaskIds) return
+
+        val snapshot = _state.value.columns
+        mutationGeneration += 1
+        if (target.viaUnblock) {
+            addPending(taskId)
+        } else {
+            _state.update {
+                it.copy(
+                    columns = moveTaskInColumns(it.columns, task, target.status),
+                    pendingTaskIds = it.pendingTaskIds + taskId,
+                )
+            }
+        }
+
+        viewModelScope.launch {
+            val result = if (target.viaUnblock) {
+                repository.unblockTask(slug, taskId)
+            } else {
+                repository.updateTask(slug, taskId, KanbanTaskPatch(status = target.status))
+            }
+            result
+                .onSuccess { returned ->
+                    clearPending(taskId)
+                    if (!stillOn(slug)) return@onSuccess
+                    placeTask(returned)
+                    if (target.viaUnblock) {
+                        emitUnblockCopy(returned.status, resumed = task.status == KanbanStatus.SCHEDULED)
+                    } else if (!KanbanStatus.isKnown(returned.status)) {
+                        _effects.trySend(KanbanBoardEffect.Snackbar("Now ${returned.status}."))
+                    }
+                }
+                .onFailure { error ->
+                    clearPending(taskId)
+                    if (!stillOn(slug)) return@onFailure
+                    _state.update { it.copy(columns = snapshot) }
+                    handleMutationFailure(error)
+                }
+        }
+    }
+
+    fun onComplete(task: KanbanTaskDto, result: String) {
+        val slug = mutationSlug() ?: return
+        if (task.id in _state.value.pendingTaskIds) return
+        if (task.status == KanbanStatus.RUNNING) {
+            _effects.trySend(
+                KanbanBoardEffect.Snackbar(
+                    "Running tasks can't be completed. Block or archive it instead.",
+                ),
+            )
+            return
+        }
+
+        val supplied = result.trim()
+        val finalResult = supplied.ifEmpty {
+            task.result?.takeIf { it.isNotBlank() }.orEmpty()
+        }
+        if (finalResult.isBlank()) {
+            _effects.trySend(
+                KanbanBoardEffect.Snackbar("Add a result or evidence before completing this task."),
+            )
+            return
+        }
+
+        mutationGeneration += 1
+        addPending(task.id)
+        viewModelScope.launch {
+            repository.updateTask(
+                slug,
+                task.id,
+                KanbanTaskPatch(status = KanbanStatus.DONE, result = finalResult),
+            )
+                .onSuccess { returned ->
+                    clearPending(task.id)
+                    if (!stillOn(slug)) return@onSuccess
+                    placeTask(returned)
+                    offerUndo(task.id, KanbanUndo.Complete, "Task completed")
+                }
+                .onFailure { error ->
+                    clearPending(task.id)
+                    if (!stillOn(slug)) return@onFailure
+                    handleMutationFailure(error)
+                }
+        }
+    }
+
+    fun onBlock(task: KanbanTaskDto, reason: String) {
+        val slug = mutationSlug() ?: return
+        if (task.id in _state.value.pendingTaskIds) return
+        if (task.status != KanbanStatus.READY && task.status != KanbanStatus.RUNNING) {
+            _effects.trySend(
+                KanbanBoardEffect.Snackbar("This task can't be blocked in its current state."),
+            )
+            return
+        }
+
+        mutationGeneration += 1
+        addPending(task.id)
+        viewModelScope.launch {
+            repository.blockTask(slug, task.id, reason)
+                .onSuccess { returned ->
+                    clearPending(task.id)
+                    if (!stillOn(slug)) return@onSuccess
+                    placeTask(returned)
+                    offerUndo(task.id, KanbanUndo.Block, "Task blocked")
+                }
+                .onFailure { error ->
+                    clearPending(task.id)
+                    if (!stillOn(slug)) return@onFailure
+                    handleMutationFailure(error)
+                }
+        }
+    }
+
+    fun onArchive(task: KanbanTaskDto) {
+        val slug = mutationSlug() ?: return
+        if (task.id in _state.value.pendingTaskIds) return
+        if (task.status == KanbanStatus.ARCHIVED) return
+
+        val snapshot = _state.value.columns
+        mutationGeneration += 1
+        _state.update {
+            it.copy(
+                columns = moveTaskInColumns(it.columns, task, KanbanStatus.ARCHIVED),
+                pendingTaskIds = it.pendingTaskIds + task.id,
+            )
+        }
+        viewModelScope.launch {
+            repository.updateTask(
+                slug,
+                task.id,
+                KanbanTaskPatch(status = KanbanStatus.ARCHIVED),
+            )
+                .onSuccess { returned ->
+                    clearPending(task.id)
+                    if (!stillOn(slug)) return@onSuccess
+                    placeTask(returned)
+                    offerUndo(task.id, KanbanUndo.Archive(task.status), "Task archived")
+                }
+                .onFailure { error ->
+                    clearPending(task.id)
+                    if (!stillOn(slug)) return@onFailure
+                    _state.update { it.copy(columns = snapshot) }
+                    handleMutationFailure(error)
+                }
+        }
+    }
+
+    fun onUnblock(task: KanbanTaskDto, resumed: Boolean = false) {
+        val slug = mutationSlug() ?: return
+        if (task.id in _state.value.pendingTaskIds) return
+
+        mutationGeneration += 1
+        addPending(task.id)
+        viewModelScope.launch {
+            repository.unblockTask(slug, task.id)
+                .onSuccess { returned ->
+                    clearPending(task.id)
+                    if (!stillOn(slug)) return@onSuccess
+                    placeTask(returned)
+                    clearUndo()
+                    emitUnblockCopy(returned.status, resumed)
+                }
+                .onFailure { error ->
+                    clearPending(task.id)
+                    if (!stillOn(slug)) return@onFailure
+                    handleMutationFailure(error)
+                }
+        }
+    }
+
+    fun onReopen(task: KanbanTaskDto, status: String) {
+        transitionFromTerminal(task, status, "Reopened")
+    }
+
+    fun onRestore(task: KanbanTaskDto, status: String) {
+        transitionFromTerminal(task, status, "Restored")
+    }
+
+    private fun transitionFromTerminal(task: KanbanTaskDto, status: String, copy: String) {
+        val slug = mutationSlug() ?: return
+        if (task.id in _state.value.pendingTaskIds) return
+        mutationGeneration += 1
+        addPending(task.id)
+        viewModelScope.launch {
+            repository.updateTask(slug, task.id, KanbanTaskPatch(status = status))
+                .onSuccess { returned ->
+                    clearPending(task.id)
+                    if (!stillOn(slug)) return@onSuccess
+                    placeTask(returned)
+                    clearUndo()
+                    _effects.trySend(KanbanBoardEffect.Snackbar(copy))
+                }
+                .onFailure { error ->
+                    clearPending(task.id)
+                    if (!stillOn(slug)) return@onFailure
+                    handleMutationFailure(error)
+                }
+        }
+    }
+
+    fun onUndo() {
+        val slug = mutationSlug() ?: return
+        val undo = lastUndo ?: return
+        val taskId = lastUndoTaskId ?: return
+        if (taskId in _state.value.pendingTaskIds) return
+
+        lastUndo = null
+        lastUndoTaskId = null
+        mutationGeneration += 1
+        addPending(taskId)
+        viewModelScope.launch {
+            val result = when (undo) {
+                KanbanUndo.Complete -> repository.updateTask(
+                    slug,
+                    taskId,
+                    KanbanTaskPatch(status = KanbanStatus.READY),
+                )
+
+                KanbanUndo.Block -> repository.unblockTask(slug, taskId)
+
+                is KanbanUndo.Archive -> repository.updateTask(
+                    slug,
+                    taskId,
+                    KanbanTaskPatch(status = restoreStatus(undo.previousStatus)),
+                )
+
+                is KanbanUndo.DependencyRemoved -> {
+                    clearPending(taskId)
+                    return@launch
+                }
+            }
+            result
+                .onSuccess { returned ->
+                    clearPending(taskId)
+                    if (!stillOn(slug)) return@onSuccess
+                    placeTask(returned)
+                }
+                .onFailure { error ->
+                    clearPending(taskId)
+                    if (!stillOn(slug)) return@onFailure
+                    handleMutationFailure(error)
+                }
+        }
+    }
+
+    fun onMoveSheetOpened(taskId: String) {
+        if (_state.value.moveParents.containsKey(taskId)) return
+        val slug = _state.value.boardSlug ?: return
+        viewModelScope.launch {
+            repository.task(slug, taskId)
+                .onSuccess { detail ->
+                    if (!stillOn(slug)) return@onSuccess
+                    val parentIds = detail.links.parents
+                    val cache = repository.cachedTasks(slug)
+                    val parents = when {
+                        parentIds.isEmpty() -> KanbanParents.None
+                        parentIds.any { cache[it] == null } -> KanbanParents.Unknown(parentIds.size)
+                        else -> KanbanParents.Known(
+                            parentIds.count { id ->
+                                val parent = cache.getValue(id)
+                                !KanbanStatus.isTerminal(parent.status)
+                            },
+                        )
+                    }
+                    _state.update {
+                        it.copy(moveParents = it.moveParents + (taskId to parents))
+                    }
+                }
+                .onFailure {
+                    if (!stillOn(slug)) return@onFailure
+                    val count = _state.value.columns
+                        .asSequence()
+                        .flatMap { it.tasks.asSequence() }
+                        .firstOrNull { it.id == taskId }
+                        ?.linkCounts
+                        ?.parents
+                        ?: 0
+                    _state.update {
+                        it.copy(
+                            moveParents = it.moveParents + (taskId to KanbanParents.Unknown(count)),
+                        )
+                    }
+                }
+        }
+    }
+
+    fun onDispatcherOpened() {
+        val current = _state.value.dispatcher
+        if (current is KanbanDispatcherState.Loading || current is KanbanDispatcherState.Running) {
+            return
+        }
+        val slug = mutationSlug() ?: return
+        _state.update { it.copy(dispatcher = KanbanDispatcherState.Loading(dryRun = true)) }
+        dispatcherJob = viewModelScope.launch {
+            repository.dispatch(slug, dryRun = true, max = DISPATCH_MAX)
+                .onSuccess { json ->
+                    if (!stillOn(slug)) return@onSuccess
+                    _state.update { it.copy(dispatcher = previewState(json)) }
+                }
+                .onFailure { error ->
+                    if (!stillOn(slug)) return@onFailure
+                    _state.update { it.copy(dispatcher = KanbanDispatcherState.Failed(dispatcherMessage(error))) }
+                }
+        }
+    }
+
+    fun onDispatcherRun() {
+        val slug = mutationSlug() ?: return
+        val current = _state.value.dispatcher
+        if (current is KanbanDispatcherState.Running || current is KanbanDispatcherState.Loading) {
+            return
+        }
+        _state.update { it.copy(dispatcher = KanbanDispatcherState.Running) }
+        dispatcherJob = viewModelScope.launch {
+            repository.dispatch(slug, dryRun = false, max = DISPATCH_MAX)
+                .onSuccess { json ->
+                    if (!stillOn(slug)) return@onSuccess
+                    _state.update { it.copy(dispatcher = resultState(json)) }
+                    onRefresh()
+                }
+                .onFailure { error ->
+                    if (!stillOn(slug)) return@onFailure
+                    _state.update { it.copy(dispatcher = KanbanDispatcherState.Failed(dispatcherMessage(error))) }
+                }
+        }
+    }
+
+    fun onDispatcherRetry() {
+        val current = _state.value.dispatcher
+        if (current is KanbanDispatcherState.Loading || current is KanbanDispatcherState.Running) {
+            return
+        }
+        onDispatcherOpened()
+    }
+
+    fun onDispatcherDismiss() {
+        // The dismiss closes the sheet, not the request. A run can take
+        // minutes, and its result should still be there when the sheet reopens.
+        _state.update { it.copy(dispatcher = KanbanDispatcherState.Idle) }
+    }
+
+    private fun previewState(json: JsonObject): KanbanDispatcherState.Preview =
+        KanbanDispatcherState.Preview(KanbanDispatch.summary(json, dryRun = true))
+
+    private fun resultState(json: JsonObject): KanbanDispatcherState.Result =
+        KanbanDispatcherState.Result(KanbanDispatch.summary(json, dryRun = false))
+
+    private fun dispatcherMessage(error: Throwable): String {
+        val data = error.dataError()
+        if (data is DataError.Unauthorized) {
+            _effects.trySend(KanbanBoardEffect.SessionExpired)
+        }
+        return if (data is DataError.Timeout) {
+            "The dispatcher may still be running. Check the board in a moment."
+        } else {
+            data.userMessage()
+        }
+    }
+
+    private fun mutationSlug(): String? {
+        val current = _state.value
+        if (current.boardSlug == null) {
+            _effects.trySend(KanbanBoardEffect.Snackbar("No board is open."))
+            return null
+        }
+        if (current.readOnly) {
+            _effects.trySend(KanbanBoardEffect.Snackbar(READ_ONLY_MESSAGE))
+            return null
+        }
+        return current.boardSlug
+    }
+
+    private fun taskById(taskId: String): KanbanTaskDto? = _state.value.columns
+        .asSequence()
+        .flatMap { it.tasks.asSequence() }
+        .firstOrNull { it.id == taskId }
+
+    private fun addPending(taskId: String) {
+        _state.update { it.copy(pendingTaskIds = it.pendingTaskIds + taskId) }
+    }
+
+    private fun clearPending(taskId: String) {
+        _state.update { it.copy(pendingTaskIds = it.pendingTaskIds - taskId) }
+    }
+
+    private fun placeTask(task: KanbanTaskDto) {
+        _state.update { state ->
+            state.copy(columns = moveTaskInColumns(state.columns, task, task.status))
+        }
+    }
+
+    private fun moveTaskInColumns(
+        columns: List<KanbanColumnDto>,
+        task: KanbanTaskDto,
+        status: String,
+    ): List<KanbanColumnDto> {
+        val stripped = columns.map { column ->
+            column.copy(tasks = column.tasks.filterNot { it.id == task.id })
+        }
+        if (stripped.none { it.name == status }) return stripped
+        return stripped.map { column ->
+            if (column.name == status) {
+                column.copy(tasks = listOf(task.copy(status = status)) + column.tasks)
+            } else {
+                column
+            }
+        }
+    }
+
+    private fun offerUndo(taskId: String, undo: KanbanUndo, text: String) {
+        lastUndo = undo
+        lastUndoTaskId = taskId
+        _effects.trySend(KanbanBoardEffect.Snackbar(text, KanbanSnackbarAction.UNDO))
+    }
+
+    private fun clearUndo() {
+        lastUndo = null
+        lastUndoTaskId = null
+    }
+
+    private fun restoreStatus(previousStatus: String): String =
+        if (previousStatus == KanbanStatus.TRIAGE ||
+            previousStatus == KanbanStatus.TODO ||
+            previousStatus == KanbanStatus.READY
+        ) {
+            previousStatus
+        } else {
+            KanbanStatus.READY
+        }
+
+    private fun emitUnblockCopy(status: String, resumed: Boolean) {
+        val prefix = if (resumed) "Resumed" else "Unblocked"
+        val text = when (status) {
+            KanbanStatus.READY -> "$prefix — ready to run."
+            KanbanStatus.TODO -> "$prefix — waiting on dependencies."
+            else -> "$prefix — now $status."
+        }
+        _effects.trySend(KanbanBoardEffect.Snackbar(text))
+    }
+
+    private fun handleMutationFailure(error: Throwable) {
+        val data = error.dataError()
+        when {
+            data is DataError.Unauthorized ->
+                _effects.trySend(KanbanBoardEffect.SessionExpired)
+
+            data is DataError.NotFound ||
+                (data is DataError.Server && data.status == 404) -> {
+                _effects.trySend(
+                    KanbanBoardEffect.Snackbar(
+                        "This task may have moved. The board was refreshed.",
+                    ),
+                )
+                onRefresh()
+            }
+
+            else -> _effects.trySend(KanbanBoardEffect.Snackbar(data.userMessage()))
+        }
+    }
+
+    private fun stillOn(slug: String): Boolean = _state.value.boardSlug == slug
+
     private fun startLive() {
         if (!foreground) return
         val slug = _state.value.boardSlug ?: return
@@ -422,6 +908,8 @@ class KanbanBoardViewModel @Inject constructor(
         )
         selectedByBoard[open.current] = selected
         if (resetSearch) queryFlow.value = ""
+        lastUndo = null
+        lastUndoTaskId = null
         val options = optionsFor(
             board = open.board,
             config = open.config,
@@ -447,6 +935,10 @@ class KanbanBoardViewModel @Inject constructor(
                 lastEventId = open.board.latestEventId,
                 readOnly = open.board.readOnly || open.config.readOnly,
                 assigneesLoading = false,
+                pendingTaskIds = emptySet(),
+                moveParents = emptyMap(),
+                highlightTaskId = null,
+                dispatcher = KanbanDispatcherState.Idle,
                 error = null,
                 switchError = null,
             )
@@ -569,5 +1061,7 @@ class KanbanBoardViewModel @Inject constructor(
 
     private companion object {
         const val QUERY_DEBOUNCE_MS = 120L
+        const val DISPATCH_MAX = 8
+        const val READ_ONLY_MESSAGE = "This board is read-only."
     }
 }

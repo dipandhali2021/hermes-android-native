@@ -66,12 +66,38 @@ class FakeKanbanRepository : KanbanRepository {
     }
 
     var eventsFlow: Flow<KanbanStreamFrame> = emptyFlow()
+    var updateHandler: suspend (String, String, KanbanTaskPatch) -> Result<KanbanTaskDto> = {
+            _, _, _ ->
+        error("updateTask not configured")
+    }
+    var blockHandler: suspend (String, String, String) -> Result<KanbanTaskDto> = {
+            _, _, _ ->
+        error("blockTask not configured")
+    }
+    var unblockHandler: suspend (String, String) -> Result<KanbanTaskDto> = {
+            _, _ ->
+        error("unblockTask not configured")
+    }
+    var taskHandler: suspend (String, String) -> Result<KanbanTaskDetailResponse> = {
+            _, _ ->
+        error("task not configured")
+    }
+    var dispatchHandler: suspend (String, Boolean, Int) -> Result<JsonObject> = {
+            _, _, _ ->
+        error("dispatch not configured")
+    }
+    var cachedTaskMap: Map<String, KanbanTaskDto> = emptyMap()
 
     val calls = mutableListOf<String>()
     val openCalls = mutableListOf<String?>()
     val boardCalls = mutableListOf<Pair<String, KanbanFilters>>()
     val switchCalls = mutableListOf<String>()
     val activeEvents = mutableMapOf<String, Int>()
+    val updateCalls = mutableListOf<UpdateCall>()
+    val blockCalls = mutableListOf<BlockCall>()
+    val unblockCalls = mutableListOf<String>()
+    val taskCalls = mutableListOf<String>()
+    val dispatchCalls = mutableListOf<DispatchCall>()
 
     override suspend fun openBoard(preferredSlug: String?): Result<KanbanOpen> {
         calls += "open:${preferredSlug ?: "current"}"
@@ -109,8 +135,11 @@ class FakeKanbanRepository : KanbanRepository {
 
     override suspend fun workspaces(): Result<List<WorkspaceDto>> = error("workspaces not used")
 
-    override suspend fun task(slug: String, taskId: String): Result<KanbanTaskDetailResponse> =
-        error("task not used")
+    override suspend fun task(slug: String, taskId: String): Result<KanbanTaskDetailResponse> {
+        calls += "task:$taskId"
+        taskCalls += taskId
+        return taskHandler(slug, taskId)
+    }
 
     override suspend fun taskIndex(slug: String): Result<List<KanbanTaskDto>> =
         error("taskIndex not used")
@@ -127,16 +156,27 @@ class FakeKanbanRepository : KanbanRepository {
         slug: String,
         taskId: String,
         patch: KanbanTaskPatch,
-    ): Result<KanbanTaskDto> = error("updateTask not used")
+    ): Result<KanbanTaskDto> {
+        calls += "update:$taskId"
+        updateCalls += UpdateCall(taskId, patch)
+        return updateHandler(slug, taskId, patch)
+    }
 
     override suspend fun blockTask(
         slug: String,
         taskId: String,
         reason: String,
-    ): Result<KanbanTaskDto> = error("blockTask not used")
+    ): Result<KanbanTaskDto> {
+        calls += "block:$taskId"
+        blockCalls += BlockCall(taskId, reason)
+        return blockHandler(slug, taskId, reason)
+    }
 
-    override suspend fun unblockTask(slug: String, taskId: String): Result<KanbanTaskDto> =
-        error("unblockTask not used")
+    override suspend fun unblockTask(slug: String, taskId: String): Result<KanbanTaskDto> {
+        calls += "unblock:$taskId"
+        unblockCalls += taskId
+        return unblockHandler(slug, taskId)
+    }
 
     override suspend fun addComment(
         slug: String,
@@ -171,7 +211,11 @@ class FakeKanbanRepository : KanbanRepository {
         slug: String,
         dryRun: Boolean,
         max: Int,
-    ): Result<JsonObject> = error("dispatch not used")
+    ): Result<JsonObject> {
+        calls += "dispatch:$dryRun:$max"
+        dispatchCalls += DispatchCall(slug, dryRun, max)
+        return dispatchHandler(slug, dryRun, max)
+    }
 
     override suspend fun events(slug: String, since: Long): Flow<KanbanStreamFrame> = flow {
         synchronized(activeEvents) {
@@ -192,8 +236,14 @@ class FakeKanbanRepository : KanbanRepository {
         return pollHandler(slug, since)
     }
 
-    override fun cachedTasks(slug: String): Map<String, KanbanTaskDto> = emptyMap()
+    override fun cachedTasks(slug: String): Map<String, KanbanTaskDto> = cachedTaskMap
 }
+
+data class UpdateCall(val taskId: String, val patch: KanbanTaskPatch)
+
+data class BlockCall(val taskId: String, val reason: String)
+
+data class DispatchCall(val slug: String, val dryRun: Boolean, val max: Int)
 
 object KanbanTestData {
     fun boardSummary(slug: String, current: Boolean = true): KanbanBoardSummary =
