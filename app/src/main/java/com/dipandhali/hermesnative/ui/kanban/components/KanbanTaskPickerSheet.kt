@@ -70,6 +70,7 @@ import com.dipandhali.hermesnative.domain.kanban.KanbanTaskPickerItem
 @Composable
 fun KanbanTaskPickerSheet(
     title: String,
+    helper: String? = null,
     tasks: List<KanbanTaskDto>,
     loading: Boolean,
     error: String?,
@@ -127,6 +128,12 @@ fun KanbanTaskPickerSheet(
                             } else {
                                 "${selected.size} selected"
                             },
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    } else if (helper != null) {
+                        Text(
+                            text = helper,
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )

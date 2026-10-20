@@ -35,6 +35,7 @@ import com.dipandhali.hermesnative.ui.panels.PanelKind
 import com.dipandhali.hermesnative.ui.panels.PanelScreen
 import com.dipandhali.hermesnative.ui.home.HomeScreen
 import com.dipandhali.hermesnative.ui.kanban.KanbanBoardScreen
+import com.dipandhali.hermesnative.ui.kanban.KanbanDetailScreen
 import com.dipandhali.hermesnative.ui.sessions.SessionsListScreen
 import com.dipandhali.hermesnative.ui.settings.SettingsScreen
 import com.dipandhali.hermesnative.ui.theme.HermesNativeTheme
@@ -60,6 +61,11 @@ object Routes {
 
     /** The full-screen board. The ViewModel owns the remembered board slug. */
     const val KANBAN = "kanban"
+
+    /** One task, with the board and event cursor it was opened against. */
+    const val KANBAN_TASK = "kanban/task"
+    fun kanbanTask(taskId: String, board: String, cursor: Long): String =
+        "$KANBAN_TASK/${Uri.encode(taskId)}?board=${Uri.encode(board)}&cursor=$cursor"
 
     const val CHAT = "chat"
 
@@ -229,9 +235,37 @@ private fun HermesNavHost(startDestination: String) {
         composable(Routes.KANBAN) {
             KanbanBoardScreen(
                 onBack = { navController.popBackStack() },
-                // Task 18 adds the detail route; until then this callback is
-                // intentionally a no-op rather than a half-built destination.
-                onOpenTask = { _, _, _ -> },
+                onOpenTask = { taskId, board, cursor ->
+                    navController.navigate(Routes.kanbanTask(taskId, board, cursor))
+                },
+                onOpenConnect = {
+                    navController.navigate(Routes.CONNECT) {
+                        popUpTo(0) { inclusive = true }
+                    }
+                },
+            )
+        }
+
+        composable(
+            route = "${Routes.KANBAN_TASK}/{taskId}?board={board}&cursor={cursor}",
+            arguments = listOf(
+                navArgument("taskId") { type = NavType.StringType },
+                navArgument("board") {
+                    type = NavType.StringType
+                    defaultValue = ""
+                },
+                navArgument("cursor") {
+                    type = NavType.LongType
+                    defaultValue = 0L
+                },
+            ),
+        ) { entry ->
+            KanbanDetailScreen(
+                boardSlug = entry.arguments?.getString("board").orEmpty(),
+                onBack = { navController.popBackStack() },
+                onOpenTask = { taskId, board, cursor ->
+                    navController.navigate(Routes.kanbanTask(taskId, board, cursor))
+                },
                 onOpenConnect = {
                     navController.navigate(Routes.CONNECT) {
                         popUpTo(0) { inclusive = true }

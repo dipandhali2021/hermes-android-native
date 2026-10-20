@@ -224,7 +224,7 @@ fun KanbanTaskCard(
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                     staleness?.let { pill ->
-                        StalenessPill(pill)
+                        KanbanStalenessPill(pill)
                     }
                 }
             }
@@ -289,7 +289,7 @@ fun KanbanTaskCard(
 }
 
 @Composable
-private fun StalenessPill(pill: Staleness) {
+fun KanbanStalenessPill(pill: Staleness) {
     val container = when (pill.level) {
         Staleness.Level.INFO, Staleness.Level.WARNING ->
             MaterialTheme.colorScheme.tertiaryContainer
