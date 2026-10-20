@@ -4,7 +4,11 @@ import android.content.Context
 import com.dipandhali.hermesnative.core.net.HermesApi
 import com.dipandhali.hermesnative.core.net.HttpClientFactory
 import com.dipandhali.hermesnative.core.net.PersistentCookieJar
+import com.dipandhali.hermesnative.core.net.RawSseClient
 import com.dipandhali.hermesnative.core.net.SseClient
+import com.dipandhali.hermesnative.data.kanban.DefaultKanbanRepository
+import com.dipandhali.hermesnative.data.kanban.KanbanRepository
+import com.dipandhali.hermesnative.data.settings.ServerState
 import com.dipandhali.hermesnative.data.settings.SettingsStore
 import dagger.Module
 import dagger.Provides
@@ -46,5 +50,32 @@ object AppModule {
 
     @Provides
     @Singleton
+    @Named("kanban-dispatch")
+    fun provideKanbanDispatchClient(@Named("api") client: OkHttpClient): OkHttpClient =
+        HttpClientFactory.createKanbanDispatch(client)
+
+    @Provides
+    @Singleton
+    @Named("kanban-dispatch")
+    fun provideKanbanDispatchApi(
+        @Named("kanban-dispatch") client: OkHttpClient,
+    ): HermesApi = HermesApi(client)
+
+    @Provides
+    @Singleton
     fun provideSseClient(@Named("stream") client: OkHttpClient): SseClient = SseClient(client)
+
+    @Provides
+    @Singleton
+    fun provideRawSseClient(@Named("stream") client: OkHttpClient): RawSseClient =
+        RawSseClient(client)
+
+    @Provides
+    @Singleton
+    fun provideKanbanRepository(
+        api: HermesApi,
+        @Named("kanban-dispatch") dispatchApi: HermesApi,
+        rawSse: RawSseClient,
+        serverState: ServerState,
+    ): KanbanRepository = DefaultKanbanRepository(api, dispatchApi, rawSse, serverState)
 }

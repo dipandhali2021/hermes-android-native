@@ -18,6 +18,7 @@ import com.dipandhali.hermesnative.core.model.WorkspaceDto
 import com.dipandhali.hermesnative.core.net.ApiException
 import com.dipandhali.hermesnative.core.net.HermesApi
 import com.dipandhali.hermesnative.core.net.RawSseClient
+import com.dipandhali.hermesnative.core.net.RawSseEvent
 import com.dipandhali.hermesnative.data.settings.ServerState
 import com.dipandhali.hermesnative.domain.kanban.KanbanBoardResult
 import com.dipandhali.hermesnative.domain.kanban.KanbanCreateOutcome
@@ -28,11 +29,13 @@ import com.dipandhali.hermesnative.domain.kanban.KanbanOpen
 import com.dipandhali.hermesnative.domain.kanban.KanbanStatus
 import com.dipandhali.hermesnative.domain.kanban.KanbanStreamFrame
 import com.dipandhali.hermesnative.domain.kanban.KanbanTaskPatch
+import java.net.URLEncoder
 import javax.inject.Inject
 import javax.inject.Named
 import javax.inject.Singleton
 import kotlinx.coroutines.flow.Flow
-import kotlinx.coroutines.flow.emptyFlow
+import kotlinx.coroutines.flow.flowOf
+import kotlinx.coroutines.flow.mapNotNull
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
@@ -326,10 +329,30 @@ class DefaultKanbanRepository @Inject constructor(
         return dispatchApi.kanbanDispatch(base, slug, dryRun, max)
     }
 
-    override suspend fun events(slug: String, since: Long): Flow<KanbanStreamFrame> = emptyFlow()
+    override suspend fun events(slug: String, since: Long): Flow<KanbanStreamFrame> {
+        val base = serverState.currentBaseUrl
+            ?: return flowOf(KanbanStreamFrame.Failed(DataError.NotHermes))
+        return rawSse.stream(eventsUrl(base, slug, since)).mapNotNull { raw ->
+            when (raw) {
+                is RawSseEvent.Event -> KanbanStreamParser.parse(raw.type, raw.data)
+                is RawSseEvent.Closed -> KanbanStreamFrame.Ended
+                is RawSseEvent.Failure -> KanbanStreamFrame.Failed(raw.error)
+                is RawSseEvent.Open -> null
+            }
+        }
+    }
 
-    override suspend fun pollEvents(slug: String, since: Long): Result<KanbanEventsPage> =
-        notWired("pollEvents")
+    override suspend fun pollEvents(slug: String, since: Long): Result<KanbanEventsPage> {
+        val base = serverState.currentBaseUrl ?: return noServer()
+        return api.kanbanEvents(base, slug, since)
+    }
+
+    private fun eventsUrl(base: String, slug: String, since: Long): String =
+        "${base.trimEnd('/')}/api/kanban/events/stream" +
+            "?board=${slug.encodeQuery()}&since=$since"
+
+    private fun String.encodeQuery(): String =
+        URLEncoder.encode(this, "UTF-8").replace("+", "%20")
 
     private fun sanitizeCreateStatus(raw: String): String = when (raw) {
         KanbanStatus.TRIAGE, KanbanStatus.TODO, KanbanStatus.READY -> raw
@@ -358,7 +381,4 @@ class DefaultKanbanRepository @Inject constructor(
 
     private fun <T> noServer(): Result<T> =
         Result.failure(ApiException(DataError.NotHermes))
-
-    private fun <T> notWired(what: String): Result<T> =
-        Result.failure(ApiException(DataError.Unknown("$what is not wired yet")))
 }

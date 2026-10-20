@@ -67,4 +67,16 @@ object HttpClientFactory {
             .callTimeout(0, TimeUnit.MILLISECONDS)
             .retryOnConnectionFailure(true)
             .build()
+
+    /**
+     * The dispatch endpoint may scan and claim several workers, so it needs a
+     * longer ceiling than an ordinary board read. Clone the request client so
+     * the cookie jar, CSRF-stripping interceptor and connection pool are shared;
+     * only the two completion-deadline timeouts change.
+     */
+    fun createKanbanDispatch(base: OkHttpClient): OkHttpClient =
+        base.newBuilder()
+            .readTimeout(3, TimeUnit.MINUTES)
+            .callTimeout(3, TimeUnit.MINUTES)
+            .build()
 }
