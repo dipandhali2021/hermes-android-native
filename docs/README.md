@@ -1,8 +1,10 @@
 # Hermes Native — documentation map
 
 > **Read this first.** This is the map of the project and its documentation.
-> For the current state of the work, read
-> [`HANDOFF-2026-10-19.md`](HANDOFF-2026-10-19.md). Last refreshed 2026-10-19.
+> For the current Kanban feature line, read
+> [`HANDOFF-2026-10-21-kanban.md`](HANDOFF-2026-10-21-kanban.md). The
+> integrated app baseline through Round 9 remains
+> [`HANDOFF-2026-10-19.md`](HANDOFF-2026-10-19.md). Last refreshed 2026-10-21.
 
 ## What this project is
 
@@ -27,10 +29,13 @@ com.dipandhali.hermesnative
 │   └── error/     DataError + user-facing mapping (the error boundary)
 ├── data/          one repository per concern: auth, chat, sessions, files,
 │                  media, profiles, prompts, workspace, settings
+│   └── kanban/    board/task repository and stream parser
 ├── domain/        pure logic: composer state machine, picker catalog,
 │                  model identity, context meter, voice rules
+│   └── kanban/    status, transitions, create plan, filters, search, dispatch
 └── ui/            theme, nav, connect, sessions, home, chat, files, profile,
                    workspace, panels, settings
+    └── kanban/    board, task detail, create/edit, boards, sheets
 ```
 
 Key ideas:
@@ -80,7 +85,8 @@ The authoritative list is [`../AGENTS.md`](../AGENTS.md). The short version:
 | [`../AGENTS.md`](../AGENTS.md) | Hard rules for agents: build pins, protocol, design, tests. |
 | [`ARCHITECTURE.md`](ARCHITECTURE.md) | Package layout, error/state rules, design decisions. |
 | [`sse-integration.md`](sse-integration.md) | The WebUI SSE contract: auth, events, close semantics, reconnect, steering. |
-| [`HANDOFF-2026-10-19.md`](HANDOFF-2026-10-19.md) | Current feature/branch state, CI evidence, pending work. |
+| [`HANDOFF-2026-10-21-kanban.md`](HANDOFF-2026-10-21-kanban.md) | **Current:** full-screen Kanban feature line, CI/device evidence, gaps. |
+| [`HANDOFF-2026-10-19.md`](HANDOFF-2026-10-19.md) | Integrated app baseline through Round 9. |
 
 ### Superpowers artifacts
 
@@ -97,6 +103,10 @@ the artifacts are the same, only the path differs).
 
 Newest plans worth reading:
 
+- [`plans/2026-10-20-kanban.md`](plans/2026-10-20-kanban.md) — full-screen
+  Kanban board, task detail, create/edit, boards, dispatcher and acceptance.
+  Its binding design is
+  [`specs/2026-10-20-kanban-design.md`](specs/2026-10-20-kanban-design.md).
 - [`plans/2026-10-18-chat-media.md`](plans/2026-10-18-chat-media.md) —
   attachment media, audio player, file-preview audio.
 - [`plans/2026-10-18-context-meter.md`](plans/2026-10-18-context-meter.md) —
@@ -110,16 +120,18 @@ Newest plans worth reading:
 - [`specs/2026-10-17-voice-and-attach-design.md`](specs/2026-10-17-voice-and-attach-design.md)
   — composer, attach panel, voice modes, pinned strings.
 
-Handoffs, oldest to newest:
+Handoffs, newest to oldest:
 
+- [`HANDOFF-2026-10-21-kanban.md`](HANDOFF-2026-10-21-kanban.md) — **current:**
+  full-screen Kanban feature line on `feat/kanban`.
+- [`HANDOFF-2026-10-19.md`](HANDOFF-2026-10-19.md) — integrated app baseline
+  through Round 9; superseded for the Kanban line by the 2026-10-21 handoff.
 - [`HANDOFF-composer-fab-0.4.1.md`](HANDOFF-composer-fab-0.4.1.md) — released
   v0.4.1; home composer/inset/FAB fixes. Historical.
 - [`HANDOFF-home-send.md`](HANDOFF-home-send.md) — home-send fix. Historical.
 - [`HANDOFF-model-picker.md`](HANDOFF-model-picker.md) — Rounds 1–9: model
   picker, voice, attach panel, power tools, context meter, sheets, chat media.
   The detailed reference for those rounds and their device checklists.
-- [`HANDOFF-2026-10-19.md`](HANDOFF-2026-10-19.md) — current: integrated
-  branch state and what remains after Round 9.
 
 ## How work happens here
 

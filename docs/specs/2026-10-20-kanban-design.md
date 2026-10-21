@@ -839,7 +839,7 @@ Archive action at the bottom:
 **Board switcher sheet**:
 - Header "Boards".
 - Rows: icon circle, name, per-status summary ("3 ready · 2 running"), current
-  check. Archived boards are not listed.
+  check. Archived boards are hidden until **Show archived** is enabled.
 - Footer: "New board" (tonal) and "Board settings" (text).
 - Fetch `/api/kanban/boards` when opened; show a compact loading state; on error,
   keep the last known list with a retry row.
@@ -891,15 +891,16 @@ A bottom sheet titled "Run dispatcher".
   without opening the WebUI.
 - A one-line explainer: "Claims ready tasks, starts workers, promotes unblocked
   work, and reclaims stale runs. Limit 8 per run."
-- Primary **Run now** (filled) enabled after the preview resolves; a preview
-  failure shows an inline error and a "Run without preview" text action.
-- While running: button spinner + "Running…", sheet stays open, dismissible.
-  The call runs in the board ViewModel, not the sheet, so dismissing does not
-  cancel it. The client uses a 3-minute call timeout for dispatch.
-- On success: the sheet switches to a result state ("Dispatcher finished") with
-  the same counts and a "Done" button; the board refreshes and the SSE cursor is
-  kept. If the result includes spawned workers, the Running column count updates
-  live.
+- Primary **Run dispatcher** in the preview and **Run again** in the result;
+  a preview failure shows an inline error and a **Retry** action.
+- While running: a progress row and "This can take a minute"; the sheet stays
+  open and dismissible. The call runs in the board ViewModel, not the sheet, so
+  dismissing does not cancel it. The client uses a 3-minute call timeout for
+  dispatch.
+- On success: the sheet switches to a result state ("Dispatcher result") with
+  the same counts, plus **Run again**, **Refresh preview** and **Close**; the
+  board refreshes and the SSE cursor is kept. If the result includes spawned
+  workers, the Running column count updates live.
 - On failure: error card + Retry; the board is not reloaded (or is refreshed on
   close to reconcile).
 - Available from the top-bar overflow and from the Ready column's **Run** text
