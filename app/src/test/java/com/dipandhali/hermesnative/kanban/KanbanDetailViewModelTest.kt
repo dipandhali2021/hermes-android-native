@@ -230,6 +230,7 @@ class KanbanDetailViewModelTest : KanbanDetailTestSupport() {
         advanceUntilIdle()
 
         assertEquals(KanbanStatus.BLOCKED, vm.state.value.task?.status)
+        assertTrue(effects.contains(KanbanDetailEffect.DismissSheet))
         assertTrue(
             effects.contains(
                 KanbanDetailEffect.Snackbar("Task blocked", KanbanSnackbarAction.UNDO),
@@ -242,6 +243,28 @@ class KanbanDetailViewModelTest : KanbanDetailTestSupport() {
         assertEquals(listOf("t1"), fake.unblockCalls)
         assertEquals(KanbanStatus.READY, vm.state.value.task?.status)
         assertNull(vm.state.value.undoToken)
+    }
+
+    @Test
+    fun `block refusal stays inline on the sheet`() = runTest(dispatcher) {
+        val task = task(status = KanbanStatus.READY)
+        val fake = FakeKanbanRepository()
+        fake.taskHandler = { _, _ -> Result.success(detail(task)) }
+        fake.blockHandler = { _, _, _ ->
+            Result.failure(ApiException(DataError.Server(409, "A worker owns this task.")))
+        }
+        val vm = started(fake)
+        val effects = collectEffects(vm)
+
+        vm.onBlock("Reason")
+        advanceUntilIdle()
+
+        assertEquals("A worker owns this task.", vm.state.value.blockError)
+        assertFalse(vm.state.value.pending)
+        assertFalse(effects.any { it is KanbanDetailEffect.Snackbar })
+
+        vm.onSheetDismissed()
+        assertNull(vm.state.value.blockError)
     }
 
     @Test
@@ -744,7 +767,8 @@ class KanbanDetailViewModelTest : KanbanDetailTestSupport() {
         advanceUntilIdle()
 
         assertEquals(task, vm.state.value.task)
-        assertTrue(
+        assertEquals("A parent task is still open.", vm.state.value.completeError)
+        assertFalse(
             effects.contains(
                 KanbanDetailEffect.Snackbar("A parent task is still open."),
             ),

@@ -17,6 +17,7 @@ import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.size
@@ -114,6 +115,7 @@ import com.dipandhali.hermesnative.ui.kanban.components.KanbanEmptyState
 import com.dipandhali.hermesnative.ui.kanban.components.KanbanFilterSheet
 import com.dipandhali.hermesnative.ui.kanban.components.KanbanLiveBadge
 import com.dipandhali.hermesnative.ui.kanban.components.KanbanMoveSheet
+import com.dipandhali.hermesnative.ui.kanban.components.KanbanReadOnlyBanner
 import com.dipandhali.hermesnative.ui.kanban.components.KanbanReopenSheet
 import com.dipandhali.hermesnative.ui.kanban.components.KanbanRestoreSheet
 import com.dipandhali.hermesnative.ui.kanban.components.KanbanStatusRail
@@ -178,6 +180,7 @@ fun KanbanBoardScreen(
                     val actionLabel = when (effect.action) {
                         KanbanSnackbarAction.UNDO -> "Undo"
                         KanbanSnackbarAction.VIEW_CREATED -> "View"
+                        KanbanSnackbarAction.CLEAR_FILTERS -> "Clear filters"
                         null -> null
                     }
                     val result = snackbarHostState.showSnackbar(
@@ -194,19 +197,15 @@ fun KanbanBoardScreen(
                         when (effect.action) {
                             KanbanSnackbarAction.UNDO -> viewModel.onUndo()
                             KanbanSnackbarAction.VIEW_CREATED -> viewModel.onSnackbarAction()
+                            KanbanSnackbarAction.CLEAR_FILTERS -> viewModel.onClearAllFilters()
                             null -> Unit
                         }
                     }
                 }
 
                 KanbanBoardEffect.SessionExpired -> {
-                    val result = snackbarHostState.showSnackbar(
-                        message = "Session expired. Reconnect to continue.",
-                        actionLabel = "Connect",
-                        withDismissAction = true,
-                        duration = SnackbarDuration.Long,
-                    )
-                    if (result == SnackbarResult.ActionPerformed) onOpenConnect()
+                    // The board state renders a full-screen session-expired
+                    // surface; a snackbar would duplicate it behind that UI.
                 }
 
                 is KanbanBoardEffect.OpenTask -> {
@@ -214,6 +213,11 @@ fun KanbanBoardScreen(
                     if (board != null) {
                         onOpenTask(effect.taskId, board, viewModel.state.value.lastEventId)
                     }
+                }
+
+                KanbanBoardEffect.DismissSheet -> {
+                    sheet = null
+                    viewModel.onSheetClosed()
                 }
 
                 KanbanBoardEffect.ConfirmHaptic -> {
@@ -280,6 +284,9 @@ fun KanbanBoardScreen(
         sheet = null
         viewModel.onSheetClosed()
     }
+    val clearAllFilters: () -> Unit = {
+        viewModel.onClearAllFilters()
+    }
     val onTaskAction: (KanbanTaskDto, KanbanAction) -> Unit = { task, action ->
         if (action != KanbanAction.COPY_ID) viewModel.onSheetClosed()
         when (action) {
@@ -304,8 +311,14 @@ fun KanbanBoardScreen(
                 }
             }
 
-            KanbanAction.RESTORE -> sheet = KanbanSheet.Restore(task)
-            KanbanAction.REOPEN -> sheet = KanbanSheet.Reopen(task)
+            KanbanAction.RESTORE -> {
+                viewModel.onMoveSheetOpened(task.id)
+                sheet = KanbanSheet.Restore(task)
+            }
+            KanbanAction.REOPEN -> {
+                viewModel.onMoveSheetOpened(task.id)
+                sheet = KanbanSheet.Reopen(task)
+            }
             KanbanAction.COPY_ID -> {
                 if (task.id.isNotBlank()) {
                     clipboard.setText(AnnotatedString(task.id))
@@ -379,12 +392,16 @@ fun KanbanBoardScreen(
                             ),
                         )
                     } else {
-                        Column {
-                            Row(
-                                modifier = Modifier.clickable(enabled = !state.switching) {
+                        Column(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .heightIn(min = 48.dp)
+                                .clickable(enabled = !state.switching) {
                                     switcherOpen = true
                                     viewModel.onBoardsOpened()
                                 },
+                        ) {
+                            Row(
                                 verticalAlignment = Alignment.CenterVertically,
                                 horizontalArrangement = Arrangement.spacedBy(8.dp),
                             ) {
@@ -552,6 +569,16 @@ fun KanbanBoardScreen(
                 label = "kanban-content",
             ) { loading ->
                 when {
+                    state.sessionExpired -> KanbanBoardErrorState(
+                        error = KanbanBoardError(
+                            message = "Sign in again to reconnect to this server.",
+                            retryable = false,
+                            sessionExpired = true,
+                        ),
+                        onRetry = viewModel::onRetry,
+                        onOpenConnect = onOpenConnect,
+                    )
+
                     loading -> KanbanLoadingColumn()
 
                     state.error != null && state.columns.isEmpty() -> KanbanBoardErrorState(
@@ -584,6 +611,11 @@ fun KanbanBoardScreen(
                             if (state.switching) {
                                 LinearProgressIndicator(Modifier.fillMaxWidth())
                             }
+                            if (state.readOnly) {
+                                KanbanReadOnlyBanner(
+                                    Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
+                                )
+                            }
                             if (state.filters.isActive || state.query.isNotBlank()) {
                                 KanbanActiveFilters(
                                     filters = state.filters,
@@ -607,14 +639,7 @@ fun KanbanBoardScreen(
                                             viewModel.onSearchClosed()
                                         }
                                     },
-                                    onClearAll = {
-                                        if (searchOpen) {
-                                            viewModel.onQueryChange("")
-                                        } else {
-                                            viewModel.onSearchClosed()
-                                        }
-                                        viewModel.onApplyFilters(KanbanFilters())
-                                    },
+                                    onClearAll = clearAllFilters,
                                     modifier = Modifier.padding(vertical = 2.dp),
                                 )
                             }
@@ -696,7 +721,9 @@ fun KanbanBoardScreen(
                                                     },
                                                     onTaskAction = onTaskAction,
                                                     onCreateTask = if (
-                                                        onCreateTask != null && !state.readOnly
+                                                        onCreateTask != null &&
+                                                        !state.readOnly &&
+                                                        createStatus(column.name) == column.name
                                                     ) {
                                                         {
                                                             onCreateTask(
@@ -712,6 +739,8 @@ fun KanbanBoardScreen(
                                                     } else {
                                                         openDispatcher
                                                     },
+                                                    filtersActive = state.filters.isActive,
+                                                    onClearFilters = clearAllFilters,
                                                     onFabExpandedChange = { fabExpanded = it },
                                                     modifier = Modifier.fillMaxSize(),
                                                 )
@@ -749,7 +778,9 @@ fun KanbanBoardScreen(
                                             },
                                             onTaskAction = onTaskAction,
                                             onCreateTask = if (
-                                                onCreateTask != null && !state.readOnly
+                                                onCreateTask != null &&
+                                                !state.readOnly &&
+                                                createStatus(column.name) == column.name
                                             ) {
                                                 {
                                                     onCreateTask(
@@ -765,6 +796,8 @@ fun KanbanBoardScreen(
                                             } else {
                                                 openDispatcher
                                             },
+                                            filtersActive = state.filters.isActive,
+                                            onClearFilters = clearAllFilters,
                                             onFabExpandedChange = { fabExpanded = it },
                                             isActive = page == pagerState.currentPage,
                                             modifier = Modifier.fillMaxSize(),
@@ -814,11 +847,11 @@ fun KanbanBoardScreen(
         is KanbanSheet.Block -> KanbanBlockSheet(
             task = open.task,
             pending = open.task.id in state.pendingTaskIds,
+            serverError = state.sheetError
+                ?.takeIf { it.taskId == open.task.id }
+                ?.message,
             onDismiss = dismissSheet,
-            onBlock = { reason ->
-                dismissSheet()
-                viewModel.onBlock(open.task, reason)
-            },
+            onBlock = { reason -> viewModel.onBlock(open.task, reason) },
         )
 
         is KanbanSheet.Archive -> KanbanArchiveSheet(
@@ -833,6 +866,7 @@ fun KanbanBoardScreen(
 
         is KanbanSheet.Reopen -> KanbanReopenSheet(
             task = open.task,
+            parents = state.moveParents[open.task.id],
             onDismiss = dismissSheet,
             onReopen = { status ->
                 dismissSheet()
@@ -842,6 +876,7 @@ fun KanbanBoardScreen(
 
         is KanbanSheet.Restore -> KanbanRestoreSheet(
             task = open.task,
+            parents = state.moveParents[open.task.id],
             onDismiss = dismissSheet,
             onRestore = { status ->
                 dismissSheet()
@@ -1040,7 +1075,11 @@ private fun KanbanBoardErrorState(
         )
         Spacer(Modifier.height(14.dp))
         Text(
-            text = if (error.unsupported) "Update Hermes WebUI" else "Couldn't load the board",
+            text = when {
+                error.sessionExpired -> "Session expired"
+                error.unsupported -> "Update Hermes WebUI"
+                else -> "Couldn't load the board"
+            },
             style = MaterialTheme.typography.titleLarge,
             color = MaterialTheme.colorScheme.onSurface,
         )
@@ -1053,14 +1092,20 @@ private fun KanbanBoardErrorState(
         )
         Spacer(Modifier.height(20.dp))
         Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-            if (error.retryable) {
-                Button(onClick = onRetry) {
-                    Text("Retry")
+            if (error.sessionExpired) {
+                Button(onClick = onOpenConnect) {
+                    Text("Connect")
                 }
-            }
-            if (error.unsupported || !error.retryable) {
-                TextButton(onClick = onOpenConnect) {
-                    Text("Check server")
+            } else {
+                if (error.retryable) {
+                    Button(onClick = onRetry) {
+                        Text("Retry")
+                    }
+                }
+                if (error.unsupported || !error.retryable) {
+                    TextButton(onClick = onOpenConnect) {
+                        Text("Check server")
+                    }
                 }
             }
         }

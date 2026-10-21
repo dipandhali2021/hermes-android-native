@@ -421,6 +421,11 @@ A bottom sheet, not a drawer. It edits a **draft**; nothing reloads per chip.
   - `401`: stop, show session-expired handling (§9.3).
   - A 404 on the **board** endpoint: show the stale-client/setup state, not an
     endless reconnect.
+- **Approved v1 simplification (2026-10-21):** Task 11 currently goes directly
+  from SSE `Ended`/`Failed` to the 30 s polling fallback; the 2 s/5 s
+  `Reconnecting` retries and manual **Retry** banner above are not in v1. The
+  board remains usable and foreground-only. Treat the richer policy as the next
+  improvement, not as shipped behavior.
 - No notification or badge while backgrounded. On resume, the board may be stale
   for a moment; the subtitle says "Reconnecting" until the first load completes.
 

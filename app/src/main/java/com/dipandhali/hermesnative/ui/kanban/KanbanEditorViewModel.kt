@@ -9,7 +9,9 @@ import com.dipandhali.hermesnative.core.model.KanbanTaskDetailResponse
 import com.dipandhali.hermesnative.core.model.ProfileDto
 import com.dipandhali.hermesnative.core.net.ApiException
 import com.dipandhali.hermesnative.data.kanban.KanbanRepository
+import com.dipandhali.hermesnative.domain.kanban.KanbanBoardResult
 import com.dipandhali.hermesnative.domain.kanban.KanbanCreateRequest
+import com.dipandhali.hermesnative.domain.kanban.KanbanFilters
 import com.dipandhali.hermesnative.domain.kanban.KanbanOpen
 import com.dipandhali.hermesnative.domain.kanban.KanbanStatus
 import com.dipandhali.hermesnative.domain.kanban.KanbanTaskPatch
@@ -110,6 +112,18 @@ class KanbanEditorViewModel @Inject constructor(
                     historical = historical,
                     extraNames = listOfNotNull(task.assignee),
                 )
+                val tenants = LinkedHashSet<String>()
+                task.tenant?.takeIf { it.isNotBlank() }?.let { tenants += it }
+                if (boardSlug.isNotBlank()) {
+                    val boardResult = repository.board(
+                        boardSlug,
+                        KanbanFilters(),
+                        since = null,
+                    ).getOrNull()
+                    if (boardResult is KanbanBoardResult.Changed) {
+                        tenants += boardResult.board.tenants
+                    }
+                }
                 val next = KanbanEditorUiState(
                     mode = KanbanEditorMode.EDIT,
                     board = boardSlug,
@@ -121,7 +135,7 @@ class KanbanEditorViewModel @Inject constructor(
                     assignee = task.assignee?.takeIf { it.isNotBlank() },
                     assigneeOptions = options,
                     tenant = task.tenant.orEmpty(),
-                    tenants = listOfNotNull(task.tenant?.takeIf { it.isNotBlank() }),
+                    tenants = tenants.toList(),
                     priority = task.priority.toString(),
                     workspaceKind = sanitizeWorkspaceKind(task.workspaceKind),
                     workspacePath = task.workspacePath.orEmpty(),

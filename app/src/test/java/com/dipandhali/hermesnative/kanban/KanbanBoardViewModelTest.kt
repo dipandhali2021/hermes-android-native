@@ -769,4 +769,23 @@ class KanbanBoardViewModelTest {
         assertEquals(KanbanLiveState.OFF, vm.state.value.live)
         assertTrue(fake.activeEvents.isEmpty())
     }
+
+    @Test
+    fun `a 401 refresh switches the whole board to session expired`() = runTest(dispatcher) {
+        val fake = FakeKanbanRepository().apply {
+            openHandler = { Result.success(KanbanTestData.open()) }
+        }
+        val vm = viewModel(fake)
+        vm.onScreenStarted()
+        advanceUntilIdle()
+        fake.boardHandler = { _, _, _ ->
+            Result.failure(ApiException(DataError.Unauthorized))
+        }
+
+        vm.onRefresh()
+        advanceUntilIdle()
+
+        assertTrue(vm.state.value.sessionExpired)
+        assertEquals(KanbanLiveState.OFFLINE, vm.state.value.live)
+    }
 }

@@ -249,6 +249,27 @@ class KanbanBoardMutationsTest : KanbanBoardTestSupport() {
     }
 
     @Test
+    fun `block refusal stays inline on the sheet and keeps the reason`() = runTest(dispatcher) {
+        val task = task("t1", KanbanStatus.READY)
+        val fake = FakeKanbanRepository()
+        val vm = started(fake, board(column(KanbanStatus.READY, task)))
+        val effects = collectEffects(vm)
+        fake.blockHandler = { _, _, _ ->
+            Result.failure(ApiException(DataError.Server(409, "A worker owns this task.")))
+        }
+
+        vm.onBlock(task, "Waiting on a decision")
+        advanceUntilIdle()
+
+        assertEquals("A worker owns this task.", vm.state.value.sheetError?.message)
+        assertEquals(task.id, vm.state.value.sheetError?.taskId)
+        assertFalse(effects.any { it is KanbanBoardEffect.Snackbar })
+
+        vm.onSheetClosed()
+        assertNull(vm.state.value.sheetError)
+    }
+
+    @Test
     fun `archive success shows Undo and restores the previous todo status`() = runTest(dispatcher) {
         val task = task("t1", KanbanStatus.TODO)
         val fake = FakeKanbanRepository()
@@ -530,6 +551,51 @@ class KanbanBoardMutationsTest : KanbanBoardTestSupport() {
         }
 
     @Test
+    fun `reopen to ready is refused when a known parent is unfinished`() = runTest(dispatcher) {
+        val done = task("done", KanbanStatus.DONE, parentCount = 1)
+        val parent = task("p1", KanbanStatus.READY)
+        val fake = FakeKanbanRepository()
+        fake.cachedTaskMap = mapOf(parent.id to parent)
+        fake.taskHandler = { _, id ->
+            if (id == done.id) {
+                Result.success(
+                    KanbanTaskDetailResponse(
+                        task = done,
+                        links = KanbanLinksDto(parents = listOf(parent.id)),
+                    ),
+                )
+            } else {
+                Result.failure(ApiException(DataError.Server(500, "detail failed")))
+            }
+        }
+        val vm = started(
+            fake,
+            board(
+                column(KanbanStatus.DONE, done),
+                column(KanbanStatus.TODO),
+                column(KanbanStatus.READY),
+            ),
+        )
+        val effects = collectEffects(vm)
+        fake.updateHandler = { _, _, _ -> error("reopen must not bypass the parent gate") }
+
+        vm.onMoveSheetOpened(done.id)
+        advanceUntilIdle()
+        assertEquals(KanbanParents.Known(1), vm.state.value.moveParents[done.id])
+
+        vm.onReopen(done, KanbanStatus.READY)
+        advanceUntilIdle()
+
+        assertTrue(fake.updateCalls.isEmpty())
+        assertTrue(
+            effects.any {
+                it is KanbanBoardEffect.Snackbar &&
+                    it.text.contains("Waiting on 1 unfinished parent")
+            },
+        )
+    }
+
+    @Test
     fun `reopen and restore use the chosen status and returned task`() = runTest(dispatcher) {
         val done = task("done", KanbanStatus.DONE)
         val archived = task("archived", KanbanStatus.ARCHIVED)
@@ -614,6 +680,47 @@ class KanbanBoardMutationsTest : KanbanBoardTestSupport() {
             assertEquals(listOf(newTask.id), vm.state.value.columns.flatMap { it.tasks }.map { it.id })
             assertTrue(vm.state.value.pendingTaskIds.isEmpty())
         }
+
+    @Test
+    fun `a stale mutation is ignored after switching away and back`() = runTest(dispatcher) {
+        val oldTask = task("old", KanbanStatus.TODO)
+        val openA = board(column(KanbanStatus.TODO, oldTask), column(KanbanStatus.READY))
+        val openB = KanbanTestData.open(
+            slug = "B",
+            columns = listOf(column(KanbanStatus.READY, task("new", KanbanStatus.READY))),
+        )
+        val fake = FakeKanbanRepository()
+        fake.openHandler = { slug ->
+            when (slug) {
+                null, "default", "A" -> Result.success(openA)
+                "B" -> Result.success(openB)
+                else -> error("unexpected board $slug")
+            }
+        }
+        val vm = viewModel(fake)
+        vm.onScreenStarted()
+        advanceUntilIdle()
+        val gate = CompletableDeferred<Result<KanbanTaskDto>>()
+        fake.updateHandler = { _, _, _ -> gate.await() }
+
+        vm.onMove(oldTask.id, readyTarget())
+        runCurrent()
+        vm.onSwitchBoard("B")
+        advanceUntilIdle()
+        vm.onSwitchBoard("default")
+        advanceUntilIdle()
+
+        gate.complete(Result.success(oldTask.copy(status = KanbanStatus.READY)))
+        advanceUntilIdle()
+
+        assertEquals("default", vm.state.value.boardSlug)
+        assertTrue(
+            vm.state.value.columns.first { it.name == KanbanStatus.TODO }
+                .tasks.any { it.id == oldTask.id },
+        )
+        assertTrue(vm.state.value.columns.first { it.name == KanbanStatus.READY }.tasks.isEmpty())
+        assertTrue(vm.state.value.pendingTaskIds.isEmpty())
+    }
 
     @Test
     fun `a via sheet target is not handled as a direct move`() = runTest(dispatcher) {

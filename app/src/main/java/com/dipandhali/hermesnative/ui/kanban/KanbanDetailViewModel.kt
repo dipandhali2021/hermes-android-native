@@ -397,7 +397,7 @@ class KanbanDetailViewModel @Inject constructor(
             return
         }
 
-        _state.update { it.copy(pending = true) }
+        _state.update { it.copy(pending = true, completeError = null) }
         viewModelScope.launch {
             repository.updateTask(
                 slug,
@@ -405,7 +405,7 @@ class KanbanDetailViewModel @Inject constructor(
                 KanbanTaskPatch(status = KanbanStatus.DONE, result = finalResult),
             )
                 .onSuccess { returned ->
-                    _state.update { it.copy(pending = false) }
+                    _state.update { it.copy(pending = false, completeError = null) }
                     if (!applyReturned(returned)) {
                         clearUndo()
                         cancelLive()
@@ -413,12 +413,23 @@ class KanbanDetailViewModel @Inject constructor(
                         return@onSuccess
                     }
                     _effects.trySend(KanbanDetailEffect.ConfirmHaptic)
+                    _effects.trySend(KanbanDetailEffect.DismissSheet)
                     offerUndo("Task completed", KanbanUndo.Complete)
                     loadDetail()
                 }
                 .onFailure { error ->
-                    _state.update { it.copy(pending = false) }
-                    handleMutationFailure(error)
+                    val data = error.dataError()
+                    if (data is DataError.Unauthorized ||
+                        data is DataError.NotFound ||
+                        (data is DataError.Server && data.status == 404)
+                    ) {
+                        _state.update { it.copy(pending = false) }
+                        handleMutationFailure(error)
+                    } else {
+                        _state.update {
+                            it.copy(pending = false, completeError = data.userMessage())
+                        }
+                    }
                 }
         }
     }
@@ -438,11 +449,11 @@ class KanbanDetailViewModel @Inject constructor(
             )
             return
         }
-        _state.update { it.copy(pending = true) }
+        _state.update { it.copy(pending = true, blockError = null) }
         viewModelScope.launch {
             repository.blockTask(slug, taskId, reason)
                 .onSuccess { returned ->
-                    _state.update { it.copy(pending = false) }
+                    _state.update { it.copy(pending = false, blockError = null) }
                     if (!applyReturned(returned)) {
                         clearUndo()
                         cancelLive()
@@ -453,18 +464,33 @@ class KanbanDetailViewModel @Inject constructor(
                         it.copy(blockedReason = reason.takeIf { value -> value.isNotBlank() })
                     }
                     _effects.trySend(KanbanDetailEffect.ConfirmHaptic)
+                    _effects.trySend(KanbanDetailEffect.DismissSheet)
                     offerUndo("Task blocked", KanbanUndo.Block)
                     loadDetail()
                 }
                 .onFailure { error ->
-                    _state.update { it.copy(pending = false) }
-                    handleMutationFailure(error)
+                    val data = error.dataError()
+                    if (data is DataError.Unauthorized ||
+                        data is DataError.NotFound ||
+                        (data is DataError.Server && data.status == 404)
+                    ) {
+                        _state.update { it.copy(pending = false) }
+                        handleMutationFailure(error)
+                    } else {
+                        _state.update {
+                            it.copy(pending = false, blockError = data.userMessage())
+                        }
+                    }
                 }
         }
     }
 
     fun onBlock(task: KanbanTaskDto, reason: String) {
         if (task.id == taskId) onBlock(reason)
+    }
+
+    fun onSheetDismissed() {
+        _state.update { it.copy(completeError = null, blockError = null) }
     }
 
     fun onArchive() {
@@ -504,6 +530,18 @@ class KanbanDetailViewModel @Inject constructor(
     private fun transitionFromTerminal(status: String, copy: String) {
         val context = mutationContext() ?: return
         val (slug, _) = context
+        val parents = _state.value.parents
+        if (status == KanbanStatus.READY &&
+            parents is KanbanParents.Known &&
+            parents.unfinished > 0
+        ) {
+            _effects.trySend(
+                KanbanDetailEffect.Snackbar(
+                    "Waiting on ${parents.unfinished} unfinished parent task(s).",
+                ),
+            )
+            return
+        }
         _state.update { it.copy(pending = true) }
         viewModelScope.launch {
             repository.updateTask(slug, taskId, KanbanTaskPatch(status = status))

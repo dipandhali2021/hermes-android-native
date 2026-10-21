@@ -32,14 +32,14 @@ import com.dipandhali.hermesnative.domain.kanban.KanbanStatus
  */
 @Composable
 fun kanbanStatusColor(status: String): Color = when (status) {
-    KanbanStatus.TRIAGE -> MaterialTheme.colorScheme.tertiary
+    KanbanStatus.TRIAGE -> MaterialTheme.colorScheme.outline
     KanbanStatus.TODO -> MaterialTheme.colorScheme.secondary
-    KanbanStatus.SCHEDULED -> MaterialTheme.colorScheme.secondary
+    KanbanStatus.SCHEDULED -> MaterialTheme.colorScheme.tertiary
     KanbanStatus.READY -> MaterialTheme.colorScheme.primary
-    KanbanStatus.RUNNING -> MaterialTheme.colorScheme.tertiary
+    KanbanStatus.RUNNING -> MaterialTheme.colorScheme.primary
     KanbanStatus.BLOCKED -> MaterialTheme.colorScheme.error
-    KanbanStatus.DONE -> MaterialTheme.colorScheme.primary
-    KanbanStatus.ARCHIVED -> MaterialTheme.colorScheme.outline
+    KanbanStatus.DONE -> MaterialTheme.colorScheme.outline
+    KanbanStatus.ARCHIVED -> MaterialTheme.colorScheme.outlineVariant
     else -> MaterialTheme.colorScheme.outline
 }
 
@@ -83,10 +83,14 @@ fun KanbanStatusRail(
                         "${KanbanStatus.label(column.name)}, ${column.tasks.size} tasks"
                 },
                 leadingIcon = {
+                    val color = kanbanStatusColor(column.name)
                     Box(
                         Modifier
                             .size(8.dp)
-                            .background(kanbanStatusColor(column.name), CircleShape),
+                            .background(
+                                if (column.tasks.isEmpty()) color.copy(alpha = 0.38f) else color,
+                                CircleShape,
+                            ),
                     )
                 },
             )

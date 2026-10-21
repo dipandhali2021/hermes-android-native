@@ -34,6 +34,9 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.buildAnnotatedString
+import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
 import com.dipandhali.hermesnative.core.model.KanbanColumnDto
 import com.dipandhali.hermesnative.core.model.KanbanTaskDto
@@ -54,6 +57,8 @@ fun KanbanColumnPage(
     onTaskAction: (KanbanTaskDto, KanbanAction) -> Unit,
     onCreateTask: (() -> Unit)?,
     onRunDispatcher: (() -> Unit)?,
+    filtersActive: Boolean = false,
+    onClearFilters: (() -> Unit)? = null,
     modifier: Modifier = Modifier,
     onFabExpandedChange: ((Boolean) -> Unit)? = null,
     isActive: Boolean = true,
@@ -93,9 +98,14 @@ fun KanbanColumnPage(
         }
     }
 
-    val oldest = column.tasks
-        .mapNotNull { it.effectiveAge?.createdAgeSeconds }
-        .maxOrNull()
+    val oldestWaiting = if (column.name == KanbanStatus.READY) {
+        column.tasks
+            .mapNotNull { it.effectiveAge?.createdAgeSeconds }
+            .maxOrNull()
+            ?.takeIf { it >= 3_600 }
+    } else {
+        null
+    }
 
     Column(modifier = modifier.fillMaxSize()) {
         Column(
@@ -128,38 +138,39 @@ fun KanbanColumnPage(
             }
             KanbanStatus.description(column.name)?.let { description ->
                 Text(
-                    text = description,
+                    text = if (oldestWaiting != null) {
+                        buildAnnotatedString {
+                            append(description)
+                            append(" ")
+                            withStyle(
+                                SpanStyle(color = MaterialTheme.colorScheme.tertiary),
+                            ) {
+                                append("Oldest waiting ${KanbanFormat.compactAge(oldestWaiting)}")
+                            }
+                        }
+                    } else {
+                        androidx.compose.ui.text.AnnotatedString(description)
+                    },
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
-            if (oldest != null || (onRunDispatcher != null && column.name == KanbanStatus.READY)) {
+            if (onRunDispatcher != null && column.name == KanbanStatus.READY) {
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(8.dp),
                 ) {
-                    if (oldest != null) {
-                        Text(
-                            text = "Oldest ${KanbanFormat.compactAge(oldest)}",
-                            style = MaterialTheme.typography.labelSmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            modifier = Modifier.weight(1f),
+                    Spacer(Modifier.weight(1f))
+                    FilledTonalButton(
+                        onClick = onRunDispatcher,
+                        contentPadding = PaddingValues(horizontal = 12.dp),
+                    ) {
+                        Icon(
+                            imageVector = Icons.Rounded.PlayArrow,
+                            contentDescription = null,
+                            modifier = Modifier.size(18.dp),
                         )
-                    } else {
-                        Spacer(Modifier.weight(1f))
-                    }
-                    if (onRunDispatcher != null && column.name == KanbanStatus.READY) {
-                        FilledTonalButton(
-                            onClick = onRunDispatcher,
-                            contentPadding = PaddingValues(horizontal = 12.dp),
-                        ) {
-                            Icon(
-                                imageVector = Icons.Rounded.PlayArrow,
-                                contentDescription = null,
-                                modifier = Modifier.size(18.dp),
-                            )
-                            Text("Run", style = MaterialTheme.typography.labelSmall)
-                        }
+                        Text("Run", style = MaterialTheme.typography.labelSmall)
                     }
                 }
             }
@@ -201,20 +212,25 @@ fun KanbanColumnPage(
             }
             if (column.tasks.isEmpty()) {
                 item(key = "empty") {
+                    val filterEmpty = filtersActive && !searchActive
                     KanbanEmptyState(
-                        title = if (searchActive) {
-                            "No matches"
-                        } else {
-                            "No ${KanbanStatus.label(column.name).lowercase()} tasks"
+                        title = when {
+                            searchActive -> "No matches"
+                            filterEmpty -> "No tasks match"
+                            else -> "No ${KanbanStatus.label(column.name).lowercase()} tasks"
                         },
-                        body = if (searchActive) {
-                            "Try a different search."
-                        } else {
-                            KanbanStatus.description(column.name) ?: "Tasks will appear here."
+                        body = when {
+                            searchActive -> "Try a different search."
+                            filterEmpty -> "Clear the filters to see the board."
+                            else -> KanbanStatus.description(column.name) ?: "Tasks will appear here."
                         },
                         icon = Icons.Rounded.Inbox,
-                        actionLabel = if (!searchActive && onCreateTask != null) "Add task" else null,
-                        onAction = onCreateTask,
+                        actionLabel = when {
+                            filterEmpty && onClearFilters != null -> "Clear filters"
+                            !searchActive && onCreateTask != null -> "Add task"
+                            else -> null
+                        },
+                        onAction = if (filterEmpty) onClearFilters else onCreateTask,
                     )
                 }
             }

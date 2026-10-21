@@ -41,7 +41,7 @@ fun KanbanLiveBadge(
         KanbanLiveState.OFF -> MaterialTheme.colorScheme.outline
         KanbanLiveState.CONNECTING -> MaterialTheme.colorScheme.tertiary
         KanbanLiveState.LIVE -> MaterialTheme.colorScheme.primary
-        KanbanLiveState.POLLING -> MaterialTheme.colorScheme.secondary
+        KanbanLiveState.POLLING -> MaterialTheme.colorScheme.tertiary
         KanbanLiveState.OFFLINE -> MaterialTheme.colorScheme.error
     }
     val color by animateColorAsState(

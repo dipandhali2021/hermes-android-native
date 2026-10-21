@@ -2,6 +2,7 @@ package com.dipandhali.hermesnative.kanban
 
 import androidx.lifecycle.SavedStateHandle
 import com.dipandhali.hermesnative.domain.kanban.KanbanBoardResult
+import com.dipandhali.hermesnative.domain.kanban.KanbanFilters
 import com.dipandhali.hermesnative.domain.kanban.KanbanStatus
 import com.dipandhali.hermesnative.ui.kanban.KanbanBoardEffect
 import com.dipandhali.hermesnative.ui.kanban.KanbanSnackbarAction
@@ -126,6 +127,31 @@ class KanbanBoardCreatedResultTest : KanbanBoardTestSupport() {
             effects.single(),
         )
         assertTrue(fake.boardCalls.isNotEmpty())
+        assertNull(vm.state.value.highlightTaskId)
+    }
+
+    @Test
+    fun `created task hidden by active filters offers clear filters`() = runTest(dispatcher) {
+        val open = board(
+            column("todo"),
+            column("ready", task("t1", KanbanStatus.READY)),
+            filters = KanbanFilters(assignee = "someone-else"),
+        )
+        val fake = FakeKanbanRepository()
+        fake.openHandler = { Result.success(open) }
+        val vm = viewModel(fake, handle())
+        val effects = collectEffects(vm)
+
+        vm.onScreenStarted()
+        advanceUntilIdle()
+
+        assertEquals(
+            KanbanBoardEffect.Snackbar(
+                text = "Created — hidden by the current filters.",
+                action = KanbanSnackbarAction.CLEAR_FILTERS,
+            ),
+            effects.single(),
+        )
         assertNull(vm.state.value.highlightTaskId)
     }
 

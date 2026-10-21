@@ -142,6 +142,7 @@ class KanbanBoardViewModel @Inject constructor(
                     loading = true,
                     refreshing = false,
                     error = null,
+                    sessionExpired = false,
                     boardSlug = null,
                     columns = emptyList(),
                 )
@@ -157,7 +158,7 @@ class KanbanBoardViewModel @Inject constructor(
         if (initialJob?.isActive == true) return
 
         val generation = ++loadGeneration
-        _state.update { it.copy(loading = true, error = null) }
+        _state.update { it.copy(loading = true, error = null, sessionExpired = false) }
         initialJob = viewModelScope.launch {
             repository.openBoard(null)
                 .onSuccess { open ->
@@ -193,6 +194,7 @@ class KanbanBoardViewModel @Inject constructor(
                 .onSuccess { result ->
                     if (generation != loadGeneration) return@onSuccess
                     applyBoardResult(result)
+                    reconcileBoards()
                     _state.update { it.copy(refreshing = false) }
                 }
                 .onFailure { error ->
@@ -388,6 +390,13 @@ class KanbanBoardViewModel @Inject constructor(
         _state.update { it.copy(queryInput = "", query = "") }
     }
 
+    /** Clear search and every server-side filter in one step. */
+    fun onClearAllFilters() {
+        queryFlow.value = ""
+        _state.update { it.copy(queryInput = "", query = "") }
+        onApplyFilters(KanbanFilters())
+    }
+
     fun onFilterSheetOpened() {
         if (_state.value.assigneesLoading) return
         val slug = _state.value.boardSlug ?: return
@@ -506,7 +515,7 @@ class KanbanBoardViewModel @Inject constructor(
         if (taskId in _state.value.pendingTaskIds) return
 
         val snapshot = _state.value.columns
-        mutationGeneration += 1
+        val generation = mutationGeneration
         if (target.viaUnblock) {
             addPending(taskId)
         } else {
@@ -526,8 +535,8 @@ class KanbanBoardViewModel @Inject constructor(
             }
             result
                 .onSuccess { returned ->
+                    if (!mutationStillCurrent(slug, generation)) return@onSuccess
                     clearPending(taskId)
-                    if (!stillOn(slug)) return@onSuccess
                     placeTask(returned)
                     _effects.trySend(KanbanBoardEffect.ConfirmHaptic)
                     if (target.viaUnblock) {
@@ -537,8 +546,8 @@ class KanbanBoardViewModel @Inject constructor(
                     }
                 }
                 .onFailure { error ->
+                    if (!mutationStillCurrent(slug, generation)) return@onFailure
                     clearPending(taskId)
-                    if (!stillOn(slug)) return@onFailure
                     _state.update { it.copy(columns = snapshot) }
                     handleMutationFailure(error)
                 }
@@ -568,7 +577,7 @@ class KanbanBoardViewModel @Inject constructor(
             return
         }
 
-        mutationGeneration += 1
+        val generation = mutationGeneration
         addPending(task.id)
         _state.update { it.copy(sheetError = null) }
         viewModelScope.launch {
@@ -578,8 +587,8 @@ class KanbanBoardViewModel @Inject constructor(
                 KanbanTaskPatch(status = KanbanStatus.DONE, result = finalResult),
             )
                 .onSuccess { returned ->
+                    if (!mutationStillCurrent(slug, generation)) return@onSuccess
                     clearPending(task.id)
-                    if (!stillOn(slug)) return@onSuccess
                     _state.update { current ->
                         if (current.sheetError?.taskId == task.id) {
                             current.copy(sheetError = null)
@@ -592,8 +601,8 @@ class KanbanBoardViewModel @Inject constructor(
                     offerUndo(task.id, KanbanUndo.Complete, "Task completed")
                 }
                 .onFailure { error ->
+                    if (!mutationStillCurrent(slug, generation)) return@onFailure
                     clearPending(task.id)
-                    if (!stillOn(slug)) return@onFailure
                     val data = error.dataError()
                     if (data is DataError.Unauthorized ||
                         data is DataError.NotFound ||
@@ -630,21 +639,34 @@ class KanbanBoardViewModel @Inject constructor(
             return
         }
 
-        mutationGeneration += 1
+        val generation = mutationGeneration
         addPending(task.id)
+        _state.update { it.copy(sheetError = null) }
         viewModelScope.launch {
             repository.blockTask(slug, task.id, reason)
                 .onSuccess { returned ->
+                    if (!mutationStillCurrent(slug, generation)) return@onSuccess
                     clearPending(task.id)
-                    if (!stillOn(slug)) return@onSuccess
                     placeTask(returned)
                     _effects.trySend(KanbanBoardEffect.ConfirmHaptic)
+                    _effects.trySend(KanbanBoardEffect.DismissSheet)
                     offerUndo(task.id, KanbanUndo.Block, "Task blocked")
                 }
                 .onFailure { error ->
+                    if (!mutationStillCurrent(slug, generation)) return@onFailure
                     clearPending(task.id)
-                    if (!stillOn(slug)) return@onFailure
-                    handleMutationFailure(error)
+                    val data = error.dataError()
+                    if (data is DataError.Unauthorized) {
+                        stopForAuth()
+                    } else if (data is DataError.NotFound ||
+                        (data is DataError.Server && data.status == 404)
+                    ) {
+                        handleMutationFailure(error)
+                    } else {
+                        _state.update {
+                            it.copy(sheetError = KanbanSheetError(task.id, data.userMessage()))
+                        }
+                    }
                 }
         }
     }
@@ -655,7 +677,7 @@ class KanbanBoardViewModel @Inject constructor(
         if (task.status == KanbanStatus.ARCHIVED) return
 
         val snapshot = _state.value.columns
-        mutationGeneration += 1
+        val generation = mutationGeneration
         _state.update {
             it.copy(
                 columns = moveTaskInColumns(it.columns, task, KanbanStatus.ARCHIVED),
@@ -669,15 +691,15 @@ class KanbanBoardViewModel @Inject constructor(
                 KanbanTaskPatch(status = KanbanStatus.ARCHIVED),
             )
                 .onSuccess { returned ->
+                    if (!mutationStillCurrent(slug, generation)) return@onSuccess
                     clearPending(task.id)
-                    if (!stillOn(slug)) return@onSuccess
                     placeTask(returned)
                     _effects.trySend(KanbanBoardEffect.ConfirmHaptic)
                     offerUndo(task.id, KanbanUndo.Archive(task.status), "Task archived")
                 }
                 .onFailure { error ->
+                    if (!mutationStillCurrent(slug, generation)) return@onFailure
                     clearPending(task.id)
-                    if (!stillOn(slug)) return@onFailure
                     _state.update { it.copy(columns = snapshot) }
                     handleMutationFailure(error)
                 }
@@ -688,21 +710,21 @@ class KanbanBoardViewModel @Inject constructor(
         val slug = mutationSlug() ?: return
         if (task.id in _state.value.pendingTaskIds) return
 
-        mutationGeneration += 1
+        val generation = mutationGeneration
         addPending(task.id)
         viewModelScope.launch {
             repository.unblockTask(slug, task.id)
                 .onSuccess { returned ->
+                    if (!mutationStillCurrent(slug, generation)) return@onSuccess
                     clearPending(task.id)
-                    if (!stillOn(slug)) return@onSuccess
                     placeTask(returned)
                     clearUndo()
                     _effects.trySend(KanbanBoardEffect.ConfirmHaptic)
                     emitUnblockCopy(returned.status, resumed)
                 }
                 .onFailure { error ->
+                    if (!mutationStillCurrent(slug, generation)) return@onFailure
                     clearPending(task.id)
-                    if (!stillOn(slug)) return@onFailure
                     handleMutationFailure(error)
                 }
         }
@@ -719,21 +741,33 @@ class KanbanBoardViewModel @Inject constructor(
     private fun transitionFromTerminal(task: KanbanTaskDto, status: String, copy: String) {
         val slug = mutationSlug() ?: return
         if (task.id in _state.value.pendingTaskIds) return
-        mutationGeneration += 1
+        val parents = _state.value.moveParents[task.id]
+        if (status == KanbanStatus.READY &&
+            parents is KanbanParents.Known &&
+            parents.unfinished > 0
+        ) {
+            _effects.trySend(
+                KanbanBoardEffect.Snackbar(
+                    "Waiting on ${parents.unfinished} unfinished parent task(s).",
+                ),
+            )
+            return
+        }
+        val generation = mutationGeneration
         addPending(task.id)
         viewModelScope.launch {
             repository.updateTask(slug, task.id, KanbanTaskPatch(status = status))
                 .onSuccess { returned ->
+                    if (!mutationStillCurrent(slug, generation)) return@onSuccess
                     clearPending(task.id)
-                    if (!stillOn(slug)) return@onSuccess
                     placeTask(returned)
                     clearUndo()
                     _effects.trySend(KanbanBoardEffect.ConfirmHaptic)
                     _effects.trySend(KanbanBoardEffect.Snackbar(copy))
                 }
                 .onFailure { error ->
+                    if (!mutationStillCurrent(slug, generation)) return@onFailure
                     clearPending(task.id)
-                    if (!stillOn(slug)) return@onFailure
                     handleMutationFailure(error)
                 }
         }
@@ -747,7 +781,7 @@ class KanbanBoardViewModel @Inject constructor(
 
         lastUndo = null
         lastUndoTaskId = null
-        mutationGeneration += 1
+        val generation = mutationGeneration
         addPending(taskId)
         viewModelScope.launch {
             val result = when (undo) {
@@ -772,14 +806,14 @@ class KanbanBoardViewModel @Inject constructor(
             }
             result
                 .onSuccess { returned ->
+                    if (!mutationStillCurrent(slug, generation)) return@onSuccess
                     clearPending(taskId)
-                    if (!stillOn(slug)) return@onSuccess
                     placeTask(returned)
                     _effects.trySend(KanbanBoardEffect.ConfirmHaptic)
                 }
                 .onFailure { error ->
+                    if (!mutationStillCurrent(slug, generation)) return@onFailure
                     clearPending(taskId)
-                    if (!stillOn(slug)) return@onFailure
                     handleMutationFailure(error)
                 }
         }
@@ -788,10 +822,11 @@ class KanbanBoardViewModel @Inject constructor(
     fun onMoveSheetOpened(taskId: String) {
         if (_state.value.moveParents.containsKey(taskId)) return
         val slug = _state.value.boardSlug ?: return
+        val generation = mutationGeneration
         viewModelScope.launch {
             repository.task(slug, taskId)
                 .onSuccess { detail ->
-                    if (!stillOn(slug)) return@onSuccess
+                    if (!mutationStillCurrent(slug, generation)) return@onSuccess
                     val parentIds = detail.links.parents
                     val cache = repository.cachedTasks(slug)
                     val parents = when {
@@ -809,7 +844,7 @@ class KanbanBoardViewModel @Inject constructor(
                     }
                 }
                 .onFailure {
-                    if (!stillOn(slug)) return@onFailure
+                    if (!mutationStillCurrent(slug, generation)) return@onFailure
                     val count = _state.value.columns
                         .asSequence()
                         .flatMap { it.tasks.asSequence() }
@@ -837,15 +872,16 @@ class KanbanBoardViewModel @Inject constructor(
             return
         }
         val slug = mutationSlug() ?: return
+        val generation = mutationGeneration
         _state.update { it.copy(dispatcher = KanbanDispatcherState.Loading(dryRun = true)) }
         dispatcherJob = viewModelScope.launch {
             repository.dispatch(slug, dryRun = true, max = DISPATCH_MAX)
                 .onSuccess { json ->
-                    if (!stillOn(slug)) return@onSuccess
+                    if (!mutationStillCurrent(slug, generation)) return@onSuccess
                     _state.update { it.copy(dispatcher = previewState(json)) }
                 }
                 .onFailure { error ->
-                    if (!stillOn(slug)) return@onFailure
+                    if (!mutationStillCurrent(slug, generation)) return@onFailure
                     _state.update { it.copy(dispatcher = KanbanDispatcherState.Failed(dispatcherMessage(error))) }
                 }
         }
@@ -853,6 +889,7 @@ class KanbanBoardViewModel @Inject constructor(
 
     fun onDispatcherRun() {
         val slug = mutationSlug() ?: return
+        val generation = mutationGeneration
         val current = _state.value.dispatcher
         if (current is KanbanDispatcherState.Running || current is KanbanDispatcherState.Loading) {
             return
@@ -861,12 +898,12 @@ class KanbanBoardViewModel @Inject constructor(
         dispatcherJob = viewModelScope.launch {
             repository.dispatch(slug, dryRun = false, max = DISPATCH_MAX)
                 .onSuccess { json ->
-                    if (!stillOn(slug)) return@onSuccess
+                    if (!mutationStillCurrent(slug, generation)) return@onSuccess
                     _state.update { it.copy(dispatcher = resultState(json)) }
                     onRefresh()
                 }
                 .onFailure { error ->
-                    if (!stillOn(slug)) return@onFailure
+                    if (!mutationStillCurrent(slug, generation)) return@onFailure
                     _state.update { it.copy(dispatcher = KanbanDispatcherState.Failed(dispatcherMessage(error))) }
                 }
         }
@@ -932,7 +969,10 @@ class KanbanBoardViewModel @Inject constructor(
 
     private fun placeTask(task: KanbanTaskDto) {
         _state.update { state ->
-            state.copy(columns = moveTaskInColumns(state.columns, task, task.status))
+            state.copy(
+                columns = moveTaskInColumns(state.columns, task, task.status),
+                moveParents = emptyMap(),
+            )
         }
     }
 
@@ -988,8 +1028,7 @@ class KanbanBoardViewModel @Inject constructor(
     private fun handleMutationFailure(error: Throwable) {
         val data = error.dataError()
         when {
-            data is DataError.Unauthorized ->
-                _effects.trySend(KanbanBoardEffect.SessionExpired)
+            data is DataError.Unauthorized -> stopForAuth()
 
             data is DataError.NotFound ||
                 (data is DataError.Server && data.status == 404) -> {
@@ -1006,6 +1045,9 @@ class KanbanBoardViewModel @Inject constructor(
     }
 
     private fun stillOn(slug: String): Boolean = _state.value.boardSlug == slug
+
+    private fun mutationStillCurrent(slug: String, generation: Int): Boolean =
+        generation == mutationGeneration && stillOn(slug)
 
     private fun startLive() {
         if (!foreground) return
@@ -1159,7 +1201,7 @@ class KanbanBoardViewModel @Inject constructor(
         pendingCreatedTaskId = null
         reloadJob?.cancel()
         reloadJob = null
-        _state.update { it.copy(live = KanbanLiveState.OFFLINE) }
+        _state.update { it.copy(live = KanbanLiveState.OFFLINE, sessionExpired = true) }
         _effects.trySend(KanbanBoardEffect.SessionExpired)
     }
 
@@ -1171,6 +1213,7 @@ class KanbanBoardViewModel @Inject constructor(
         )
         selectedByBoard[open.current] = selected
         if (resetSearch) queryFlow.value = ""
+        mutationGeneration += 1
         lastUndo = null
         lastUndoTaskId = null
         val options = optionsFor(
@@ -1206,6 +1249,7 @@ class KanbanBoardViewModel @Inject constructor(
                 highlightTaskId = null,
                 dispatcher = KanbanDispatcherState.Idle,
                 error = null,
+                sessionExpired = false,
                 switchError = null,
             )
         }
@@ -1263,8 +1307,13 @@ class KanbanBoardViewModel @Inject constructor(
         }
 
         val fallback = result.unreadable || taskId == null
+        val hiddenByFilters = taskId != null && _state.value.filters.isActive &&
+            _state.value.columns.none { column ->
+                column.tasks.any { it.id == taskId }
+            }
         val text = when {
             fallback -> "Task created — refreshing the board."
+            hiddenByFilters -> "Created — hidden by the current filters."
             !result.followUpError.isNullOrBlank() ->
                 "Created in Triage — moving to Todo failed."
             result.requestedStatus == KanbanStatus.READY &&
@@ -1272,8 +1321,12 @@ class KanbanBoardViewModel @Inject constructor(
                 "Created in Todo — waiting on its parents."
             else -> "Task created."
         }
-        val action = if (fallback) null else KanbanSnackbarAction.VIEW_CREATED
-        pendingCreatedTaskId = if (action != null) taskId else null
+        val action = when {
+            fallback -> null
+            hiddenByFilters -> KanbanSnackbarAction.CLEAR_FILTERS
+            else -> KanbanSnackbarAction.VIEW_CREATED
+        }
+        pendingCreatedTaskId = if (action == KanbanSnackbarAction.VIEW_CREATED) taskId else null
         _effects.trySend(KanbanBoardEffect.Snackbar(text, action))
         if (fallback) onRefresh()
     }
@@ -1298,6 +1351,7 @@ class KanbanBoardViewModel @Inject constructor(
                         lastEventId = board.latestEventId,
                         readOnly = board.readOnly || (it.config?.readOnly ?: false),
                         filterOptions = options,
+                        moveParents = emptyMap(),
                     )
                 }
             }
@@ -1347,6 +1401,7 @@ class KanbanBoardViewModel @Inject constructor(
             data is DataError.Unauthorized -> KanbanBoardError(
                 message = data.userMessage(),
                 retryable = false,
+                sessionExpired = true,
             )
 
             data is DataError.NotFound ||
@@ -1376,6 +1431,7 @@ class KanbanBoardViewModel @Inject constructor(
 
     private fun maybeSessionExpired(error: Throwable) {
         if (error.dataError() is DataError.Unauthorized) {
+            _state.update { it.copy(sessionExpired = true) }
             _effects.trySend(KanbanBoardEffect.SessionExpired)
         }
     }

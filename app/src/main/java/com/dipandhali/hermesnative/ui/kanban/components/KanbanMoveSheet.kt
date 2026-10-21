@@ -25,6 +25,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -189,11 +190,13 @@ fun KanbanMoveSheet(
 @Composable
 fun KanbanReopenSheet(
     task: KanbanTaskDto,
+    parents: KanbanParents?,
     onDismiss: () -> Unit,
     onReopen: (String) -> Unit,
 ) {
     KanbanTerminalSheet(
         task = task,
+        parents = parents,
         title = "Reopen task",
         helper = "Reopening keeps the existing result as history.",
         primaryLabel = "Reopen",
@@ -205,11 +208,13 @@ fun KanbanReopenSheet(
 @Composable
 fun KanbanRestoreSheet(
     task: KanbanTaskDto,
+    parents: KanbanParents?,
     onDismiss: () -> Unit,
     onRestore: (String) -> Unit,
 ) {
     KanbanTerminalSheet(
         task = task,
+        parents = parents,
         title = "Restore task",
         helper = "Choose where the restored task should live.",
         primaryLabel = "Restore",
@@ -221,18 +226,32 @@ fun KanbanRestoreSheet(
 @Composable
 private fun KanbanTerminalSheet(
     task: KanbanTaskDto,
+    parents: KanbanParents?,
     title: String,
     helper: String,
     primaryLabel: String,
     onDismiss: () -> Unit,
     onSelected: (String) -> Unit,
 ) {
-    var selected by rememberSaveable(task.id) { mutableStateOf(KanbanStatus.READY) }
-    val options = listOf(KanbanStatus.TRIAGE, KanbanStatus.TODO, KanbanStatus.READY)
-    val consequences = KanbanTransitions.moveTargets(
+    val checkingDependencies = parents == null
+    val options = KanbanTransitions.moveTargets(
         from = task.status,
-        parents = KanbanParents.None,
-    ).associate { it.status to it.consequence }
+        parents = parents ?: KanbanParents.Unknown(0),
+    ).filter { it.status == KanbanStatus.TRIAGE || it.status == KanbanStatus.TODO || it.status == KanbanStatus.READY }
+    val readyTarget = options.firstOrNull { it.status == KanbanStatus.READY }
+    val defaultSelection = if (!checkingDependencies && readyTarget?.enabled == true) {
+        KanbanStatus.READY
+    } else {
+        KanbanStatus.TODO
+    }
+    var selected by rememberSaveable(task.id) { mutableStateOf(defaultSelection) }
+
+    LaunchedEffect(parents, options) {
+        val current = options.firstOrNull { it.status == selected }
+        if (current == null || !current.enabled || (checkingDependencies && selected == KanbanStatus.READY)) {
+            selected = options.firstOrNull { it.enabled }?.status ?: KanbanStatus.TODO
+        }
+    }
 
     KanbanSheetFrame(
         title = title,
@@ -244,22 +263,47 @@ private fun KanbanTerminalSheet(
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
+        if (checkingDependencies) {
+            Spacer(Modifier.height(8.dp))
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                CircularProgressIndicator(
+                    modifier = Modifier.size(16.dp),
+                    strokeWidth = 2.dp,
+                )
+                Text(
+                    text = "Checking dependencies…",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+        }
         Spacer(Modifier.height(8.dp))
-        options.forEach { status ->
+        options.forEach { target ->
+            val enabled = target.enabled && !(checkingDependencies && target.status == KanbanStatus.READY)
+            val disabledReason = if (checkingDependencies && target.status == KanbanStatus.READY) {
+                "Checking dependencies…"
+            } else {
+                target.disabledReason
+            }
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
                     .selectable(
-                        selected = selected == status,
-                        onClick = { selected = status },
+                        selected = selected == target.status,
+                        enabled = enabled,
+                        onClick = { selected = target.status },
                         role = Role.RadioButton,
                     )
                     .padding(vertical = 8.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 RadioButton(
-                    selected = selected == status,
+                    selected = selected == target.status,
                     onClick = null,
+                    enabled = enabled,
                 )
                 Column(
                     modifier = Modifier
@@ -267,15 +311,24 @@ private fun KanbanTerminalSheet(
                         .padding(start = 10.dp),
                 ) {
                     Text(
-                        text = KanbanStatus.label(status),
+                        text = KanbanStatus.label(target.status),
                         style = MaterialTheme.typography.titleSmall,
-                        color = MaterialTheme.colorScheme.onSurface,
+                        color = if (enabled) {
+                            MaterialTheme.colorScheme.onSurface
+                        } else {
+                            MaterialTheme.colorScheme.onSurfaceVariant
+                        },
                     )
-                    consequences[status]?.let { consequence ->
+                    Text(
+                        text = target.consequence,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                    disabledReason?.let { reason ->
                         Text(
-                            text = consequence,
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            text = reason,
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.error,
                         )
                     }
                 }
@@ -284,6 +337,8 @@ private fun KanbanTerminalSheet(
         Spacer(Modifier.height(10.dp))
         Button(
             onClick = { onSelected(selected) },
+            enabled = options.firstOrNull { it.status == selected }?.enabled == true &&
+                !(checkingDependencies && selected == KanbanStatus.READY),
             modifier = Modifier
                 .fillMaxWidth()
                 .heightIn(min = 48.dp),

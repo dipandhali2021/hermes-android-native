@@ -10,6 +10,7 @@ import com.dipandhali.hermesnative.core.model.KanbanTaskDto
 import com.dipandhali.hermesnative.core.model.ProfileDto
 import com.dipandhali.hermesnative.core.model.WorkspaceDto
 import com.dipandhali.hermesnative.core.net.ApiException
+import com.dipandhali.hermesnative.domain.kanban.KanbanBoardResult
 import com.dipandhali.hermesnative.domain.kanban.KanbanCreateOutcome
 import com.dipandhali.hermesnative.domain.kanban.KanbanStatus
 import com.dipandhali.hermesnative.ui.kanban.KanbanEditorEffect
@@ -100,6 +101,13 @@ class KanbanEditorViewModelTest {
             )
         }
         assigneesHandler = { Result.success(listOf("default", "Bob")) }
+        boardHandler = { _, _, _ ->
+            Result.success(
+                KanbanBoardResult.Changed(
+                    KanbanTestData.open(tenants = listOf("acme", "other")).board,
+                ),
+            )
+        }
         profilesHandler = {
             Result.success(
                 listOf(
@@ -348,6 +356,7 @@ class KanbanEditorViewModelTest {
             assertEquals("2", loaded.priority)
             assertEquals("Alice", loaded.assignee)
             assertEquals("acme", loaded.tenant)
+            assertEquals(listOf("acme", "other"), loaded.tenants)
             assertEquals("worktree", loaded.workspaceKind)
             assertEquals("/tmp/work", loaded.workspacePath)
             assertEquals(listOf("kotlin"), loaded.skills)

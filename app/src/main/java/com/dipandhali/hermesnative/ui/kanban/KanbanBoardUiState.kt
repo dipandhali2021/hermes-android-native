@@ -12,6 +12,7 @@ data class KanbanBoardError(
     val message: String,
     val retryable: Boolean = true,
     val unsupported: Boolean = false,
+    val sessionExpired: Boolean = false,
 )
 
 /** An inline refusal owned by an action sheet, not a transient snackbar. */
@@ -49,6 +50,7 @@ data class KanbanBoardUiState(
     val lastEventId: Long = 0,
     val readOnly: Boolean = false,
     val live: KanbanLiveState = KanbanLiveState.OFF,
+    val sessionExpired: Boolean = false,
     val error: KanbanBoardError? = null,
     val switchError: String? = null,
     val pendingTaskIds: Set<String> = emptySet(),
@@ -77,11 +79,13 @@ sealed interface KanbanBoardEffect {
     data object SessionExpired : KanbanBoardEffect
     data class OpenTask(val taskId: String) : KanbanBoardEffect
     data object ConfirmHaptic : KanbanBoardEffect
+    data object DismissSheet : KanbanBoardEffect
 }
 
 sealed interface KanbanSnackbarAction {
     data object UNDO : KanbanSnackbarAction
     data object VIEW_CREATED : KanbanSnackbarAction
+    data object CLEAR_FILTERS : KanbanSnackbarAction
 }
 
 sealed interface KanbanUndo {

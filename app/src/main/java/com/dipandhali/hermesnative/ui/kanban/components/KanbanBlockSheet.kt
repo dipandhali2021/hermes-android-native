@@ -26,6 +26,7 @@ import com.dipandhali.hermesnative.domain.kanban.KanbanStatus
 fun KanbanBlockSheet(
     task: KanbanTaskDto,
     pending: Boolean,
+    serverError: String? = null,
     onDismiss: () -> Unit,
     onBlock: (String) -> Unit,
 ) {
@@ -46,7 +47,17 @@ fun KanbanBlockSheet(
             minLines = 2,
             maxLines = 5,
             enabled = !pending,
+            isError = serverError != null,
         )
+
+        serverError?.let { message ->
+            Spacer(Modifier.height(8.dp))
+            Text(
+                text = message,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.error,
+            )
+        }
 
         if (task.status == KanbanStatus.RUNNING) {
             Spacer(Modifier.height(10.dp))

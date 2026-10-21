@@ -46,6 +46,8 @@ data class KanbanDetailUiState(
     val live: KanbanLiveState = KanbanLiveState.OFF,
     val error: KanbanDetailError? = null,
     val pending: Boolean = false,
+    val completeError: String? = null,
+    val blockError: String? = null,
     val commentDraft: String = "",
     val sendingComment: Boolean = false,
     val activeAuthor: String = "android",
@@ -62,5 +64,6 @@ sealed interface KanbanDetailEffect {
     data object SessionExpired : KanbanDetailEffect
     data object Gone : KanbanDetailEffect
     data object Back : KanbanDetailEffect
+    data object DismissSheet : KanbanDetailEffect
     data object ConfirmHaptic : KanbanDetailEffect
 }

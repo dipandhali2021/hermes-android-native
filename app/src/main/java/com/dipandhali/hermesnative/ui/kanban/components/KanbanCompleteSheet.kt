@@ -30,6 +30,7 @@ fun KanbanCompleteSheet(
     pending: Boolean,
     serverError: String?,
     onDismiss: () -> Unit,
+    onRefresh: (() -> Unit)? = null,
     onComplete: (String) -> Unit,
 ) {
     var result by rememberSaveable(task.id) {
@@ -85,6 +86,15 @@ fun KanbanCompleteSheet(
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.error,
             )
+            if (onRefresh != null) {
+                TextButton(
+                    onClick = onRefresh,
+                    enabled = !pending,
+                    modifier = Modifier.heightIn(min = 48.dp),
+                ) {
+                    Text("Refresh task")
+                }
+            }
         }
 
         Spacer(Modifier.height(16.dp))

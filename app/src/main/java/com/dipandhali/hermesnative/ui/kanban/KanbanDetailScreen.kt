@@ -109,6 +109,7 @@ import com.dipandhali.hermesnative.ui.kanban.components.KanbanCompleteSheet
 import com.dipandhali.hermesnative.ui.kanban.components.KanbanDependencyChip
 import com.dipandhali.hermesnative.ui.kanban.components.KanbanDetailHero
 import com.dipandhali.hermesnative.ui.kanban.components.KanbanMoveSheet
+import com.dipandhali.hermesnative.ui.kanban.components.KanbanReadOnlyBanner
 import com.dipandhali.hermesnative.ui.kanban.components.KanbanReopenSheet
 import com.dipandhali.hermesnative.ui.kanban.components.KanbanRunsTab
 import com.dipandhali.hermesnative.ui.kanban.components.KanbanRestoreSheet
@@ -204,6 +205,7 @@ fun KanbanDetailScreen(
                     val actionLabel = when (effect.action) {
                         KanbanSnackbarAction.UNDO -> "Undo"
                         KanbanSnackbarAction.VIEW_CREATED -> "View"
+                        KanbanSnackbarAction.CLEAR_FILTERS -> "Clear filters"
                         null -> null
                     }
                     val result = snackbarHostState.showSnackbar(
@@ -233,6 +235,10 @@ fun KanbanDetailScreen(
                     gone = true
                     sheet = null
                     viewModel.onPickerDismissed()
+                }
+
+                KanbanDetailEffect.DismissSheet -> {
+                    sheet = null
                 }
 
                 KanbanDetailEffect.Back -> onBack()
@@ -499,7 +505,7 @@ fun KanbanDetailScreen(
                         0 -> {
                             if (state.readOnly) {
                                 item(key = "read-only") {
-                                    ReadOnlyBanner(
+                                    KanbanReadOnlyBanner(
                                         Modifier.padding(horizontal = 20.dp, vertical = 8.dp),
                                     )
                                 }
@@ -673,19 +679,24 @@ fun KanbanDetailScreen(
                 task = openTask,
                 parents = state.parents,
                 pending = state.pending,
-                serverError = null,
-                onDismiss = { sheet = null },
+                serverError = state.completeError,
+                onDismiss = {
+                    sheet = null
+                    viewModel.onSheetDismissed()
+                },
+                onRefresh = viewModel::onRefresh,
                 onComplete = { result -> viewModel.onComplete(result) },
             )
 
             DetailSheet.Block -> KanbanBlockSheet(
                 task = openTask,
                 pending = state.pending,
-                onDismiss = { sheet = null },
-                onBlock = { reason ->
+                serverError = state.blockError,
+                onDismiss = {
                     sheet = null
-                    viewModel.onBlock(reason)
+                    viewModel.onSheetDismissed()
                 },
+                onBlock = { reason -> viewModel.onBlock(reason) },
             )
 
             DetailSheet.Archive -> KanbanArchiveSheet(
@@ -700,6 +711,7 @@ fun KanbanDetailScreen(
 
             DetailSheet.Reopen -> KanbanReopenSheet(
                 task = openTask,
+                parents = state.parents,
                 onDismiss = { sheet = null },
                 onReopen = { status ->
                     sheet = null
@@ -709,6 +721,7 @@ fun KanbanDetailScreen(
 
             DetailSheet.Restore -> KanbanRestoreSheet(
                 task = openTask,
+                parents = state.parents,
                 onDismiss = { sheet = null },
                 onRestore = { status ->
                     sheet = null
@@ -740,33 +753,6 @@ fun KanbanDetailScreen(
 }
 
 private enum class DetailSheet { Move, Complete, Block, Archive, Reopen, Restore }
-
-@Composable
-private fun ReadOnlyBanner(modifier: Modifier = Modifier) {
-    Surface(
-        modifier = modifier.fillMaxWidth(),
-        shape = MaterialTheme.shapes.medium,
-        color = MaterialTheme.colorScheme.surfaceContainerHighest,
-    ) {
-        Row(
-            modifier = Modifier.padding(12.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(10.dp),
-        ) {
-            Icon(
-                imageVector = Icons.Rounded.Lock,
-                contentDescription = null,
-                modifier = Modifier.size(18.dp),
-                tint = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-            Text(
-                text = "This board is read-only.",
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-        }
-    }
-}
 
 @Composable
 private fun BlockedCallout(
