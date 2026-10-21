@@ -14,11 +14,11 @@ board switching/create/settings/archive, the dispatcher preview/run sheet, and
 help. It uses the existing WebUI `/api/kanban/*` bridge and the `hermes_session`
 cookie; there are no backend changes.
 
-Local unit suite: **428 tests, 0 failures**. `:app:assembleDebug` is green.
-CI run for the functional head `87df93a`:
-[39574231251](https://github.com/dipandhali2021/hermes-android-native/actions/runs/39574231251)
-— **success** (unit tests 428/0, debug APK built and uploaded). The APK
-checksum is `6ac507334e03ac47d16e63f8fdbd58c6`.
+Local unit suite: **434 tests, 0 failures**. `:app:assembleDebug` is green.
+CI run for the functional head `67a2b7b`:
+[39585583352](https://github.com/dipandhali2021/hermes-android-native/actions/runs/39585583352)
+— **success** (unit tests 434/0, debug APK built and uploaded). The APK
+checksum is `d3230eaebafe248d17ab33e24f8282b3`.
 
 **No device pass has been run.** There is no `adb`, emulator, or attached
 Android device in this environment. Treat the UI as "implemented, unit-tested
@@ -30,7 +30,7 @@ and CI-built", not "device-verified".
 |---|---|
 | Branch | `feat/kanban` |
 | Base | `dc350de` (`test/model-picker-home-send` docs head) |
-| Functional head | `87df93a` `kanban: expressive motion, responsive layout and accessibility` |
+| Functional head | `67a2b7b` `kanban: close acceptance review gaps` |
 | Task 26 docs commit | this handoff/README/spec update |
 | Commit range | `dc350de..feat/kanban` |
 
@@ -57,6 +57,16 @@ steps.
   retry; dependency add/remove; copy ID; edit/read-only handling; status-aware
   action row; archive waits for the server and pops.
 
+**Review hardening**
+- Reopen/Restore no longer bypass the dependency gate for Ready; the sheet and
+  both ViewModels refuse a known unfinished-parent move.
+- A board 401 replaces the workspace with a full-screen session-expired state
+  and a Connect action.
+- Complete/Block refusals keep the sheet open with the server message; Complete
+  offers **Refresh task**.
+- Stale mutation responses are ignored after switching A → B → A, and created
+  tasks hidden by active filters offer **Clear filters**.
+
 **Dispatcher and help**
 - Automatic dry-run preview when the sheet opens, nonzero buckets rendered from
   the returned `JsonObject` (unknown buckets included), row details, lock and
@@ -80,7 +90,7 @@ steps.
 ```
 ./gradlew :app:testDebugUnitTest :app:assembleDebug
 BUILD SUCCESSFUL
-tests=428 failures=0 errors=0 skipped=0
+tests=434 failures=0 errors=0 skipped=0
 ```
 
 - `:app:lintDebug` has **no new Kanban findings**. It still fails only on the
@@ -93,13 +103,15 @@ tests=428 failures=0 errors=0 skipped=0
 
 | Branch head | Run | Result |
 |---|---|---|
-| `87df93a` (functional) | [39574231251](https://github.com/dipandhali2021/hermes-android-native/actions/runs/39574231251) | **success**; 428/0 tests; APK uploaded |
-| Task 26 docs commit | generated after this file is committed | docs-only follow-up; app tree unchanged |
+| `67a2b7b` (functional) | [39585583352](https://github.com/dipandhali2021/hermes-android-native/actions/runs/39585583352) | **success**; 434/0 tests; APK uploaded |
+| `2edc288` (Task 26 docs) | [39575494979](https://github.com/dipandhali2021/hermes-android-native/actions/runs/39575494979) | **success**; docs-only |
+| `87df93a` (previous functional) | [39574231251](https://github.com/dipandhali2021/hermes-android-native/actions/runs/39574231251) | **success**; 428/0 tests; APK uploaded |
+| This handoff docs commit | generated after this file is committed | docs-only follow-up; app tree unchanged |
 
-APK artifact: `hermes-native-debug-apk/app-debug.apk`, 23,311,235 bytes,
-md5 `6ac507334e03ac47d16e63f8fdbd58c6`. Test artifact: `test-reports`
-(`428 tests, 0 failures`). Both are attached to the run above; GitHub artifact
-retention applies.
+APK artifact: `hermes-native-debug-apk/app-debug.apk`, 22,706,604 bytes,
+md5 `d3230eaebafe248d17ab33e24f8282b3`. Test artifact: `test-reports`
+(`434 tests, 0 failures`). Both are attached to run `39585583352`; GitHub
+artifact retention applies.
 
 The workflow is `.github/workflows/android.yml`: unit tests, debug APK,
 checksum and artifact upload. Do not claim a CI success that is not linked
@@ -137,7 +149,8 @@ static inspection. It is not a substitute for the device pass.
 | Dispatcher preview/run, nonzero buckets, lock/memory copy, refresh | Verified (tests) |
 | Filters draft/failed-apply revert | Verified (tests) |
 | Board switch/create/settings/archive edge cases | Verified (tests) |
-| Live SSE, background stop, polling fallback, read-only | Verified (code+tests) |
+| Acceptance review: dependency gate, 401 screen, inline refusals, stale mutations | Verified (tests) |
+| Live SSE, background stop, polling fallback, read-only | Verified (code+tests); direct polling fallback, no reconnect retries (deviation below) |
 | Error/empty/filter-empty states with a next action | Verified (code+tests) |
 | Colours/motion tokens only | Verified (static) |
 | ≥48 dp targets, status not colour-only, semantics, 200% font | Reviewed in code; **device pending** |
@@ -156,13 +169,23 @@ static inspection. It is not a substitute for the device pass.
   had a "How this board works" row; the ledger records the ruling.
 - On expanded widths the board is a horizontally scrolling row of fixed 360 dp
   columns (spec §10.1), not a separate two-page pager.
+- **Live recovery is polling-only in v1.** SSE failures go directly to the 30 s
+  polling fallback; the design's 2 s/5 s `Reconnecting` retries and manual
+  **Retry** banner are not implemented. This follows the approved Task 11 plan
+  and is recorded in spec §4.9 as a v1 simplification, not shipped behavior.
+- **Reopen/Restore Ready is dependency-gated.** The acceptance review found the
+  plan's Task 13 wording allowed a direct `status=ready` write. The code and
+  plan now require resolved parents and disable/refuse Ready when a parent is
+  unfinished.
 
 ## Known gaps and deliberate omissions
 
 - **No review actions, attachments, hard delete, dedicated run-stop, or bulk
   multi-select** in v1.
-- **SSE is optional**: the board works with polling and a visible live state;
-  there is no offline queue. Mutations fail fast when the server is unreachable.
+- **SSE is optional and recovery is polling-only**: the board works with
+  polling and a visible live state, but it does not implement the design's
+  reconnect/backoff banner (§4.9). There is no offline queue. Mutations fail
+  fast when the server is unreachable.
 - **Device accessibility and responsive checks are pending** (see above).
 - **Paused STT work is untouched.** The local WebUI patch and uncommitted tests
   in `/home/dipandhali/Documents/Projects/hermes/hermes-webui` are not part of
