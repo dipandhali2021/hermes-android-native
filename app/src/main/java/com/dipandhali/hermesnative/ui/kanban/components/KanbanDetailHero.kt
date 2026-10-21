@@ -161,12 +161,12 @@ fun KanbanDetailHero(
                         )
                         IconButton(
                             onClick = onCopyId,
-                            modifier = Modifier.size(32.dp),
+                            modifier = Modifier.size(48.dp),
                         ) {
                             Icon(
                                 imageVector = Icons.Rounded.ContentCopy,
                                 contentDescription = "Copy task ID",
-                                modifier = Modifier.size(15.dp),
+                                modifier = Modifier.size(18.dp),
                                 tint = MaterialTheme.colorScheme.onSurfaceVariant,
                             )
                         }

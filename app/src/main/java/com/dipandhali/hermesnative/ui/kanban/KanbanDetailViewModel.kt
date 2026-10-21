@@ -315,6 +315,7 @@ class KanbanDetailViewModel @Inject constructor(
                     }
                     applyReturned(returned)
                     clearUndo()
+                    _effects.trySend(KanbanDetailEffect.ConfirmHaptic)
                     if (useUnblock) {
                         emitUnblockCopy(
                             returned.status,
@@ -350,6 +351,7 @@ class KanbanDetailViewModel @Inject constructor(
                     }
                     applyReturned(returned)
                     clearUndo()
+                    _effects.trySend(KanbanDetailEffect.ConfirmHaptic)
                     emitUnblockCopy(returned.status, resumed)
                     loadDetail()
                 }
@@ -410,6 +412,7 @@ class KanbanDetailViewModel @Inject constructor(
                         _effects.trySend(KanbanDetailEffect.Back)
                         return@onSuccess
                     }
+                    _effects.trySend(KanbanDetailEffect.ConfirmHaptic)
                     offerUndo("Task completed", KanbanUndo.Complete)
                     loadDetail()
                 }
@@ -449,6 +452,7 @@ class KanbanDetailViewModel @Inject constructor(
                     _state.update {
                         it.copy(blockedReason = reason.takeIf { value -> value.isNotBlank() })
                     }
+                    _effects.trySend(KanbanDetailEffect.ConfirmHaptic)
                     offerUndo("Task blocked", KanbanUndo.Block)
                     loadDetail()
                 }
@@ -479,6 +483,7 @@ class KanbanDetailViewModel @Inject constructor(
                     applyVisible(returned)
                     clearUndo()
                     cancelLive()
+                    _effects.trySend(KanbanDetailEffect.ConfirmHaptic)
                     _effects.trySend(KanbanDetailEffect.Back)
                 }
                 .onFailure { error ->
@@ -511,6 +516,7 @@ class KanbanDetailViewModel @Inject constructor(
                         return@onSuccess
                     }
                     clearUndo()
+                    _effects.trySend(KanbanDetailEffect.ConfirmHaptic)
                     _effects.trySend(KanbanDetailEffect.Snackbar(copy))
                     loadDetail()
                 }

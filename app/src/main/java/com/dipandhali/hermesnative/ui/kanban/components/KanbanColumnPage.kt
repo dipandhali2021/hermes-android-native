@@ -7,7 +7,6 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
@@ -25,8 +24,16 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
+import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.semantics.heading
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import com.dipandhali.hermesnative.core.model.KanbanColumnDto
 import com.dipandhali.hermesnative.core.model.KanbanTaskDto
@@ -48,8 +55,33 @@ fun KanbanColumnPage(
     onCreateTask: (() -> Unit)?,
     onRunDispatcher: (() -> Unit)?,
     modifier: Modifier = Modifier,
+    onFabExpandedChange: ((Boolean) -> Unit)? = null,
+    isActive: Boolean = true,
 ) {
     val listState = rememberLazyListState()
+    val latestFabCallback by rememberUpdatedState(onFabExpandedChange)
+    var fabExpanded by remember { mutableStateOf(true) }
+    LaunchedEffect(listState) {
+        var lastIndex = listState.firstVisibleItemIndex
+        var lastOffset = listState.firstVisibleItemScrollOffset
+        snapshotFlow {
+            listState.firstVisibleItemIndex to listState.firstVisibleItemScrollOffset
+        }.collect { (index, offset) ->
+            val atTop = index == 0 && offset < 24
+            val movedDown = index > lastIndex ||
+                (index == lastIndex && offset > lastOffset)
+            fabExpanded = when {
+                atTop -> true
+                movedDown -> false
+                else -> true
+            }
+            lastIndex = index
+            lastOffset = offset
+        }
+    }
+    LaunchedEffect(isActive, fabExpanded) {
+        if (isActive) latestFabCallback?.invoke(fabExpanded)
+    }
     LaunchedEffect(scrollToTopTick) {
         if (scrollToTopTick > 0) listState.animateScrollToItem(0)
     }
@@ -80,6 +112,7 @@ fun KanbanColumnPage(
                     text = KanbanStatus.label(column.name),
                     style = MaterialTheme.typography.titleMedium,
                     color = MaterialTheme.colorScheme.onSurface,
+                    modifier = Modifier.semantics { heading() },
                 )
                 Surface(
                     shape = CircleShape,
@@ -118,7 +151,6 @@ fun KanbanColumnPage(
                     if (onRunDispatcher != null && column.name == KanbanStatus.READY) {
                         FilledTonalButton(
                             onClick = onRunDispatcher,
-                            modifier = Modifier.height(34.dp),
                             contentPadding = PaddingValues(horizontal = 12.dp),
                         ) {
                             Icon(

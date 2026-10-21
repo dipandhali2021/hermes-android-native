@@ -81,12 +81,12 @@ fun KanbanDependencyChip(
             if (onRemove != null) {
                 IconButton(
                     onClick = onRemove,
-                    modifier = Modifier.size(32.dp),
+                    modifier = Modifier.size(48.dp),
                 ) {
                     Icon(
                         imageVector = Icons.Rounded.Close,
                         contentDescription = "Remove dependency $taskId",
-                        modifier = Modifier.size(16.dp),
+                        modifier = Modifier.size(18.dp),
                     )
                 }
             } else {

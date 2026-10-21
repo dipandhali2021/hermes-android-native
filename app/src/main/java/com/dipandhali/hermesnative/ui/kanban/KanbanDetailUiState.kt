@@ -62,4 +62,5 @@ sealed interface KanbanDetailEffect {
     data object SessionExpired : KanbanDetailEffect
     data object Gone : KanbanDetailEffect
     data object Back : KanbanDetailEffect
+    data object ConfirmHaptic : KanbanDetailEffect
 }

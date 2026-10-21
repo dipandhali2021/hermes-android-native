@@ -465,6 +465,7 @@ class KanbanDetailViewModelTest : KanbanDetailTestSupport() {
         }
         fake.unblockHandler = { _, _ -> error("must not unblock") }
         val vm = started(fake)
+        val effects = collectEffects(vm)
 
         vm.onMove(readyTarget())
         advanceUntilIdle()
@@ -472,6 +473,7 @@ class KanbanDetailViewModelTest : KanbanDetailTestSupport() {
         assertEquals(KanbanStatus.READY, fake.updateCalls.single().patch.status)
         assertTrue(fake.unblockCalls.isEmpty())
         assertEquals(KanbanStatus.READY, vm.state.value.task?.status)
+        assertTrue(effects.contains(KanbanDetailEffect.ConfirmHaptic))
     }
 
     @Test

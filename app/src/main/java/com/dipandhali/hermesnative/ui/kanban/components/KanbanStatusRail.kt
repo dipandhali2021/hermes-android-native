@@ -8,6 +8,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.MaterialTheme
@@ -16,6 +17,10 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.platform.LocalHapticFeedback
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import com.dipandhali.hermesnative.core.model.KanbanColumnDto
 import com.dipandhali.hermesnative.domain.kanban.KanbanStatus
@@ -47,6 +52,7 @@ fun KanbanStatusRail(
     modifier: Modifier = Modifier,
 ) {
     val listState = rememberLazyListState()
+    val haptic = LocalHapticFeedback.current
 
     LaunchedEffect(selectedStatus, columns) {
         val index = columns.indexOfFirst { it.name == selectedStatus }
@@ -54,7 +60,9 @@ fun KanbanStatusRail(
     }
 
     LazyRow(
-        modifier = modifier,
+        modifier = modifier
+            .selectableGroup()
+            .semantics { contentDescription = "Board statuses" },
         state = listState,
         contentPadding = PaddingValues(horizontal = 16.dp),
         horizontalArrangement = Arrangement.spacedBy(8.dp),
@@ -64,10 +72,15 @@ fun KanbanStatusRail(
             FilterChip(
                 selected = selected,
                 onClick = {
+                    haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
                     if (selected) onReselectStatus(column.name) else onSelectStatus(column.name)
                 },
                 label = {
                     Text("${KanbanStatus.label(column.name)} ${column.tasks.size}")
+                },
+                modifier = Modifier.semantics {
+                    contentDescription =
+                        "${KanbanStatus.label(column.name)}, ${column.tasks.size} tasks"
                 },
                 leadingIcon = {
                     Box(

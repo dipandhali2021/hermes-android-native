@@ -1,21 +1,32 @@
 package com.dipandhali.hermesnative.ui.kanban
 
 import androidx.activity.compose.BackHandler
+import androidx.compose.animation.Crossfade
+import androidx.compose.animation.animateContentSize
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
@@ -68,9 +79,13 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextOverflow
@@ -102,6 +117,7 @@ import com.dipandhali.hermesnative.ui.kanban.components.KanbanMoveSheet
 import com.dipandhali.hermesnative.ui.kanban.components.KanbanReopenSheet
 import com.dipandhali.hermesnative.ui.kanban.components.KanbanRestoreSheet
 import com.dipandhali.hermesnative.ui.kanban.components.KanbanStatusRail
+import com.dipandhali.hermesnative.ui.theme.HermesMotion
 import com.dipandhali.hermesnative.ui.theme.boardColor
 import kotlinx.coroutines.launch
 
@@ -128,6 +144,7 @@ fun KanbanBoardScreen(
     val focusManager = LocalFocusManager.current
     val keyboard = LocalSoftwareKeyboardController.current
     val clipboard = LocalClipboardManager.current
+    val haptic = LocalHapticFeedback.current
     val searchFocus = remember { FocusRequester() }
 
     var searchOpen by rememberSaveable { mutableStateOf(false) }
@@ -137,6 +154,7 @@ fun KanbanBoardScreen(
     var switcherOpen by rememberSaveable { mutableStateOf(false) }
     var helpOpen by rememberSaveable { mutableStateOf(false) }
     var dispatcherOpen by rememberSaveable { mutableStateOf(false) }
+    var fabExpanded by rememberSaveable { mutableStateOf(true) }
     var scrollToTopTick by remember { mutableIntStateOf(0) }
 
     LifecycleEventEffect(Lifecycle.Event.ON_START) { viewModel.onScreenStarted() }
@@ -197,6 +215,10 @@ fun KanbanBoardScreen(
                         onOpenTask(effect.taskId, board, viewModel.state.value.lastEventId)
                     }
                 }
+
+                KanbanBoardEffect.ConfirmHaptic -> {
+                    haptic.performHapticFeedback(HapticFeedbackType.Confirm)
+                }
             }
         }
     }
@@ -217,8 +239,10 @@ fun KanbanBoardScreen(
     } else {
         "$totalTasks tasks · $readyTasks ready"
     }
-    val pagerState = rememberPagerState { visibleColumns.size }
     val selectedPage = visibleColumns.indexOfFirst { it.name == state.selectedStatus }
+    val pagerState = rememberPagerState(
+        initialPage = selectedPage.coerceAtLeast(0),
+    ) { visibleColumns.size }
 
     LaunchedEffect(state.selectedStatus, visibleColumns) {
         if (selectedPage >= 0 && pagerState.currentPage != selectedPage) {
@@ -273,6 +297,7 @@ fun KanbanBoardScreen(
             KanbanAction.RESUME -> viewModel.onUnblock(task, resumed = true)
             KanbanAction.ARCHIVE -> {
                 if (KanbanTransitions.archiveConfirmationNeeded(task)) {
+                    haptic.performHapticFeedback(HapticFeedbackType.Reject)
                     sheet = KanbanSheet.Archive(task)
                 } else {
                     viewModel.onArchive(task)
@@ -510,6 +535,8 @@ fun KanbanBoardScreen(
                     },
                     icon = { Icon(Icons.Rounded.Add, contentDescription = null) },
                     text = { Text("New task") },
+                    expanded = fabExpanded,
+                    modifier = Modifier.animateContentSize(HermesMotion.spatialFast()),
                 )
             }
         },
@@ -519,133 +546,232 @@ fun KanbanBoardScreen(
                 .fillMaxSize()
                 .padding(inner),
         ) {
-            when {
-                state.loading && state.columns.isEmpty() -> KanbanLoadingColumn()
+            Crossfade(
+                targetState = state.loading && state.columns.isEmpty(),
+                animationSpec = HermesMotion.effects(),
+                label = "kanban-content",
+            ) { loading ->
+                when {
+                    loading -> KanbanLoadingColumn()
 
-                state.error != null && state.columns.isEmpty() -> KanbanBoardErrorState(
-                    error = state.error!!,
-                    onRetry = viewModel::onRetry,
-                    onOpenConnect = onOpenConnect,
-                )
-
-                state.columns.isEmpty() -> KanbanEmptyState(
-                    title = "This board is empty",
-                    body = "Create a task to get started.",
-                    icon = Icons.Rounded.ViewKanban,
-                    actionLabel = if (onCreateTask != null && !state.readOnly) "New task" else null,
-                    onAction = if (onCreateTask != null && state.boardSlug != null && !state.readOnly) {
-                        {
-                            onCreateTask(
-                                state.boardSlug!!,
-                                createStatus(state.selectedStatus),
-                            )
-                        }
-                    } else {
-                        null
-                    },
-                    modifier = Modifier.fillMaxSize(),
-                )
-
-                else -> Column(Modifier.fillMaxSize()) {
-                    if (state.switching) {
-                        LinearProgressIndicator(Modifier.fillMaxWidth())
-                    }
-                    if (state.filters.isActive || state.query.isNotBlank()) {
-                        KanbanActiveFilters(
-                            filters = state.filters,
-                            query = state.query,
-                            onClearOnlyMine = {
-                                viewModel.onClearFilter(KanbanFilterKind.ONLY_MINE)
-                            },
-                            onClearAssignee = {
-                                viewModel.onClearFilter(KanbanFilterKind.ASSIGNEE)
-                            },
-                            onClearTenant = {
-                                viewModel.onClearFilter(KanbanFilterKind.TENANT)
-                            },
-                            onClearArchived = {
-                                viewModel.onClearFilter(KanbanFilterKind.ARCHIVED)
-                            },
-                            onClearSearch = {
-                                if (searchOpen) {
-                                    viewModel.onQueryChange("")
-                                } else {
-                                    viewModel.onSearchClosed()
-                                }
-                            },
-                            onClearAll = {
-                                if (searchOpen) {
-                                    viewModel.onQueryChange("")
-                                } else {
-                                    viewModel.onSearchClosed()
-                                }
-                                viewModel.onApplyFilters(KanbanFilters())
-                            },
-                            modifier = Modifier.padding(vertical = 2.dp),
-                        )
-                    }
-                    KanbanStatusRail(
-                        columns = visibleColumns,
-                        selectedStatus = state.selectedStatus,
-                        onSelectStatus = { status ->
-                            val index = visibleColumns.indexOfFirst { it.name == status }
-                            viewModel.onStatusSelected(status)
-                            if (index >= 0) {
-                                scope.launch { pagerState.animateScrollToPage(index) }
-                            }
-                        },
-                        onReselectStatus = { scrollToTopTick += 1 },
-                        modifier = Modifier.padding(vertical = 4.dp),
+                    state.error != null && state.columns.isEmpty() -> KanbanBoardErrorState(
+                        error = state.error!!,
+                        onRetry = viewModel::onRetry,
+                        onOpenConnect = onOpenConnect,
                     )
-                    PullToRefreshBox(
-                        isRefreshing = state.refreshing,
-                        onRefresh = viewModel::onRefresh,
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .weight(1f),
-                    ) {
-                        HorizontalPager(
-                            state = pagerState,
-                            modifier = Modifier.fillMaxSize(),
-                            pageSpacing = 8.dp,
-                            key = { page -> visibleColumns[page].name },
-                        ) { page ->
-                            val column = visibleColumns[page]
-                            val originalCount = state.columns
-                                .firstOrNull { it.name == column.name }
-                                ?.tasks
-                                ?.size
-                                ?: column.tasks.size
-                            val slug = state.boardSlug ?: return@HorizontalPager
-                            KanbanColumnPage(
-                                column = column,
-                                hiddenBySearch = originalCount - column.tasks.size,
-                                searchActive = state.query.isNotBlank(),
-                                readOnly = state.readOnly,
-                                pendingTaskIds = state.pendingTaskIds,
-                                highlightTaskId = state.highlightTaskId,
-                                scrollToTopTick = if (page == pagerState.currentPage) {
-                                    scrollToTopTick
-                                } else {
-                                    0
+
+                    state.columns.isEmpty() -> KanbanEmptyState(
+                        title = "This board is empty",
+                        body = "Create a task to get started.",
+                        icon = Icons.Rounded.ViewKanban,
+                        actionLabel = if (onCreateTask != null && !state.readOnly) "New task" else null,
+                        onAction = if (onCreateTask != null && state.boardSlug != null && !state.readOnly) {
+                            {
+                                onCreateTask(
+                                    state.boardSlug!!,
+                                    createStatus(state.selectedStatus),
+                                )
+                            }
+                        } else {
+                            null
+                        },
+                        modifier = Modifier.fillMaxSize(),
+                    )
+
+                    else -> BoxWithConstraints(Modifier.fillMaxSize()) {
+                        val wide = maxWidth >= 600.dp
+                        Column(Modifier.fillMaxSize()) {
+                            if (state.switching) {
+                                LinearProgressIndicator(Modifier.fillMaxWidth())
+                            }
+                            if (state.filters.isActive || state.query.isNotBlank()) {
+                                KanbanActiveFilters(
+                                    filters = state.filters,
+                                    query = state.query,
+                                    onClearOnlyMine = {
+                                        viewModel.onClearFilter(KanbanFilterKind.ONLY_MINE)
+                                    },
+                                    onClearAssignee = {
+                                        viewModel.onClearFilter(KanbanFilterKind.ASSIGNEE)
+                                    },
+                                    onClearTenant = {
+                                        viewModel.onClearFilter(KanbanFilterKind.TENANT)
+                                    },
+                                    onClearArchived = {
+                                        viewModel.onClearFilter(KanbanFilterKind.ARCHIVED)
+                                    },
+                                    onClearSearch = {
+                                        if (searchOpen) {
+                                            viewModel.onQueryChange("")
+                                        } else {
+                                            viewModel.onSearchClosed()
+                                        }
+                                    },
+                                    onClearAll = {
+                                        if (searchOpen) {
+                                            viewModel.onQueryChange("")
+                                        } else {
+                                            viewModel.onSearchClosed()
+                                        }
+                                        viewModel.onApplyFilters(KanbanFilters())
+                                    },
+                                    modifier = Modifier.padding(vertical = 2.dp),
+                                )
+                            }
+                            KanbanStatusRail(
+                                columns = visibleColumns,
+                                selectedStatus = state.selectedStatus,
+                                onSelectStatus = { status ->
+                                    val index = visibleColumns.indexOfFirst { it.name == status }
+                                    viewModel.onStatusSelected(status)
+                                    if (index >= 0 && !wide) {
+                                        scope.launch { pagerState.animateScrollToPage(index) }
+                                    }
                                 },
-                                onOpenTask = { task ->
-                                    onOpenTask(task.id, slug, state.lastEventId)
-                                },
-                                onTaskAction = onTaskAction,
-                                onCreateTask = if (onCreateTask != null && !state.readOnly) {
-                                    {
-                                        onCreateTask(
-                                            slug,
-                                            createStatus(column.name),
-                                        )
+                                onReselectStatus = { scrollToTopTick += 1 },
+                                modifier = Modifier.padding(vertical = 4.dp),
+                            )
+                            PullToRefreshBox(
+                                isRefreshing = state.refreshing,
+                                onRefresh = viewModel::onRefresh,
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .weight(1f),
+                            ) {
+                                if (wide) {
+                                    val wideState = rememberLazyListState()
+                                    LaunchedEffect(state.selectedStatus, visibleColumns) {
+                                        val index = visibleColumns
+                                            .indexOfFirst { it.name == state.selectedStatus }
+                                        if (index >= 0 && wideState.firstVisibleItemIndex != index) {
+                                            wideState.animateScrollToItem(index)
+                                        }
+                                    }
+                                    LaunchedEffect(wideState.isScrollInProgress) {
+                                        if (!wideState.isScrollInProgress) {
+                                            val index = wideState.firstVisibleItemIndex
+                                            val status = visibleColumns.getOrNull(index)?.name
+                                            if (status != null && status != state.selectedStatus) {
+                                                viewModel.onStatusSelected(status)
+                                            }
+                                        }
+                                    }
+                                    LazyRow(
+                                        state = wideState,
+                                        modifier = Modifier.fillMaxSize(),
+                                        contentPadding = PaddingValues(horizontal = 16.dp),
+                                        horizontalArrangement = Arrangement.spacedBy(12.dp),
+                                    ) {
+                                        itemsIndexed(
+                                            visibleColumns,
+                                            key = { _, column -> column.name },
+                                        ) { _, column ->
+                                            val originalCount = state.columns
+                                                .firstOrNull { it.name == column.name }
+                                                ?.tasks
+                                                ?.size
+                                                ?: column.tasks.size
+                                            val slug = state.boardSlug ?: return@itemsIndexed
+                                            Box(
+                                                modifier = Modifier
+                                                    .width(360.dp)
+                                                    .fillMaxHeight(),
+                                            ) {
+                                                KanbanColumnPage(
+                                                    column = column,
+                                                    hiddenBySearch = originalCount - column.tasks.size,
+                                                    searchActive = state.query.isNotBlank(),
+                                                    readOnly = state.readOnly,
+                                                    pendingTaskIds = state.pendingTaskIds,
+                                                    highlightTaskId = state.highlightTaskId,
+                                                    scrollToTopTick = if (
+                                                        column.name == state.selectedStatus
+                                                    ) {
+                                                        scrollToTopTick
+                                                    } else {
+                                                        0
+                                                    },
+                                                    onOpenTask = { task ->
+                                                        onOpenTask(task.id, slug, state.lastEventId)
+                                                    },
+                                                    onTaskAction = onTaskAction,
+                                                    onCreateTask = if (
+                                                        onCreateTask != null && !state.readOnly
+                                                    ) {
+                                                        {
+                                                            onCreateTask(
+                                                                slug,
+                                                                createStatus(column.name),
+                                                            )
+                                                        }
+                                                    } else {
+                                                        null
+                                                    },
+                                                    onRunDispatcher = if (state.readOnly) {
+                                                        null
+                                                    } else {
+                                                        openDispatcher
+                                                    },
+                                                    onFabExpandedChange = { fabExpanded = it },
+                                                    modifier = Modifier.fillMaxSize(),
+                                                )
+                                            }
+                                        }
                                     }
                                 } else {
-                                    null
-                                },
-                                onRunDispatcher = if (state.readOnly) null else openDispatcher,
-                                modifier = Modifier.fillMaxSize(),
-                            )
+                                    HorizontalPager(
+                                        state = pagerState,
+                                        modifier = Modifier.fillMaxSize(),
+                                        pageSpacing = 8.dp,
+                                        key = { page -> visibleColumns[page].name },
+                                    ) { page ->
+                                        val column = visibleColumns[page]
+                                        val originalCount = state.columns
+                                            .firstOrNull { it.name == column.name }
+                                            ?.tasks
+                                            ?.size
+                                            ?: column.tasks.size
+                                        val slug = state.boardSlug ?: return@HorizontalPager
+                                        KanbanColumnPage(
+                                            column = column,
+                                            hiddenBySearch = originalCount - column.tasks.size,
+                                            searchActive = state.query.isNotBlank(),
+                                            readOnly = state.readOnly,
+                                            pendingTaskIds = state.pendingTaskIds,
+                                            highlightTaskId = state.highlightTaskId,
+                                            scrollToTopTick = if (page == pagerState.currentPage) {
+                                                scrollToTopTick
+                                            } else {
+                                                0
+                                            },
+                                            onOpenTask = { task ->
+                                                onOpenTask(task.id, slug, state.lastEventId)
+                                            },
+                                            onTaskAction = onTaskAction,
+                                            onCreateTask = if (
+                                                onCreateTask != null && !state.readOnly
+                                            ) {
+                                                {
+                                                    onCreateTask(
+                                                        slug,
+                                                        createStatus(column.name),
+                                                    )
+                                                }
+                                            } else {
+                                                null
+                                            },
+                                            onRunDispatcher = if (state.readOnly) {
+                                                null
+                                            } else {
+                                                openDispatcher
+                                            },
+                                            onFabExpandedChange = { fabExpanded = it },
+                                            isActive = page == pagerState.currentPage,
+                                            modifier = Modifier.fillMaxSize(),
+                                        )
+                                    }
+                                }
+                            }
                         }
                     }
                 }
@@ -803,15 +929,44 @@ private fun KanbanLoadingColumn() {
     Column(
         modifier = Modifier
             .fillMaxSize()
-            .padding(horizontal = 16.dp, vertical = 20.dp),
+            .semantics(mergeDescendants = true) { contentDescription = "Loading board" }
+            .padding(horizontal = 16.dp, vertical = 16.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
-        LinearProgressIndicator(Modifier.fillMaxWidth())
-        Text(
-            text = "Loading board…",
-            style = MaterialTheme.typography.bodyMedium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .horizontalScroll(rememberScrollState()),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            repeat(5) {
+                Surface(
+                    modifier = Modifier
+                        .width(88.dp)
+                        .height(32.dp),
+                    shape = CircleShape,
+                    color = MaterialTheme.colorScheme.surfaceContainerLow,
+                ) {}
+            }
+        }
+
+        Spacer(Modifier.height(4.dp))
+        Surface(
+            modifier = Modifier
+                .width(132.dp)
+                .height(20.dp),
+            shape = CircleShape,
+            color = MaterialTheme.colorScheme.surfaceContainerHigh,
+        ) {}
+        Surface(
+            modifier = Modifier
+                .width(232.dp)
+                .height(10.dp),
+            shape = CircleShape,
+            color = MaterialTheme.colorScheme.surfaceContainerLow,
+        ) {}
+        Spacer(Modifier.height(4.dp))
+
         repeat(3) {
             Surface(
                 modifier = Modifier

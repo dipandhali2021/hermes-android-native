@@ -106,7 +106,7 @@ fun KanbanTaskCard(
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(end = 40.dp),
+                        .padding(end = 48.dp),
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(6.dp),
                 ) {
@@ -246,7 +246,7 @@ fun KanbanTaskCard(
                 modifier = Modifier
                     .align(Alignment.TopEnd)
                     .padding(top = 4.dp, end = 4.dp)
-                    .size(40.dp),
+                    .size(48.dp),
             ) {
                 IconButton(
                     onClick = { menuOpen = true },

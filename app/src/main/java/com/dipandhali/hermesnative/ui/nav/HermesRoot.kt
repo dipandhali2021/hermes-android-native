@@ -1,6 +1,15 @@
 package com.dipandhali.hermesnative.ui.nav
 
 import android.net.Uri
+import androidx.compose.animation.EnterTransition
+import androidx.compose.animation.ExitTransition
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.scaleIn
+import androidx.compose.animation.slideInHorizontally
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideOutHorizontally
+import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.CalendarMonth
@@ -18,6 +27,8 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation.NavType
@@ -41,6 +52,7 @@ import com.dipandhali.hermesnative.ui.kanban.KanbanEditorScreen
 import com.dipandhali.hermesnative.ui.kanban.KanbanLogScreen
 import com.dipandhali.hermesnative.ui.sessions.SessionsListScreen
 import com.dipandhali.hermesnative.ui.settings.SettingsScreen
+import com.dipandhali.hermesnative.ui.theme.HermesMotion
 import com.dipandhali.hermesnative.ui.theme.HermesNativeTheme
 import kotlinx.serialization.builtins.ListSerializer
 import kotlinx.serialization.json.Json
@@ -222,9 +234,37 @@ private fun panelActions(navigate: (String) -> Unit): List<FabMenuAction> = reme
     }
 }
 
+private fun kanbanSharedAxisEnter(rise: Int): EnterTransition =
+    fadeIn(animationSpec = HermesMotion.effects()) +
+        scaleIn(
+            animationSpec = HermesMotion.spatial(),
+            initialScale = 0.98f,
+        ) +
+        slideInVertically(animationSpec = HermesMotion.spatial()) { rise }
+
+private fun kanbanFade(): ExitTransition =
+    fadeOut(animationSpec = HermesMotion.effects())
+
+private fun kanbanFromStartEnter(): EnterTransition =
+    slideInHorizontally(animationSpec = HermesMotion.spatial()) { it } +
+        fadeIn(animationSpec = HermesMotion.effects())
+
+private fun kanbanToStartExit(): ExitTransition =
+    slideOutHorizontally(animationSpec = HermesMotion.spatial()) { it } +
+        fadeOut(animationSpec = HermesMotion.effects())
+
+private fun kanbanFromBottomEnter(): EnterTransition =
+    slideInVertically(animationSpec = HermesMotion.spatial()) { it } +
+        fadeIn(animationSpec = HermesMotion.effects())
+
+private fun kanbanToBottomExit(): ExitTransition =
+    slideOutVertically(animationSpec = HermesMotion.spatial()) { it } +
+        fadeOut(animationSpec = HermesMotion.effects())
+
 @Composable
 private fun HermesNavHost(startDestination: String) {
     val navController = rememberNavController()
+    val rise = with(LocalDensity.current) { 8.dp.roundToPx() }
 
     NavHost(
         navController = navController,
@@ -253,7 +293,13 @@ private fun HermesNavHost(startDestination: String) {
             )
         }
 
-        composable(Routes.KANBAN) {
+        composable(
+            route = Routes.KANBAN,
+            enterTransition = { fadeIn(animationSpec = HermesMotion.effects()) },
+            exitTransition = { kanbanFade() },
+            popEnterTransition = { fadeIn(animationSpec = HermesMotion.effects()) },
+            popExitTransition = { kanbanFade() },
+        ) {
             KanbanBoardScreen(
                 onBack = { navController.popBackStack() },
                 onOpenTask = { taskId, board, cursor ->
@@ -326,6 +372,10 @@ private fun HermesNavHost(startDestination: String) {
                     defaultValue = 0L
                 },
             ),
+            enterTransition = { kanbanSharedAxisEnter(rise) },
+            exitTransition = { kanbanFade() },
+            popEnterTransition = { kanbanSharedAxisEnter(rise) },
+            popExitTransition = { kanbanFade() },
         ) { entry ->
             KanbanDetailScreen(
                 boardSlug = entry.arguments?.getString("board").orEmpty(),
@@ -359,6 +409,10 @@ private fun HermesNavHost(startDestination: String) {
                     defaultValue = "ready"
                 },
             ),
+            enterTransition = { kanbanFromBottomEnter() },
+            exitTransition = { kanbanToBottomExit() },
+            popEnterTransition = { kanbanFromBottomEnter() },
+            popExitTransition = { kanbanToBottomExit() },
         ) {
             KanbanEditorScreen(
                 onClose = { navController.popBackStack() },
@@ -393,6 +447,10 @@ private fun HermesNavHost(startDestination: String) {
                     defaultValue = ""
                 },
             ),
+            enterTransition = { kanbanFromStartEnter() },
+            exitTransition = { kanbanToStartExit() },
+            popEnterTransition = { kanbanFromStartEnter() },
+            popExitTransition = { kanbanToStartExit() },
         ) {
             KanbanEditorScreen(
                 onClose = { navController.popBackStack() },
@@ -415,6 +473,10 @@ private fun HermesNavHost(startDestination: String) {
                     defaultValue = ""
                 },
             ),
+            enterTransition = { kanbanFromStartEnter() },
+            exitTransition = { kanbanToStartExit() },
+            popEnterTransition = { kanbanFromStartEnter() },
+            popExitTransition = { kanbanToStartExit() },
         ) {
             KanbanLogScreen(onBack = { navController.popBackStack() })
         }

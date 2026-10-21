@@ -76,6 +76,7 @@ sealed interface KanbanBoardEffect {
 
     data object SessionExpired : KanbanBoardEffect
     data class OpenTask(val taskId: String) : KanbanBoardEffect
+    data object ConfirmHaptic : KanbanBoardEffect
 }
 
 sealed interface KanbanSnackbarAction {

@@ -79,8 +79,10 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.style.TextAlign
@@ -141,6 +143,7 @@ fun KanbanDetailScreen(
     val snackbarHostState = remember { SnackbarHostState() }
     val scope = rememberCoroutineScope()
     val clipboard = LocalClipboardManager.current
+    val haptic = LocalHapticFeedback.current
     val focusManager = LocalFocusManager.current
 
     var selectedTab by rememberSaveable { mutableIntStateOf(0) }
@@ -233,6 +236,10 @@ fun KanbanDetailScreen(
                 }
 
                 KanbanDetailEffect.Back -> onBack()
+
+                KanbanDetailEffect.ConfirmHaptic -> {
+                    haptic.performHapticFeedback(HapticFeedbackType.Confirm)
+                }
             }
         }
     }
@@ -264,6 +271,7 @@ fun KanbanDetailScreen(
             KanbanAction.RESUME -> viewModel.onUnblock(resumed = true)
             KanbanAction.ARCHIVE -> {
                 if (current.status == KanbanStatus.RUNNING) {
+                    haptic.performHapticFeedback(HapticFeedbackType.Reject)
                     openSheet(DetailSheet.Archive)
                 } else {
                     viewModel.onArchive()
@@ -280,10 +288,21 @@ fun KanbanDetailScreen(
         val current = state.task ?: return@statusClick
         if (state.readOnly || state.pending) return@statusClick
         when (current.status) {
-            KanbanStatus.DONE -> openSheet(DetailSheet.Reopen)
-            KanbanStatus.ARCHIVED -> openSheet(DetailSheet.Restore)
+            KanbanStatus.DONE -> {
+                haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                openSheet(DetailSheet.Reopen)
+            }
+
+            KanbanStatus.ARCHIVED -> {
+                haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                openSheet(DetailSheet.Restore)
+            }
+
             KanbanStatus.RUNNING -> Unit
-            else -> if (KanbanStatus.isKnown(current.status)) openSheet(DetailSheet.Move)
+            else -> if (KanbanStatus.isKnown(current.status)) {
+                haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                openSheet(DetailSheet.Move)
+            }
         }
     }
 
@@ -932,8 +951,8 @@ private fun DetailsCard(
             )
             AnimatedVisibility(
                 visible = showAll,
-                enter = expandVertically(animationSpec = HermesMotion.spatial()),
-                exit = shrinkVertically(animationSpec = HermesMotion.spatial()),
+                enter = expandVertically(animationSpec = HermesMotion.contentSize),
+                exit = shrinkVertically(animationSpec = HermesMotion.contentSize),
             ) {
                 Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                     HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)

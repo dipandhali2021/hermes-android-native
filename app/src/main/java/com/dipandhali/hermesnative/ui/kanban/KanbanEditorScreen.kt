@@ -2,6 +2,8 @@ package com.dipandhali.hermesnative.ui.kanban
 
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -80,6 +82,7 @@ import com.dipandhali.hermesnative.ui.kanban.components.KanbanAssigneeSheet
 import com.dipandhali.hermesnative.ui.kanban.components.KanbanSkillInput
 import com.dipandhali.hermesnative.ui.kanban.components.KanbanTaskPickerSheet
 import com.dipandhali.hermesnative.ui.kanban.components.KanbanWorkspaceSheet
+import com.dipandhali.hermesnative.ui.theme.HermesMotion
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
@@ -280,7 +283,11 @@ fun KanbanEditorScreen(
                         Spacer(Modifier.width(8.dp))
                         Text(if (advancedOpen) "Fewer options" else "More options")
                     }
-                    AnimatedVisibility(visible = advancedOpen) {
+                    AnimatedVisibility(
+                        visible = advancedOpen,
+                        enter = expandVertically(animationSpec = HermesMotion.contentSize),
+                        exit = shrinkVertically(animationSpec = HermesMotion.contentSize),
+                    ) {
                         CreateAdvancedFields(
                             state = state,
                             onWorkspaceKind = viewModel::onWorkspaceKindChanged,

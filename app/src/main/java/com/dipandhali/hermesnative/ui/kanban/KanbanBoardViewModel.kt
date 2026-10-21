@@ -529,6 +529,7 @@ class KanbanBoardViewModel @Inject constructor(
                     clearPending(taskId)
                     if (!stillOn(slug)) return@onSuccess
                     placeTask(returned)
+                    _effects.trySend(KanbanBoardEffect.ConfirmHaptic)
                     if (target.viaUnblock) {
                         emitUnblockCopy(returned.status, resumed = task.status == KanbanStatus.SCHEDULED)
                     } else if (!KanbanStatus.isKnown(returned.status)) {
@@ -587,6 +588,7 @@ class KanbanBoardViewModel @Inject constructor(
                         }
                     }
                     placeTask(returned)
+                    _effects.trySend(KanbanBoardEffect.ConfirmHaptic)
                     offerUndo(task.id, KanbanUndo.Complete, "Task completed")
                 }
                 .onFailure { error ->
@@ -636,6 +638,7 @@ class KanbanBoardViewModel @Inject constructor(
                     clearPending(task.id)
                     if (!stillOn(slug)) return@onSuccess
                     placeTask(returned)
+                    _effects.trySend(KanbanBoardEffect.ConfirmHaptic)
                     offerUndo(task.id, KanbanUndo.Block, "Task blocked")
                 }
                 .onFailure { error ->
@@ -669,6 +672,7 @@ class KanbanBoardViewModel @Inject constructor(
                     clearPending(task.id)
                     if (!stillOn(slug)) return@onSuccess
                     placeTask(returned)
+                    _effects.trySend(KanbanBoardEffect.ConfirmHaptic)
                     offerUndo(task.id, KanbanUndo.Archive(task.status), "Task archived")
                 }
                 .onFailure { error ->
@@ -693,6 +697,7 @@ class KanbanBoardViewModel @Inject constructor(
                     if (!stillOn(slug)) return@onSuccess
                     placeTask(returned)
                     clearUndo()
+                    _effects.trySend(KanbanBoardEffect.ConfirmHaptic)
                     emitUnblockCopy(returned.status, resumed)
                 }
                 .onFailure { error ->
@@ -723,6 +728,7 @@ class KanbanBoardViewModel @Inject constructor(
                     if (!stillOn(slug)) return@onSuccess
                     placeTask(returned)
                     clearUndo()
+                    _effects.trySend(KanbanBoardEffect.ConfirmHaptic)
                     _effects.trySend(KanbanBoardEffect.Snackbar(copy))
                 }
                 .onFailure { error ->
@@ -769,6 +775,7 @@ class KanbanBoardViewModel @Inject constructor(
                     clearPending(taskId)
                     if (!stillOn(slug)) return@onSuccess
                     placeTask(returned)
+                    _effects.trySend(KanbanBoardEffect.ConfirmHaptic)
                 }
                 .onFailure { error ->
                     clearPending(taskId)

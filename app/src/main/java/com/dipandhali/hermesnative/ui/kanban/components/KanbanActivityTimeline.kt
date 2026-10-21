@@ -305,8 +305,8 @@ private fun KanbanEventRow(
                 }
                 AnimatedVisibility(
                     visible = expanded,
-                    enter = expandVertically(animationSpec = HermesMotion.spatial()),
-                    exit = shrinkVertically(animationSpec = HermesMotion.spatial()),
+                    enter = expandVertically(animationSpec = HermesMotion.contentSize),
+                    exit = shrinkVertically(animationSpec = HermesMotion.contentSize),
                 ) {
                     Surface(
                         modifier = Modifier.fillMaxWidth(),

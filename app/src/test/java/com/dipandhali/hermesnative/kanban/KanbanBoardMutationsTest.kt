@@ -32,6 +32,7 @@ class KanbanBoardMutationsTest : KanbanBoardTestSupport() {
             val task = task("t1", KanbanStatus.TODO)
             val fake = FakeKanbanRepository()
             val vm = started(fake, board(column(KanbanStatus.TODO, task), column(KanbanStatus.READY)))
+            val effects = collectEffects(vm)
             val gate = CompletableDeferred<Result<KanbanTaskDto>>()
             fake.updateHandler = { _, _, _ -> gate.await() }
 
@@ -48,6 +49,7 @@ class KanbanBoardMutationsTest : KanbanBoardTestSupport() {
             assertTrue(vm.state.value.pendingTaskIds.isEmpty())
             assertTrue(vm.state.value.columns.first { it.name == KanbanStatus.READY }.tasks.any { it.id == task.id })
             assertEquals(KanbanStatus.READY, fake.updateCalls.single().patch.status)
+            assertTrue(effects.contains(KanbanBoardEffect.ConfirmHaptic))
         }
 
     @Test
@@ -72,6 +74,7 @@ class KanbanBoardMutationsTest : KanbanBoardTestSupport() {
                     KanbanBoardEffect.Snackbar("The server refused this move."),
                 ),
             )
+            assertFalse(effects.contains(KanbanBoardEffect.ConfirmHaptic))
         }
 
     @Test
