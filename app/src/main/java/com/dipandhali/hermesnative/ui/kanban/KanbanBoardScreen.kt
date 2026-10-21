@@ -94,6 +94,7 @@ import com.dipandhali.hermesnative.ui.kanban.components.KanbanBoardSwitcherSheet
 import com.dipandhali.hermesnative.ui.kanban.components.KanbanHelpSheet
 import com.dipandhali.hermesnative.ui.kanban.components.KanbanColumnPage
 import com.dipandhali.hermesnative.ui.kanban.components.KanbanCompleteSheet
+import com.dipandhali.hermesnative.ui.kanban.components.KanbanDispatcherSheet
 import com.dipandhali.hermesnative.ui.kanban.components.KanbanEmptyState
 import com.dipandhali.hermesnative.ui.kanban.components.KanbanFilterSheet
 import com.dipandhali.hermesnative.ui.kanban.components.KanbanLiveBadge
@@ -119,7 +120,6 @@ fun KanbanBoardScreen(
     onCreateTask: ((board: String, status: String) -> Unit)? = null,
     onOpenNewBoard: () -> Unit,
     onOpenBoardSettings: (KanbanBoardSummary) -> Unit,
-    onRunDispatcher: (() -> Unit)? = null,
     viewModel: KanbanBoardViewModel = hiltViewModel(),
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
@@ -136,6 +136,7 @@ fun KanbanBoardScreen(
     var menuOpen by remember { mutableStateOf(false) }
     var switcherOpen by rememberSaveable { mutableStateOf(false) }
     var helpOpen by rememberSaveable { mutableStateOf(false) }
+    var dispatcherOpen by rememberSaveable { mutableStateOf(false) }
     var scrollToTopTick by remember { mutableIntStateOf(0) }
 
     LifecycleEventEffect(Lifecycle.Event.ON_START) { viewModel.onScreenStarted() }
@@ -291,6 +292,15 @@ fun KanbanBoardScreen(
         }
     }
 
+    val openDispatcher: () -> Unit = {
+        dispatcherOpen = true
+        viewModel.onDispatcherOpened()
+    }
+    val dismissDispatcher: () -> Unit = {
+        dispatcherOpen = false
+        viewModel.onDispatcherDismiss()
+    }
+
     Scaffold(
         contentWindowInsets = WindowInsets.safeDrawing,
         snackbarHost = { SnackbarHost(snackbarHostState) },
@@ -432,19 +442,17 @@ fun KanbanBoardScreen(
                                     viewModel.onBoardsOpened()
                                 },
                             )
-                            if (onRunDispatcher != null) {
-                                DropdownMenuItem(
-                                    text = { Text("Run dispatcher") },
-                                    leadingIcon = {
-                                        Icon(Icons.Rounded.PlayArrow, contentDescription = null)
-                                    },
-                                    enabled = !state.readOnly,
-                                    onClick = {
-                                        menuOpen = false
-                                        onRunDispatcher()
-                                    },
-                                )
-                            }
+                            DropdownMenuItem(
+                                text = { Text("Run dispatcher") },
+                                leadingIcon = {
+                                    Icon(Icons.Rounded.PlayArrow, contentDescription = null)
+                                },
+                                enabled = state.boardSlug != null && !state.readOnly,
+                                onClick = {
+                                    menuOpen = false
+                                    openDispatcher()
+                                },
+                            )
                             DropdownMenuItem(
                                 text = { Text("Refresh") },
                                 leadingIcon = {
@@ -635,7 +643,7 @@ fun KanbanBoardScreen(
                                 } else {
                                     null
                                 },
-                                onRunDispatcher = onRunDispatcher,
+                                onRunDispatcher = if (state.readOnly) null else openDispatcher,
                                 modifier = Modifier.fillMaxSize(),
                             )
                         }
@@ -762,6 +770,15 @@ fun KanbanBoardScreen(
 
     if (helpOpen) {
         KanbanHelpSheet(onDismiss = { helpOpen = false })
+    }
+
+    if (dispatcherOpen) {
+        KanbanDispatcherSheet(
+            state = state.dispatcher,
+            onRun = viewModel::onDispatcherRun,
+            onRefresh = viewModel::onDispatcherRefresh,
+            onDismiss = dismissDispatcher,
+        )
     }
 }
 

@@ -820,6 +820,11 @@ class KanbanBoardViewModel @Inject constructor(
     }
 
     fun onDispatcherOpened() {
+        if (_state.value.dispatcher !is KanbanDispatcherState.Idle) return
+        onDispatcherRefresh()
+    }
+
+    fun onDispatcherRefresh() {
         val current = _state.value.dispatcher
         if (current is KanbanDispatcherState.Loading || current is KanbanDispatcherState.Running) {
             return
@@ -861,16 +866,16 @@ class KanbanBoardViewModel @Inject constructor(
     }
 
     fun onDispatcherRetry() {
-        val current = _state.value.dispatcher
-        if (current is KanbanDispatcherState.Loading || current is KanbanDispatcherState.Running) {
-            return
-        }
-        onDispatcherOpened()
+        onDispatcherRefresh()
     }
 
     fun onDispatcherDismiss() {
         // The dismiss closes the sheet, not the request. A run can take
         // minutes, and its result should still be there when the sheet reopens.
+        val current = _state.value.dispatcher
+        if (current is KanbanDispatcherState.Loading || current is KanbanDispatcherState.Running) {
+            return
+        }
         _state.update { it.copy(dispatcher = KanbanDispatcherState.Idle) }
     }
 
@@ -886,7 +891,7 @@ class KanbanBoardViewModel @Inject constructor(
             _effects.trySend(KanbanBoardEffect.SessionExpired)
         }
         return if (data is DataError.Timeout) {
-            "The dispatcher may still be running. Check the board in a moment."
+            "The dispatcher may still be running. Refresh the board in a moment."
         } else {
             data.userMessage()
         }

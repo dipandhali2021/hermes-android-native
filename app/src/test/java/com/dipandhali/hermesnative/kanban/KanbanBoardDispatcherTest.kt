@@ -191,11 +191,53 @@ class KanbanBoardDispatcherTest : KanbanBoardTestSupport() {
         assertTrue(vm.state.value.dispatcher is KanbanDispatcherState.Running)
 
         vm.onDispatcherDismiss()
-        assertEquals(KanbanDispatcherState.Idle, vm.state.value.dispatcher)
+        assertTrue(vm.state.value.dispatcher is KanbanDispatcherState.Running)
 
         gate.complete(Result.success(resultJson()))
         advanceUntilIdle()
 
         assertTrue(vm.state.value.dispatcher is KanbanDispatcherState.Result)
+        assertTrue(fake.boardCalls.isNotEmpty())
+    }
+
+    @Test
+    fun `opening after a run result keeps the result`() = runTest(dispatcher) {
+        val fake = FakeKanbanRepository()
+        val vm = started(fake)
+        fake.dispatchHandler = { _, dryRun, _ ->
+            if (dryRun) Result.success(previewJson()) else Result.success(resultJson())
+        }
+
+        vm.onDispatcherOpened()
+        advanceUntilIdle()
+        vm.onDispatcherRun()
+        advanceUntilIdle()
+        val calls = fake.dispatchCalls.size
+
+        vm.onDispatcherOpened()
+        advanceUntilIdle()
+
+        assertEquals(calls, fake.dispatchCalls.size)
+        assertTrue(vm.state.value.dispatcher is KanbanDispatcherState.Result)
+    }
+
+    @Test
+    fun `refresh preview after a result runs a new dry run`() = runTest(dispatcher) {
+        val fake = FakeKanbanRepository()
+        val vm = started(fake)
+        fake.dispatchHandler = { _, dryRun, _ ->
+            if (dryRun) Result.success(previewJson()) else Result.success(resultJson())
+        }
+
+        vm.onDispatcherOpened()
+        advanceUntilIdle()
+        vm.onDispatcherRun()
+        advanceUntilIdle()
+
+        vm.onDispatcherRefresh()
+        advanceUntilIdle()
+
+        assertEquals(listOf(true, false, true), fake.dispatchCalls.map { it.dryRun })
+        assertTrue(vm.state.value.dispatcher is KanbanDispatcherState.Preview)
     }
 }

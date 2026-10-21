@@ -77,33 +77,31 @@ fun KanbanHelpSheet(onDismiss: () -> Unit) {
             }
 
             HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
-            HelpHeading("What makes Ready runnable?")
+            HelpHeading("Normal flow")
             Text(
-                text = "A Ready task needs an assignee, and all of its parents must be " +
-                    "Done. The dispatcher can then claim it. An unassigned Ready task " +
-                    "will never run.",
+                text = "triage → todo → scheduled → ready → running → blocked → done. " +
+                    "Archived sits apart from the flow.",
                 style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
 
-            HelpHeading("Archive, not delete")
-            Text(
-                text = "Archiving removes a task from the active board, but the server " +
-                    "keeps it. This app has no hard-delete action.",
-                style = MaterialTheme.typography.bodyMedium,
-            )
+            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+            HelpHeading("Rules")
+            HelpRule("Only the dispatcher starts tasks. You can't set Running.")
+            HelpRule("Unassigned tasks never run.")
+            HelpRule("Scheduled is a pause, not a date. Resume it when you're ready.")
+            HelpRule("Parent tasks gate Ready. Unfinished parents keep a task in Todo.")
+            HelpRule("Done needs a result. The Complete sheet asks for one.")
+            HelpRule("Archiving a running task stops its worker. Blocking does not.")
+            HelpRule("Closing this app does not stop a running worker, and this version has no stop action.")
+            HelpRule("There is no delete. Archive is the reversible way to remove work from the board.")
+            HelpRule("Drag-and-drop isn't available on the phone; use Move to… on a task.")
 
-            HelpHeading("Running workers")
-            Text(
-                text = "A Running task has a worker on the server. Closing this app does " +
-                    "not stop it, and this version has no stop action. Read its worker " +
-                    "log from the task's Runs tab.",
-                style = MaterialTheme.typography.bodyMedium,
-            )
-
+            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
             HelpHeading("Not in this version")
             Text(
-                text = "Review actions, attachments, hard delete and bulk actions are " +
-                    "not part of this Kanban client yet.",
+                text = "Review actions, attachments and bulk actions are not part of " +
+                    "this Kanban client yet.",
                 style = MaterialTheme.typography.bodyMedium,
             )
             Spacer(Modifier.height(4.dp))
@@ -117,4 +115,23 @@ private fun HelpHeading(text: String) {
         text = text,
         style = MaterialTheme.typography.titleMedium,
     )
+}
+
+@Composable
+private fun HelpRule(text: String) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        Text(
+            text = "•",
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        Text(
+            text = text,
+            style = MaterialTheme.typography.bodyMedium,
+            modifier = Modifier.weight(1f),
+        )
+    }
 }
